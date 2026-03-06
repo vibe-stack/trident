@@ -21,6 +21,7 @@ Last updated: 2026-03-06
 - Expanded Phase 5 with BVH-accelerated object raycasting and Shift-drag marquee selection in the viewport.
 - Swapped the viewport renderer to Three.js `WebGPURenderer`, fixed brush face shading by splitting brush surface vertices per face, and relaxed orbit controls to allow below-ground camera angles.
 - Started Phase 6 with a transform tool baseline: snap-aware translation, duplication, mirror-by-axis, tool switching, and undo/redo shortcuts on top of the command stack.
+- Started Phase 7 and Phase 8 baselines: center-split clip for axis-aligned brushes, object-level brush extrusion, mesh inflate/top-offset edits, and grid-based asset placement.
 
 ## Next
 
@@ -29,7 +30,9 @@ Last updated: 2026-03-06
 - Phase 6: implement transform tools, snapping, duplication, and mirror workflows.
   Current gap: viewport gizmos, drag transforms, rotate/scale editing, and transform-space controls are still missing.
 - Phase 7: add brush editing operations such as clip, split, hollow, merge, and face extrusion.
+  Current gap: arbitrary-plane clipping, face extrusion, hollow/merge flows, and non-box brush editing are still missing.
 - Phase 8: add mesh editing tools such as extrude, bevel, split edge, loop cut, and merge vertices.
+  Current gap: real topology-editing operations are still missing; current mesh edit is object-level deformation only.
 - Phase 9: add materials, assets, entity authoring, and worker-backed async jobs.
 - Phase 10: implement `.whmap` persistence plus GLTF and engine export flows.
 
