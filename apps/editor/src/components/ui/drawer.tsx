@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
-import { cn } from "@web-hammer/shared/lib/utils"
+import { cn } from "../../lib/utils"
 
 function Drawer({
   ...props

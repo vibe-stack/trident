@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@web-hammer/shared/lib/utils"
+import { cn } from "../../lib/utils"
 import { Button } from "apps/editor/src/components/ui/button"
 import { Input } from "apps/editor/src/components/ui/input"
 import { Textarea } from "apps/editor/src/components/ui/textarea"
