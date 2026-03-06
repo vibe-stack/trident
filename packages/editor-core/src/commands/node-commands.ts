@@ -5,7 +5,7 @@ import {
   splitAxisAlignedBrush,
   type BrushAxis
 } from "@web-hammer/geometry-kernel";
-import type { BrushNode, Entity, GeometryNode, MeshNode, ModelNode, Vec3 } from "@web-hammer/shared";
+import type { BrushNode, Entity, GeometryNode, MeshNode, ModelNode, Transform, Vec3 } from "@web-hammer/shared";
 import { addVec3, isBrushNode, isMeshNode, scaleVec3, vec3 } from "@web-hammer/shared";
 import type { Command } from "./command-stack";
 import type { SceneDocument } from "../document/scene-document";
@@ -32,6 +32,49 @@ export function createMirrorNodesCommand(nodeIds: string[], axis: TransformAxis)
     },
     undo(scene) {
       flipScaleAxis(scene, nodeIds, axis);
+    }
+  };
+}
+
+export function createSetNodeTransformCommand(
+  scene: SceneDocument,
+  nodeId: string,
+  nextTransform: Transform
+): Command {
+  const node = scene.getNode(nodeId);
+
+  if (!node) {
+    return {
+      label: "set transform",
+      execute() {},
+      undo() {}
+    };
+  }
+
+  const before = structuredClone(node.transform);
+  const next = structuredClone(nextTransform);
+
+  return {
+    label: "set transform",
+    execute(nextScene) {
+      const nextNode = nextScene.getNode(nodeId);
+
+      if (!nextNode) {
+        return;
+      }
+
+      nextNode.transform = structuredClone(next);
+      nextScene.touch();
+    },
+    undo(nextScene) {
+      const nextNode = nextScene.getNode(nodeId);
+
+      if (!nextNode) {
+        return;
+      }
+
+      nextNode.transform = structuredClone(before);
+      nextScene.touch();
     }
   };
 }

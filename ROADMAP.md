@@ -25,6 +25,7 @@ Last updated: 2026-03-06
 - Started Phase 9 with asset/material panels, brush material assignment, entity authoring actions, asset-driven placement, and a visible worker job queue for async editor tasks.
 - Expanded Phase 9 so selected assets drive model placement, selected materials can be assigned to brushes with visible viewport color changes, and export/persistence jobs execute in a real Web Worker.
 - Started Phase 10 with `.whmap` scene save/load plus baseline glTF and engine-scene export flows running through the worker pipeline.
+- Revamped the editor UI around Tailwind and shadcn: added the `@/` app alias, replaced the old scaffold with a floating menu/toolbar/sidebar layout, moved styling to Tailwind-first components, and added drag-input-backed transform editing in the inspector.
 
 ## Next
 
@@ -40,6 +41,8 @@ Last updated: 2026-03-06
   Current gap: richer asset catalogs, direct entity selection/editing, and real worker-backed geometry/nav rebuild jobs are still missing; only export/persistence currently runs in a real Web Worker.
 - Phase 10: implement `.whmap` persistence plus GLTF and engine export flows.
   Current gap: `.whmap` is a baseline full-scene snapshot format, glTF export is JSON-only with embedded buffers and placeholder model geometry, and engine export is still a simple scene interchange format rather than a packaged runtime build.
+- Continue the editor UI pass.
+  Current gap: contextual menus are still mostly presentational, the canvas overlays need additional polish on small screens, and several shadcn primitives still carry default styles that should be tightened further as the toolset expands.
 
 ## Notes
 

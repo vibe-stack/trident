@@ -370,7 +370,7 @@ export function ViewportCanvas({
 
   return (
     <div
-      className="viewport-canvas-shell"
+      className="relative size-full overflow-hidden"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -424,7 +424,7 @@ export function ViewportCanvas({
 
       {marqueeRect ? (
         <div
-          className="marquee-rect"
+          className="pointer-events-none absolute rounded-sm bg-emerald-400/12 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.75)]"
           style={{
             height: marqueeRect.height,
             left: marqueeRect.left,

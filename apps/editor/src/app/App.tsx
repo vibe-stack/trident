@@ -7,6 +7,7 @@ import {
   createDuplicateNodesCommand,
   createEditorCore,
   type SceneDocumentSnapshot,
+  createSetNodeTransformCommand,
   createPlaceEntityCommand,
   createMeshInflateCommand,
   createMeshRaiseTopCommand,
@@ -26,8 +27,8 @@ import {
   type WorkerRequest,
   type WorkerResponse
 } from "@web-hammer/workers";
-import { EditorShell } from "../components/EditorShell";
-import { uiStore } from "../state/ui-store";
+import { EditorShell } from "@/components/EditorShell";
+import { uiStore } from "@/state/ui-store";
 
 type ExportWorkerRequest = WorkerRequest extends infer Request
   ? Request extends { id: string }
@@ -129,10 +130,6 @@ export function App() {
     setActiveToolId(toolId);
   };
 
-  const handleSetLeftPanel = (panel: "scene" | "assets") => {
-    uiStore.leftPanel = panel;
-  };
-
   const handleSetRightPanel = (panel: "inspector" | "materials") => {
     uiStore.rightPanel = panel;
   };
@@ -162,6 +159,17 @@ export function App() {
 
   const handleSetSnapSize = (snapSize: (typeof gridSnapValues)[number]) => {
     uiStore.viewport.grid.snapSize = snapSize;
+  };
+
+  const handleUpdateNodeTransform = (nodeId: string, transform: Parameters<typeof createSetNodeTransformCommand>[2]) => {
+    const node = editor.scene.getNode(nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    editor.execute(createSetNodeTransformCommand(editor.scene, nodeId, transform));
+    enqueueWorkerJob("Transform update", { task: node.kind === "mesh" ? "triangulation" : "brush-rebuild", worker: "geometryWorker" }, 550);
   };
 
   const enqueueWorkerJob = (label: string, task: Parameters<typeof workerManager.enqueue>[0], durationMs?: number) => {
@@ -531,7 +539,6 @@ export function App() {
   return (
     <>
       <EditorShell
-        activeLeftPanel={ui.leftPanel}
         activeRightPanel={ui.rightPanel}
         activeToolId={toolSession.toolId}
         canRedo={editor.commands.canRedo()}
@@ -557,18 +564,17 @@ export function App() {
         onSelectAsset={handleSelectAsset}
         onSelectMaterial={handleSelectMaterial}
         onSelectNodes={handleSelectNodes}
-        onSetLeftPanel={handleSetLeftPanel}
         onSetRightPanel={handleSetRightPanel}
         onSetSnapSize={handleSetSnapSize}
         onSetToolId={handleSetToolId}
         onTranslateSelection={handleTranslateSelection}
         onUndo={handleUndo}
+        onUpdateNodeTransform={handleUpdateNodeTransform}
         renderScene={renderScene}
         selectedAssetId={ui.selectedAssetId}
         selectedMaterialId={ui.selectedMaterialId}
         viewport={ui.viewport}
         tools={defaultTools}
-        toolCount={defaultTools.length}
       />
       <input
         accept=".whmap,.json"
