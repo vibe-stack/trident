@@ -3,32 +3,42 @@ import type { TransformAxis } from "@web-hammer/editor-core";
 import type { DerivedRenderScene, GridSnapValue, ViewportState } from "@web-hammer/render-pipeline";
 import { toTuple } from "@web-hammer/shared";
 import type { ToolId } from "@web-hammer/tool-system";
+import type { WorkerJob } from "@web-hammer/workers";
 import { SidebarPanel } from "./SidebarPanel";
 import { ViewportCanvas } from "../viewport/ViewportCanvas";
 
 type EditorShellProps = {
-  activeLeftPanel: string;
-  activeRightPanel: string;
+  activeLeftPanel: "scene" | "assets";
+  activeRightPanel: "inspector" | "materials";
   activeToolId: ToolId;
   canRedo: boolean;
   canUndo: boolean;
   editor: EditorCore;
   gridSnapValues: readonly GridSnapValue[];
+  jobs: WorkerJob[];
+  onAssignMaterial: (materialId: string) => void;
   onClipSelection: (axis: TransformAxis) => void;
   onDuplicateSelection: () => void;
   onClearSelection: () => void;
   onExtrudeSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   onFocusNode: (nodeId: string) => void;
+  onPlaceEntity: (type: "spawn" | "light") => void;
   onMeshInflate: (factor: number) => void;
   onMirrorSelection: (axis: TransformAxis) => void;
   onPlaceAsset: (position: { x: number; y: number; z: number }) => void;
   onRedo: () => void;
+  onSelectAsset: (assetId: string) => void;
+  onSelectMaterial: (materialId: string) => void;
   onSelectNodes: (nodeIds: string[]) => void;
   onSetSnapSize: (snapSize: GridSnapValue) => void;
   onSetToolId: (toolId: ToolId) => void;
+  onSetLeftPanel: (panel: "scene" | "assets") => void;
+  onSetRightPanel: (panel: "inspector" | "materials") => void;
   onTranslateSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   onUndo: () => void;
   renderScene: DerivedRenderScene;
+  selectedAssetId: string;
+  selectedMaterialId: string;
   tools: Array<{ id: ToolId; label: string }>;
   toolCount: number;
   viewport: ViewportState;
@@ -42,27 +52,38 @@ export function EditorShell({
   canUndo,
   editor,
   gridSnapValues,
+  jobs,
+  onAssignMaterial,
   onClipSelection,
   onDuplicateSelection,
   onClearSelection,
   onExtrudeSelection,
   onFocusNode,
+  onPlaceEntity,
   onMeshInflate,
   onMirrorSelection,
   onPlaceAsset,
   onRedo,
+  onSelectAsset,
+  onSelectMaterial,
   onSelectNodes,
   onSetSnapSize,
   onSetToolId,
+  onSetLeftPanel,
+  onSetRightPanel,
   onTranslateSelection,
   onUndo,
   renderScene,
+  selectedAssetId,
+  selectedMaterialId,
   tools,
   toolCount,
   viewport
 }: EditorShellProps) {
   const nodes = Array.from(editor.scene.nodes.values());
   const entities = Array.from(editor.scene.entities.values());
+  const assets = Array.from(editor.scene.assets.values());
+  const materials = Array.from(editor.scene.materials.values());
   const selectedNodeId = editor.selection.ids[0];
   const selectedNode = selectedNodeId ? editor.scene.getNode(selectedNodeId) : undefined;
   const hasSelection = editor.selection.ids.length > 0;
@@ -82,6 +103,7 @@ export function EditorShell({
           <span>{entities.length} entities</span>
           <span>{renderScene.meshes.length} drawables</span>
           <span>{editor.selection.ids.length} selected</span>
+          <span>{jobs.length} jobs</span>
           <span>{toolCount} tools</span>
           <span>snap {viewport.grid.snapSize}</span>
         </div>
@@ -89,6 +111,23 @@ export function EditorShell({
 
       <main className="workspace">
         <SidebarPanel title="Scene" badge={activeLeftPanel}>
+          <div className="toolbar-group">
+            <button
+              className={`chip-button${activeLeftPanel === "scene" ? " is-active" : ""}`}
+              onClick={() => onSetLeftPanel("scene")}
+              type="button"
+            >
+              Scene
+            </button>
+            <button
+              className={`chip-button${activeLeftPanel === "assets" ? " is-active" : ""}`}
+              onClick={() => onSetLeftPanel("assets")}
+              type="button"
+            >
+              Assets
+            </button>
+          </div>
+
           <div className="toolbar-group">
             {tools.map((tool) => (
               <button
@@ -102,21 +141,60 @@ export function EditorShell({
             ))}
           </div>
 
-          <ul className="list">
-            {nodes.map((node) => (
-              <li key={node.id}>
-                <button
-                  className={`scene-item${selectedNodeId === node.id ? " is-selected" : ""}`}
-                  onClick={() => onSelectNodes([node.id])}
-                  onDoubleClick={() => onFocusNode(node.id)}
-                  type="button"
-                >
-                  <strong>{node.name}</strong>
-                  <span>{node.kind}</span>
+          {activeLeftPanel === "scene" ? (
+            <>
+              <ul className="list">
+                {nodes.map((node) => (
+                  <li key={node.id}>
+                    <button
+                      className={`scene-item${selectedNodeId === node.id ? " is-selected" : ""}`}
+                      onClick={() => onSelectNodes([node.id])}
+                      onDoubleClick={() => onFocusNode(node.id)}
+                      type="button"
+                    >
+                      <strong>{node.name}</strong>
+                      <span>{node.kind}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="toolbar-group">
+                <button className="chip-button" onClick={() => onPlaceEntity("spawn")} type="button">
+                  Add Spawn
                 </button>
-              </li>
-            ))}
-          </ul>
+                <button className="chip-button" onClick={() => onPlaceEntity("light")} type="button">
+                  Add Light
+                </button>
+              </div>
+
+              <ul className="list compact-list">
+                {entities.map((entity) => (
+                  <li key={entity.id}>
+                    <div className="list-card">
+                      <strong>{entity.type}</strong>
+                      <span>{entity.id}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <ul className="list">
+              {assets.map((asset) => (
+                <li key={asset.id}>
+                  <button
+                    className={`scene-item${selectedAssetId === asset.id ? " is-selected" : ""}`}
+                    onClick={() => onSelectAsset(asset.id)}
+                    type="button"
+                  >
+                    <strong>{asset.id.split(":").slice(-1)[0]}</strong>
+                    <span>{asset.path}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <p className="panel-hint">Click objects or scene items to select. Double-click to focus. Shift-drag in the viewport for marquee selection.</p>
         </SidebarPanel>
@@ -172,7 +250,46 @@ export function EditorShell({
         </section>
 
         <SidebarPanel title="Inspector" badge={activeRightPanel}>
-          {selectedNode ? (
+          <div className="toolbar-group">
+            <button
+              className={`chip-button${activeRightPanel === "inspector" ? " is-active" : ""}`}
+              onClick={() => onSetRightPanel("inspector")}
+              type="button"
+            >
+              Inspector
+            </button>
+            <button
+              className={`chip-button${activeRightPanel === "materials" ? " is-active" : ""}`}
+              onClick={() => onSetRightPanel("materials")}
+              type="button"
+            >
+              Materials
+            </button>
+          </div>
+
+          {activeRightPanel === "materials" ? (
+            <>
+              <ul className="list">
+                {materials.map((material) => (
+                  <li key={material.id}>
+                    <button
+                      className={`scene-item${selectedMaterialId === material.id ? " is-selected" : ""}`}
+                      onClick={() => onSelectMaterial(material.id)}
+                      type="button"
+                    >
+                      <strong>{material.name}</strong>
+                      <span>{material.color}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="toolbar-group">
+                <button className="chip-button" disabled={!selectedIsBrush} onClick={() => onAssignMaterial(selectedMaterialId)} type="button">
+                  Apply To Brush
+                </button>
+              </div>
+            </>
+          ) : selectedNode ? (
             <div className="inspector-stack">
               <div>
                 <p className="label">Node</p>
@@ -325,6 +442,24 @@ export function EditorShell({
                     </button>
                   </div>
                   <p className="panel-hint">`6` activates asset place mode. Click the ground grid to drop a crate prop snapped to the current grid size.</p>
+                </div>
+              ) : null}
+
+              {jobs.length > 0 ? (
+                <div className="inspector-actions">
+                  <p className="label">Worker Queue</p>
+                  <ul className="list compact-list">
+                    {jobs.map((job) => (
+                      <li key={job.id}>
+                        <div className="list-card">
+                          <strong>{job.label}</strong>
+                          <span>
+                            {job.task.worker} / {job.status}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </div>

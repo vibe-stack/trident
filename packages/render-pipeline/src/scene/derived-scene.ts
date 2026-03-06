@@ -1,4 +1,4 @@
-import type { Entity, GeometryNode, Vec3 } from "@web-hammer/shared";
+import type { Asset, Entity, GeometryNode, Material, Vec3 } from "@web-hammer/shared";
 import { vec3 } from "@web-hammer/shared";
 import { createDerivedRenderMesh, type DerivedRenderMesh } from "../meshes/render-mesh";
 
@@ -17,9 +17,13 @@ export type DerivedRenderScene = {
 
 export function deriveRenderScene(
   nodes: Iterable<GeometryNode>,
-  entities: Iterable<Entity> = []
+  entities: Iterable<Entity> = [],
+  materials: Iterable<Material> = [],
+  assets: Iterable<Asset> = []
 ): DerivedRenderScene {
-  const meshes = Array.from(nodes, (node) => createDerivedRenderMesh(node));
+  const materialsById = new Map(Array.from(materials, (material) => [material.id, material]));
+  const assetsById = new Map(Array.from(assets, (asset) => [asset.id, asset]));
+  const meshes = Array.from(nodes, (node) => createDerivedRenderMesh(node, materialsById, assetsById));
   const entityMarkers = Array.from(entities, (entity) => ({
     entityId: entity.id,
     label: entity.type,

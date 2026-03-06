@@ -196,11 +196,40 @@ export function createSeedSceneDocument(): SceneDocument {
     locked: false
   });
 
+  document.materials.set("material:blockout:orange", {
+    id: "material:blockout:orange",
+    name: "Blockout Orange",
+    color: "#f69036"
+  });
+
+  document.materials.set("material:detail:teal", {
+    id: "material:detail:teal",
+    name: "Detail Teal",
+    color: "#6ed5c0"
+  });
+
+  document.materials.set("material:prop:steel", {
+    id: "material:prop:steel",
+    name: "Prop Steel",
+    color: "#7f8ea3"
+  });
+
   document.assets.set("asset:model:crate", {
     id: "asset:model:crate",
     type: "model",
     path: "/assets/models/crate.glb",
     metadata: {
+      previewColor: "#7f8ea3",
+      source: "placeholder"
+    }
+  });
+
+  document.assets.set("asset:model:barrel", {
+    id: "asset:model:barrel",
+    type: "model",
+    path: "/assets/models/barrel.glb",
+    metadata: {
+      previewColor: "#9a684d",
       source: "placeholder"
     }
   });

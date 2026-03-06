@@ -5,7 +5,7 @@ import {
   splitAxisAlignedBrush,
   type BrushAxis
 } from "@web-hammer/geometry-kernel";
-import type { BrushNode, GeometryNode, MeshNode, ModelNode, Vec3 } from "@web-hammer/shared";
+import type { BrushNode, Entity, GeometryNode, MeshNode, ModelNode, Vec3 } from "@web-hammer/shared";
 import { addVec3, isBrushNode, isMeshNode, scaleVec3, vec3 } from "@web-hammer/shared";
 import type { Command } from "./command-stack";
 import type { SceneDocument } from "../document/scene-document";
@@ -227,6 +227,62 @@ export function createPlaceModelNodeCommand(
       }
     },
     nodeId
+  };
+}
+
+export function createAssignMaterialToBrushesCommand(
+  scene: SceneDocument,
+  nodeIds: string[],
+  materialId: string
+): Command {
+  const snapshots = nodeIds
+    .map((nodeId) => scene.getNode(nodeId))
+    .filter((node): node is BrushNode => Boolean(node && isBrushNode(node)))
+    .map((node) => ({
+      before: structuredClone(node.data.faces),
+      nodeId: node.id,
+      next: node.data.planes.map((plane, index) => ({
+        id: node.data.faces[index]?.id ?? `face:${node.id}:${index}`,
+        materialId,
+        plane,
+        vertexIds: node.data.faces[index]?.vertexIds ?? []
+      }))
+    }));
+
+  return {
+    label: "assign material",
+    execute(nextScene) {
+      snapshots.forEach((snapshot) => {
+        const node = nextScene.getNode(snapshot.nodeId);
+
+        if (node && isBrushNode(node)) {
+          node.data.faces = structuredClone(snapshot.next);
+          nextScene.touch();
+        }
+      });
+    },
+    undo(nextScene) {
+      snapshots.forEach((snapshot) => {
+        const node = nextScene.getNode(snapshot.nodeId);
+
+        if (node && isBrushNode(node)) {
+          node.data.faces = structuredClone(snapshot.before);
+          nextScene.touch();
+        }
+      });
+    }
+  };
+}
+
+export function createPlaceEntityCommand(entity: Entity): Command {
+  return {
+    label: "place entity",
+    execute(scene) {
+      scene.addEntity(structuredClone(entity));
+    },
+    undo(scene) {
+      scene.removeEntity(entity.id);
+    }
   };
 }
 

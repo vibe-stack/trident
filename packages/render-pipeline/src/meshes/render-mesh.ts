@@ -1,5 +1,5 @@
 import { reconstructBrushFaces, triangulateEditableMesh } from "@web-hammer/geometry-kernel";
-import type { GeometryNode, NodeID, Vec3 } from "@web-hammer/shared";
+import type { Asset, AssetID, GeometryNode, Material, MaterialID, NodeID, Vec3 } from "@web-hammer/shared";
 import { isBrushNode, isMeshNode, isModelNode } from "@web-hammer/shared";
 
 export type RenderPrimitive =
@@ -45,8 +45,12 @@ export type DerivedRenderMesh = {
   material: RenderMaterial;
 };
 
-export function createDerivedRenderMesh(node: GeometryNode): DerivedRenderMesh {
-  const appearance = getRenderAppearance(node);
+export function createDerivedRenderMesh(
+  node: GeometryNode,
+  materialsById = new Map<MaterialID, Material>(),
+  assetsById = new Map<AssetID, Asset>()
+): DerivedRenderMesh {
+  const appearance = getRenderAppearance(node, materialsById, assetsById);
   const surface = isBrushNode(node)
     ? createBrushSurface(node.data)
     : isMeshNode(node)
@@ -80,15 +84,22 @@ export function createDerivedRenderMesh(node: GeometryNode): DerivedRenderMesh {
   };
 }
 
-function getRenderAppearance(node: GeometryNode): {
+function getRenderAppearance(
+  node: GeometryNode,
+  materialsById: Map<MaterialID, Material>,
+  assetsById: Map<AssetID, Asset>
+): {
   color: string;
   flatShaded: boolean;
   wireframe: boolean;
   primitiveLabel: string;
 } {
   if (isBrushNode(node)) {
+    const materialId = node.data.faces[0]?.materialId;
+    const materialColor = materialId ? materialsById.get(materialId)?.color : undefined;
+
     return {
-      color: "#f69036",
+      color: materialColor ?? "#f69036",
       flatShaded: true,
       wireframe: false,
       primitiveLabel: "box"
@@ -105,8 +116,10 @@ function getRenderAppearance(node: GeometryNode): {
   }
 
   if (isModelNode(node)) {
+    const previewColor = assetsById.get(node.data.assetId)?.metadata.previewColor;
+
     return {
-      color: "#7f8ea3",
+      color: typeof previewColor === "string" ? previewColor : "#7f8ea3",
       flatShaded: false,
       wireframe: false,
       primitiveLabel: "model"

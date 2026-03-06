@@ -146,6 +146,19 @@ select {
   color: #8ea1b5;
 }
 
+.compact-list {
+  gap: 0.55rem;
+}
+
+.list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.8rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .scene-item {
   width: 100%;
   display: flex;

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useSnapshot } from "valtio";
 import {
   axisDelta,
+  createAssignMaterialToBrushesCommand,
   createExtrudeBrushNodesCommand,
   createDuplicateNodesCommand,
   createEditorCore,
+  createPlaceEntityCommand,
   createMeshInflateCommand,
   createMeshRaiseTopCommand,
   createMirrorNodesCommand,
@@ -15,18 +17,26 @@ import {
   type TransformAxis
 } from "@web-hammer/editor-core";
 import { deriveRenderScene, gridSnapValues } from "@web-hammer/render-pipeline";
-import { addVec3, isBrushNode, isMeshNode, snapVec3, subVec3, vec3, type Vec3 } from "@web-hammer/shared";
+import { addVec3, isBrushNode, isMeshNode, makeTransform, snapVec3, subVec3, vec3, type Vec3 } from "@web-hammer/shared";
 import { createToolSession, defaultToolId, defaultTools, type ToolId } from "@web-hammer/tool-system";
+import { createWorkerTaskManager, type WorkerJob } from "@web-hammer/workers";
 import { EditorShell } from "../components/EditorShell";
 import { uiStore } from "../state/ui-store";
 
 export function App() {
   const [editor] = useState(() => createEditorCore(createSeedSceneDocument()));
   const [activeToolId, setActiveToolId] = useState<ToolId>(defaultToolId);
+  const [workerManager] = useState(() => createWorkerTaskManager());
+  const [workerJobs, setWorkerJobs] = useState<WorkerJob[]>([]);
   const [, setRevision] = useState(0);
   const ui = useSnapshot(uiStore);
   const toolSession = useMemo(() => createToolSession(activeToolId), [activeToolId]);
-  const renderScene = deriveRenderScene(editor.scene.nodes.values(), editor.scene.entities.values());
+  const renderScene = deriveRenderScene(
+    editor.scene.nodes.values(),
+    editor.scene.entities.values(),
+    editor.scene.materials.values(),
+    editor.scene.assets.values()
+  );
 
   useEffect(() => {
     const unsubscribeScene = editor.events.on("scene:changed", () => {
@@ -50,12 +60,22 @@ export function App() {
     };
   }, [editor]);
 
+  useEffect(() => workerManager.subscribe(setWorkerJobs), [workerManager]);
+
   const handleSelectNodes = (nodeIds: string[]) => {
     editor.select(nodeIds, "object");
   };
 
   const handleSetToolId = (toolId: ToolId) => {
     setActiveToolId(toolId);
+  };
+
+  const handleSetLeftPanel = (panel: "scene" | "assets") => {
+    uiStore.leftPanel = panel;
+  };
+
+  const handleSetRightPanel = (panel: "inspector" | "materials") => {
+    uiStore.rightPanel = panel;
   };
 
   const handleClearSelection = () => {
@@ -85,6 +105,10 @@ export function App() {
     uiStore.viewport.grid.snapSize = snapSize;
   };
 
+  const enqueueWorkerJob = (label: string, task: Parameters<typeof workerManager.enqueue>[0], durationMs?: number) => {
+    workerManager.enqueue(task, label, durationMs);
+  };
+
   const handleTranslateSelection = (axis: TransformAxis, direction: -1 | 1) => {
     if (editor.selection.ids.length === 0) {
       return;
@@ -92,6 +116,7 @@ export function App() {
 
     const delta = axisDelta(axis, uiStore.viewport.grid.snapSize * direction);
     editor.execute(createTranslateNodesCommand(editor.selection.ids, delta));
+    enqueueWorkerJob("Geometry rebuild", { task: "brush-rebuild", worker: "geometryWorker" }, 700);
   };
 
   const handleDuplicateSelection = () => {
@@ -107,6 +132,7 @@ export function App() {
 
     editor.execute(command);
     editor.select(duplicateIds, "object");
+    enqueueWorkerJob("Duplicate selection", { task: "triangulation", worker: "geometryWorker" }, 700);
   };
 
   const handleMirrorSelection = (axis: TransformAxis) => {
@@ -115,6 +141,7 @@ export function App() {
     }
 
     editor.execute(createMirrorNodesCommand(editor.selection.ids, axis));
+    enqueueWorkerJob("Mirror selection", { task: "triangulation", worker: "geometryWorker" }, 700);
   };
 
   const handleClipSelection = (axis: TransformAxis) => {
@@ -126,6 +153,7 @@ export function App() {
 
     editor.execute(command);
     editor.select(splitIds, "object");
+    enqueueWorkerJob("Clip brush", { task: "clip", worker: "geometryWorker" }, 950);
   };
 
   const handleExtrudeSelection = (axis: TransformAxis, direction: -1 | 1) => {
@@ -145,6 +173,7 @@ export function App() {
           direction
         )
       );
+      enqueueWorkerJob("Brush extrude", { task: "brush-rebuild", worker: "geometryWorker" }, 950);
       return;
     }
 
@@ -152,6 +181,7 @@ export function App() {
       editor.execute(
         createMeshRaiseTopCommand(editor.scene, editor.selection.ids, uiStore.viewport.grid.snapSize * direction)
       );
+      enqueueWorkerJob("Mesh triangulation", { task: "triangulation", worker: "meshWorker" }, 850);
     }
   };
 
@@ -161,20 +191,68 @@ export function App() {
     }
 
     editor.execute(createMeshInflateCommand(editor.scene, editor.selection.ids, factor));
+    enqueueWorkerJob("Mesh edit", { task: "bevel", worker: "meshWorker" }, 850);
   };
 
   const handlePlaceAsset = (position: Vec3) => {
     const snapped = snapVec3(position, uiStore.viewport.grid.snapSize);
+    const asset = editor.scene.assets.get(uiStore.selectedAssetId);
+
+    if (!asset || asset.type !== "model") {
+      return;
+    }
+
+    const label = asset.id.endsWith("barrel") ? "Barrel Prop" : "Crate Prop";
     const { command, nodeId } = createPlaceModelNodeCommand(editor.scene, vec3(snapped.x, 1.1, snapped.z), {
       data: {
-        assetId: "asset:model:crate",
-        path: "/assets/models/crate.glb"
+        assetId: asset.id,
+        path: asset.path
       },
-      name: "Crate Prop"
+      name: label
     });
 
     editor.execute(command);
     editor.select([nodeId], "object");
+    enqueueWorkerJob("Asset placement", { task: "triangulation", worker: "geometryWorker" }, 650);
+  };
+
+  const handleAssignMaterial = (materialId: string) => {
+    if (editor.selection.ids.length === 0) {
+      return;
+    }
+
+    uiStore.selectedMaterialId = materialId;
+    editor.execute(createAssignMaterialToBrushesCommand(editor.scene, editor.selection.ids, materialId));
+    enqueueWorkerJob("Material preview rebuild", { task: "triangulation", worker: "geometryWorker" }, 600);
+  };
+
+  const handleSelectAsset = (assetId: string) => {
+    uiStore.selectedAssetId = assetId;
+  };
+
+  const handleSelectMaterial = (materialId: string) => {
+    uiStore.selectedMaterialId = materialId;
+  };
+
+  const handlePlaceEntity = (type: "spawn" | "light") => {
+    const position = vec3(
+      uiStore.viewport.camera.target.x,
+      type === "light" ? 3 : 1,
+      uiStore.viewport.camera.target.z
+    );
+    const entityId = `entity:${type}:${editor.scene.entities.size + 1}`;
+    editor.execute(
+      createPlaceEntityCommand({
+        id: entityId,
+        properties:
+          type === "light"
+            ? { color: "#ffd089", enabled: true, intensity: 500 }
+            : { enabled: true, team: "player" },
+        transform: makeTransform(position),
+        type
+      })
+    );
+    enqueueWorkerJob("Entity authoring", { task: "navmesh", worker: "navWorker" }, 800);
   };
 
   const handleUndo = () => {
@@ -287,21 +365,30 @@ export function App() {
       canUndo={editor.commands.canUndo()}
       editor={editor}
       gridSnapValues={gridSnapValues}
+      jobs={workerJobs}
+      onAssignMaterial={handleAssignMaterial}
       onClipSelection={handleClipSelection}
       onDuplicateSelection={handleDuplicateSelection}
       onClearSelection={handleClearSelection}
       onExtrudeSelection={handleExtrudeSelection}
       onFocusNode={handleFocusNode}
+      onPlaceEntity={handlePlaceEntity}
       onMeshInflate={handleMeshInflate}
       onMirrorSelection={handleMirrorSelection}
       onPlaceAsset={handlePlaceAsset}
       onRedo={handleRedo}
+      onSelectAsset={handleSelectAsset}
+      onSelectMaterial={handleSelectMaterial}
       onSelectNodes={handleSelectNodes}
       onSetSnapSize={handleSetSnapSize}
       onSetToolId={handleSetToolId}
+      onSetLeftPanel={handleSetLeftPanel}
+      onSetRightPanel={handleSetRightPanel}
       onTranslateSelection={handleTranslateSelection}
       onUndo={handleUndo}
       renderScene={renderScene}
+      selectedAssetId={ui.selectedAssetId}
+      selectedMaterialId={ui.selectedMaterialId}
       viewport={ui.viewport}
       tools={defaultTools}
       toolCount={defaultTools.length}

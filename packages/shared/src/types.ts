@@ -99,6 +99,7 @@ export type Asset = {
 export type Material = {
   id: MaterialID;
   name: string;
+  color: string;
   path?: string;
 };
 

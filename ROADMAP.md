@@ -22,6 +22,7 @@ Last updated: 2026-03-06
 - Swapped the viewport renderer to Three.js `WebGPURenderer`, fixed brush face shading by splitting brush surface vertices per face, and relaxed orbit controls to allow below-ground camera angles.
 - Started Phase 6 with a transform tool baseline: snap-aware translation, duplication, mirror-by-axis, tool switching, and undo/redo shortcuts on top of the command stack.
 - Started Phase 7 and Phase 8 baselines: center-split clip for axis-aligned brushes, object-level brush extrusion, mesh inflate/top-offset edits, and grid-based asset placement.
+- Started Phase 9 with asset/material panels, brush material assignment, entity authoring actions, asset-driven placement, and a visible worker job queue for async editor tasks.
 
 ## Next
 
@@ -34,6 +35,7 @@ Last updated: 2026-03-06
 - Phase 8: add mesh editing tools such as extrude, bevel, split edge, loop cut, and merge vertices.
   Current gap: real topology-editing operations are still missing; current mesh edit is object-level deformation only.
 - Phase 9: add materials, assets, entity authoring, and worker-backed async jobs.
+  Current gap: richer asset catalogs, direct entity selection/editing, real Web Worker execution, and asset/material persistence workflows are still missing.
 - Phase 10: implement `.whmap` persistence plus GLTF and engine export flows.
 
 ## Notes
