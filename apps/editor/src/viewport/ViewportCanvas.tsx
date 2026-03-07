@@ -1,12 +1,14 @@
 import { Canvas, type RootState } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
 import {
-  bevelEditableMeshEdge,
+  bevelEditableMeshEdges,
   convertBrushToEditableMesh,
   cutEditableMeshBetweenEdges,
   deleteEditableMeshFaces,
   extrudeEditableMeshEdge,
   extrudeEditableMeshFace,
+  fillEditableMeshFaceFromEdges,
+  fillEditableMeshFaceFromVertices,
   invertEditableMeshNormals,
   mergeEditableMeshFaces
 } from "@web-hammer/geometry-kernel";
@@ -20,7 +22,8 @@ import {
   toTuple,
   subVec3,
   vec3,
-  type EditableMesh
+  type EditableMesh,
+  type Vec3
 } from "@web-hammer/shared";
 import {
   applyBrushEditTransform,
@@ -70,7 +73,7 @@ import {
 } from "@/viewport/utils/screen-space";
 import { composeTransformRotation, rebaseTransformPivot } from "@/viewport/utils/geometry";
 import { useEffect, useRef, useState, type PointerEventHandler } from "react";
-import { Mesh, Raycaster, Vector2, Vector3, type PerspectiveCamera } from "three";
+import { Mesh, Plane, Raycaster, Vector2, Vector3, type PerspectiveCamera } from "three";
 import type {
   BevelState,
   BrushCreateState,
@@ -202,6 +205,14 @@ export function ViewportCanvas({
   };
 
   const resolveSelectedEditableMeshFaceIds = () => {
+    if (!editableMeshSource) {
+      return [];
+    }
+
+    return selectedMeshNode ? meshEditSelectionIds : brushEditHandleIds;
+  };
+
+  const resolveSelectedEditableMeshVertexIds = () => {
     if (!editableMeshSource) {
       return [];
     }
@@ -396,7 +407,7 @@ export function ViewportCanvas({
 
     const selectedEdges = resolveSelectedEditableMeshEdgePairs();
 
-    if (selectedEdges.length !== 1) {
+    if (selectedEdges.length === 0) {
       return;
     }
 
@@ -406,24 +417,42 @@ export function ViewportCanvas({
       return;
     }
 
-    const edgeHandle = editableMeshHandles.find(
-      (handle) =>
-        handle.vertexIds.length === 2 &&
-        makeUndirectedPairKey(handle.vertexIds as [string, string]) === makeUndirectedPairKey(selectedEdges[0])
-    );
+    const selectedEdgeHandles = selectedEdges.flatMap((selectedEdge) => {
+      const handle = editableMeshHandles.find(
+        (candidate) =>
+          candidate.vertexIds.length === 2 &&
+          makeUndirectedPairKey(candidate.vertexIds as [string, string]) === makeUndirectedPairKey(selectedEdge)
+      );
 
-    if (!edgeHandle?.points || edgeHandle.points.length !== 2) {
+      return handle?.points && handle.points.length === 2
+        ? [handle as typeof handle & { points: [Vec3, Vec3] }]
+        : [];
+    });
+
+    if (selectedEdgeHandles.length !== selectedEdges.length) {
       return;
     }
 
-    const midpoint = averageVec3(edgeHandle.points);
-    const axis = normalizeVec3(subVec3(edgeHandle.points[1], edgeHandle.points[0]));
+    const midpoints = selectedEdgeHandles.map((handle) => averageVec3(handle.points!));
+    const anchor = averageVec3(midpoints);
+    const axes = selectedEdgeHandles.map((handle) => normalizeVec3(subVec3(handle.points![1], handle.points![0])));
     const faceHandles = createMeshEditHandles(editableMeshSource, "face");
-    const faceDirections = faceHandles
-      .filter((handle) => selectedEdges[0].every((vertexId) => handle.vertexIds.includes(vertexId)))
-      .map((handle) => rejectVec3FromAxis(subVec3(handle.position, midpoint), axis))
+    const faceDirections = selectedEdgeHandles
+      .flatMap((edgeHandle) => {
+        const midpoint = averageVec3(edgeHandle.points!);
+        const axis = normalizeVec3(subVec3(edgeHandle.points![1], edgeHandle.points![0]));
+
+        return faceHandles
+          .filter((handle) => edgeHandle.vertexIds.every((vertexId) => handle.vertexIds.includes(vertexId)))
+          .map((handle) => rejectVec3FromAxis(subVec3(handle.position, midpoint), axis));
+      })
       .filter((direction) => vec3LengthSquared(direction) > 0.000001);
-    const dragPlane = createBrushCreateDragPlane(cameraRef.current, axis, midpoint);
+    const averageAxis = normalizeVec3(averageVec3(axes));
+    const cameraDirection = cameraRef.current.getWorldDirection(new Vector3());
+    const dragPlane = new Plane().setFromNormalAndCoplanarPoint(
+      cameraDirection.clone().normalize(),
+      new Vector3(anchor.x, anchor.y, anchor.z)
+    );
     const startPoint =
       projectPointerToThreePlane(
         pointerPositionRef.current.x + bounds.left,
@@ -432,10 +461,16 @@ export function ViewportCanvas({
         cameraRef.current,
         raycasterRef.current,
         dragPlane
-      ) ?? new Vector3(midpoint.x, midpoint.y, midpoint.z);
-    const averagedFaceDirection = normalizeVec3(averageVec3(faceDirections));
+      ) ?? new Vector3(anchor.x, anchor.y, anchor.z);
+    const averagedFaceDirection = rejectVec3FromAxis(
+      normalizeVec3(averageVec3(faceDirections)),
+      vec3(cameraDirection.x, cameraDirection.y, cameraDirection.z)
+    );
     const fallbackDirection = normalizeVec3(
-      crossVec3(axis, vec3(dragPlane.normal.x, dragPlane.normal.y, dragPlane.normal.z))
+      crossVec3(
+        vec3(cameraDirection.x, cameraDirection.y, cameraDirection.z),
+        vec3LengthSquared(averageAxis) > 0.000001 ? averageAxis : vec3(0, 1, 0)
+      )
     );
 
     setBevelState({
@@ -443,7 +478,7 @@ export function ViewportCanvas({
       dragDirection:
         vec3LengthSquared(averagedFaceDirection) > 0.000001 ? averagedFaceDirection : fallbackDirection,
       dragPlane,
-      edge: selectedEdges[0],
+      edges: selectedEdges,
       profile: "flat",
       previewMesh: structuredClone(editableMeshSource),
       startPoint: vec3(startPoint.x, startPoint.y, startPoint.z),
@@ -603,9 +638,9 @@ export function ViewportCanvas({
           ? {
               ...current,
               previewMesh:
-                bevelEditableMeshEdge(
+                bevelEditableMeshEdges(
                   current.baseMesh,
-                  current.edge,
+                  current.edges,
                   current.width,
                   Math.max(1, current.steps + (event.deltaY < 0 ? 1 : -1)),
                   current.profile
@@ -695,9 +730,9 @@ export function ViewportCanvas({
               ? {
                   ...current,
                   previewMesh:
-                    bevelEditableMeshEdge(
+                    bevelEditableMeshEdges(
                       current.baseMesh,
-                      current.edge,
+                      current.edges,
                       current.width,
                       current.steps,
                       current.profile === "flat" ? "round" : "flat"
@@ -742,6 +777,25 @@ export function ViewportCanvas({
         if (selectedEdges.length === 2) {
           event.preventDefault();
           commitMeshTopology(cutEditableMeshBetweenEdges(editableMeshSource ?? emptyEditableMesh(), selectedEdges));
+        }
+        return;
+      }
+
+      if (event.shiftKey && event.key.toLowerCase() === "f") {
+        if (meshEditMode === "edge") {
+          const selectedEdges = resolveSelectedEditableMeshEdgePairs();
+
+          if (selectedEdges.length >= 3) {
+            event.preventDefault();
+            commitMeshTopology(fillEditableMeshFaceFromEdges(editableMeshSource ?? emptyEditableMesh(), selectedEdges));
+          }
+        } else if (meshEditMode === "vertex") {
+          const selectedVertices = resolveSelectedEditableMeshVertexIds();
+
+          if (selectedVertices.length >= 3) {
+            event.preventDefault();
+            commitMeshTopology(fillEditableMeshFaceFromVertices(editableMeshSource ?? emptyEditableMesh(), selectedVertices));
+          }
         }
         return;
       }
@@ -825,9 +879,9 @@ export function ViewportCanvas({
       }
 
       const previewMesh =
-        bevelEditableMeshEdge(
+        bevelEditableMeshEdges(
           currentState.baseMesh,
-          currentState.edge,
+          currentState.edges,
           width,
           currentState.steps,
           currentState.profile

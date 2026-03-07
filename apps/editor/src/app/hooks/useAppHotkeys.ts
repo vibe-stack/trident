@@ -135,19 +135,19 @@ export function useAppHotkeys({
         return;
       }
 
-      if (activeToolId === "mesh-edit" && event.key.toLowerCase() === "v") {
+      if (activeToolId === "mesh-edit" && !event.shiftKey && event.key.toLowerCase() === "v") {
         event.preventDefault();
         setMeshEditMode("vertex");
         return;
       }
 
-      if (activeToolId === "mesh-edit" && event.key.toLowerCase() === "e") {
+      if (activeToolId === "mesh-edit" && !event.shiftKey && event.key.toLowerCase() === "e") {
         event.preventDefault();
         setMeshEditMode("edge");
         return;
       }
 
-      if (activeToolId === "mesh-edit" && event.key.toLowerCase() === "f") {
+      if (activeToolId === "mesh-edit" && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setMeshEditMode("face");
         return;

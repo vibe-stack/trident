@@ -4,6 +4,7 @@ import {
   averageVec3,
   crossVec3,
   dotVec3,
+  lengthVec3,
   normalizeVec3,
   snapValue,
   scaleVec3,
@@ -25,6 +26,28 @@ type MeshPolygonData = {
   normal: Vec3;
   positions: Vec3[];
   vertexIds: VertexID[];
+};
+
+type BevelCorner = {
+  id: VertexID;
+  position: Vec3;
+};
+
+type BevelFaceData = {
+  corners: BevelCorner[];
+  polygon: MeshPolygonData;
+};
+
+type BevelProfilePoint = {
+  id: VertexID;
+  position: Vec3;
+};
+
+type BevelVertexProfile = {
+  edgeDirection: Vec3;
+  faceIds: [FaceID, FaceID];
+  points: BevelProfilePoint[];
+  vertexId: VertexID;
 };
 
 export type EdgeBevelProfile = "flat" | "round";
@@ -174,6 +197,55 @@ export function mergeEditableMeshFaces(mesh: EditableMesh, faceIds: string[], ep
 
   nextPolygons.push(mergedPolygon);
   return createEditableMeshFromPolygons(nextPolygons);
+}
+
+export function fillEditableMeshFaceFromVertices(
+  mesh: EditableMesh,
+  vertexIds: VertexID[],
+  epsilon = 0.0001
+): EditableMesh | undefined {
+  if (vertexIds.length < 3) {
+    return undefined;
+  }
+
+  const selectedVertexIds = new Set(vertexIds);
+  const boundaryEdges = collectFillBoundaryEdges(mesh).filter(
+    (edge) => selectedVertexIds.has(edge.startId) && selectedVertexIds.has(edge.endId)
+  );
+
+  if (boundaryEdges.length < 3) {
+    return undefined;
+  }
+
+  const boundaryVertexIds = new Set(boundaryEdges.flatMap((edge) => [edge.startId, edge.endId]));
+
+  if (
+    boundaryVertexIds.size !== selectedVertexIds.size ||
+    Array.from(selectedVertexIds).some((vertexId) => !boundaryVertexIds.has(vertexId))
+  ) {
+    return undefined;
+  }
+
+  return fillEditableMeshFaceFromBoundaryEdges(mesh, boundaryEdges, epsilon);
+}
+
+export function fillEditableMeshFaceFromEdges(
+  mesh: EditableMesh,
+  edges: Array<[VertexID, VertexID]>,
+  epsilon = 0.0001
+): EditableMesh | undefined {
+  if (edges.length < 3) {
+    return undefined;
+  }
+
+  const selectedEdgeKeys = new Set(edges.map((edge) => makeUndirectedEdgeKey(edge[0], edge[1])));
+  const boundaryEdges = collectFillBoundaryEdges(mesh).filter((edge) => selectedEdgeKeys.has(edge.key));
+
+  if (boundaryEdges.length !== selectedEdgeKeys.size || boundaryEdges.length < 3) {
+    return undefined;
+  }
+
+  return fillEditableMeshFaceFromBoundaryEdges(mesh, boundaryEdges, epsilon);
 }
 
 export function cutEditableMeshBetweenEdges(
@@ -336,6 +408,41 @@ export function cutEditableMeshFace(
   return createEditableMeshFromPolygons(orientPolygonLoops(nextPolygons));
 }
 
+export function subdivideEditableMeshFace(
+  mesh: EditableMesh,
+  faceId: FaceID,
+  cuts: number
+): EditableMesh | undefined {
+  const targetCuts = Math.max(1, Math.round(cuts));
+  const target = getMeshPolygons(mesh).find((polygon) => polygon.id === faceId);
+
+  if (!target || target.positions.length < 3) {
+    return undefined;
+  }
+
+  const nextPolygons: Array<OrientedEditablePolygon & { vertexIds: VertexID[] }> = getMeshPolygons(mesh)
+    .filter((polygon) => polygon.id !== faceId)
+    .map((polygon) => ({
+      expectedNormal: polygon.normal,
+      id: polygon.id,
+      positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
+      vertexIds: [...polygon.vertexIds]
+    }));
+
+  const boundarySamples = createSubdivisionBoundarySamples(target, targetCuts + 1);
+  const stitchedPolygons = stitchBoundarySubdivisionIntoNeighbors(nextPolygons, target, boundarySamples);
+  const subdividedPolygons =
+    target.positions.length === 4
+      ? buildQuadSubdivisionPolygons(target, boundarySamples, targetCuts + 1)
+      : buildRadialSubdivisionPolygons(target, boundarySamples, targetCuts + 1);
+
+  if (subdividedPolygons.length === 0) {
+    return undefined;
+  }
+
+  return createEditableMeshFromPolygons(orientPolygonLoops([...stitchedPolygons, ...subdividedPolygons]));
+}
+
 export function bevelEditableMeshEdge(
   mesh: EditableMesh,
   edge: [VertexID, VertexID],
@@ -483,13 +590,315 @@ export function bevelEditableMeshEdge(
   ];
 
   for (let index = 0; index < rails.length - 1; index += 1) {
+    const stripPositions = [rails[index][0], rails[index][1], rails[index + 1][1], rails[index + 1][0]];
+
     beveledPolygons.push({
+      expectedNormal: computePolygonNormal(stripPositions),
       id: `${firstFace.id}:bevel:${index}`,
-      positions: [rails[index][0], rails[index][1], rails[index + 1][1], rails[index + 1][0]]
+      positions: stripPositions
     });
   }
 
   return createEditableMeshFromPolygons(orientPolygonLoops(beveledPolygons));
+}
+
+export function bevelEditableMeshEdges(
+  mesh: EditableMesh,
+  edges: Array<[VertexID, VertexID]>,
+  width: number,
+  steps: number,
+  profile: EdgeBevelProfile = "flat",
+  epsilon = 0.0001
+): EditableMesh | undefined {
+  const edgeKeys = Array.from(new Set(edges.map((edge) => makeUndirectedEdgeKey(edge[0], edge[1]))));
+
+  if (edgeKeys.length === 0) {
+    return undefined;
+  }
+
+  if (Math.abs(width) <= epsilon) {
+    return structuredClone(mesh);
+  }
+
+  if (edgeKeys.length === 1) {
+    return bevelEditableMeshEdge(mesh, edges[0], width, steps, profile, epsilon);
+  }
+
+  const polygons = getMeshPolygons(mesh);
+  const edgeData = edgeKeys.map((edgeKey) => {
+    const adjacentFaces = polygons.filter((polygon) =>
+      polygon.vertexIds.some((vertexId, index) => {
+        const nextVertexId = polygon.vertexIds[(index + 1) % polygon.vertexIds.length];
+        return makeUndirectedEdgeKey(vertexId, nextVertexId) === edgeKey;
+      })
+    );
+
+    if (adjacentFaces.length !== 2) {
+      return undefined;
+    }
+
+    const firstFace = adjacentFaces[0];
+    const secondFace = adjacentFaces[1];
+    const firstEdgeIndex = firstFace.vertexIds.findIndex((vertexId, index) => {
+      const nextVertexId = firstFace.vertexIds[(index + 1) % firstFace.vertexIds.length];
+      return makeUndirectedEdgeKey(vertexId, nextVertexId) === edgeKey;
+    });
+    const secondEdgeIndex = secondFace.vertexIds.findIndex((vertexId, index) => {
+      const nextVertexId = secondFace.vertexIds[(index + 1) % secondFace.vertexIds.length];
+      return makeUndirectedEdgeKey(vertexId, nextVertexId) === edgeKey;
+    });
+
+    if (firstEdgeIndex < 0 || secondEdgeIndex < 0) {
+      return undefined;
+    }
+
+    const orientedEdge: [VertexID, VertexID] = [
+      firstFace.vertexIds[firstEdgeIndex],
+      firstFace.vertexIds[(firstEdgeIndex + 1) % firstFace.vertexIds.length]
+    ];
+
+    return {
+      edge: orientedEdge,
+      edgeKey,
+      firstEdgeIndex,
+      firstFace,
+      secondEdgeIndex,
+      secondFace
+    };
+  });
+
+  if (edgeData.some((entry) => !entry)) {
+    return undefined;
+  }
+
+  const selectedEdgeKeys = new Set(edgeKeys);
+  const touchedVertexIds = new Set(edgeData.flatMap((entry) => (entry ? entry.edge : [])));
+  const faceDataById = new Map(
+    polygons.map((polygon) => {
+      const corners = polygon.vertexIds.map((vertexId, index) => {
+        const prevEdgeIndex = (index - 1 + polygon.vertexIds.length) % polygon.vertexIds.length;
+        const nextEdgeIndex = index;
+        const prevSelected = selectedEdgeKeys.has(
+          makeUndirectedEdgeKey(polygon.vertexIds[prevEdgeIndex], polygon.vertexIds[index])
+        );
+        const nextSelected = selectedEdgeKeys.has(
+          makeUndirectedEdgeKey(polygon.vertexIds[index], polygon.vertexIds[(index + 1) % polygon.vertexIds.length])
+        );
+
+        if (!prevSelected && !nextSelected) {
+          return {
+            id: vertexId,
+            position: vec3(
+              polygon.positions[index].x,
+              polygon.positions[index].y,
+              polygon.positions[index].z
+            )
+          };
+        }
+
+        const prevRail =
+          prevSelected
+            ? createOffsetRailForFaceEdge(polygon, prevEdgeIndex, width)
+            : undefined;
+        const nextRail =
+          nextSelected
+            ? createOffsetRailForFaceEdge(polygon, nextEdgeIndex, width)
+            : undefined;
+
+        if ((prevSelected && !prevRail) || (nextSelected && !nextRail)) {
+          return undefined;
+        }
+
+        if (prevRail && nextRail) {
+          return {
+            id: `${polygon.id}:bevel:corner:${vertexId}`,
+            position: intersectBevelRailsOnFace(
+              polygon,
+              prevRail.start,
+              prevRail.end,
+              nextRail.start,
+              nextRail.end
+            )
+          };
+        }
+
+        if (nextRail) {
+          const previousIndex = (index - 1 + polygon.positions.length) % polygon.positions.length;
+
+          return {
+            id: makeBevelBoundaryCornerId(vertexId, polygon.vertexIds[previousIndex]),
+            position: intersectBevelRailsOnFace(
+              polygon,
+              polygon.positions[previousIndex],
+              polygon.positions[index],
+              nextRail.start,
+              nextRail.end
+            )
+          };
+        }
+
+        const nextVertexId = polygon.vertexIds[(index + 1) % polygon.vertexIds.length];
+
+        return {
+          id: makeBevelBoundaryCornerId(vertexId, nextVertexId),
+          position: intersectBevelRailsOnFace(
+            polygon,
+            prevRail!.start,
+            prevRail!.end,
+            polygon.positions[index],
+            polygon.positions[(index + 1) % polygon.positions.length]
+          )
+        };
+      });
+
+      return [
+        polygon.id,
+        corners.some((corner) => !corner)
+          ? undefined
+          : {
+              corners: corners as BevelCorner[],
+              polygon
+            }
+      ] as const;
+    })
+  );
+
+  if (Array.from(faceDataById.values()).some((faceData) => !faceData)) {
+    return undefined;
+  }
+
+  const nextPolygons = Array.from(faceDataById.values()).reduce<Array<OrientedEditablePolygon & { vertexIds?: VertexID[] }>>((collection, faceData) => {
+    if (!faceData) {
+      return collection;
+    }
+
+    const polygon = createOrientedPolygon(
+      faceData.polygon.id,
+      faceData.corners.map((corner) => corner.position),
+      faceData.polygon.normal,
+      faceData.corners.map((corner) => corner.id)
+    );
+
+    if (polygon) {
+      collection.push(polygon);
+    }
+
+    return collection;
+  }, []);
+
+  if (nextPolygons.length !== polygons.length) {
+    return undefined;
+  }
+
+  const nextPolygonById = new Map(nextPolygons.map((polygon) => [polygon.id, polygon] as const));
+  const vertexProfiles = new Map<VertexID, BevelVertexProfile[]>();
+
+  edgeData.forEach((entry, edgeIndex) => {
+    if (!entry) {
+      return;
+    }
+
+    const firstFaceData = faceDataById.get(entry.firstFace.id);
+    const secondFaceData = faceDataById.get(entry.secondFace.id);
+
+    if (!firstFaceData || !secondFaceData) {
+      return;
+    }
+
+    const rails = buildBevelRailsForSelectedEdge(
+      entry.firstFace,
+      entry.firstEdgeIndex,
+      firstFaceData,
+      entry.secondFace,
+      entry.secondEdgeIndex,
+      secondFaceData,
+      steps,
+      profile,
+      epsilon
+    );
+
+    rails.forEach((rail, railIndex) => {
+      if (railIndex === rails.length - 1) {
+        return;
+      }
+
+      const nextRail = rails[railIndex + 1];
+      const polygon = createOrientedPolygon(
+        `${entry.edgeKey}:bevel:${edgeIndex}:${railIndex}`,
+        [rail.start, rail.end, nextRail.end, nextRail.start],
+        normalizeVec3(averageVec3([entry.firstFace.normal, entry.secondFace.normal])),
+        [rail.startId, rail.endId, nextRail.endId, nextRail.startId]
+      );
+
+      if (polygon) {
+        nextPolygons.push(polygon);
+      }
+    });
+
+    registerBevelVertexProfile(vertexProfiles, {
+      edgeDirection: normalizeVec3(
+        subVec3(
+          entry.firstFace.positions[(entry.firstEdgeIndex + 1) % entry.firstFace.positions.length],
+          entry.firstFace.positions[entry.firstEdgeIndex]
+        )
+      ),
+      faceIds: [entry.firstFace.id, entry.secondFace.id],
+      points: rails.map((rail) => ({
+        id: rail.startId,
+        position: vec3(rail.start.x, rail.start.y, rail.start.z)
+      })),
+      vertexId: entry.edge[0]
+    });
+    registerBevelVertexProfile(vertexProfiles, {
+      edgeDirection: normalizeVec3(
+        subVec3(
+          entry.firstFace.positions[entry.firstEdgeIndex],
+          entry.firstFace.positions[(entry.firstEdgeIndex + 1) % entry.firstFace.positions.length]
+        )
+      ),
+      faceIds: [entry.firstFace.id, entry.secondFace.id],
+      points: rails.map((rail) => ({
+        id: rail.endId,
+        position: vec3(rail.end.x, rail.end.y, rail.end.z)
+      })),
+      vertexId: entry.edge[1]
+    });
+  });
+
+  touchedVertexIds.forEach((vertexId) => {
+    const profiles = vertexProfiles.get(vertexId) ?? [];
+
+    if (profiles.length === 0) {
+      return;
+    }
+
+    const incidentFaces = collectOrderedIncidentFacesAtVertex(vertexId, polygons);
+
+    if (profiles.length === 1) {
+      const clippedHostFace = clipEndpointBevelHostFace(vertexId, incidentFaces, profiles[0], nextPolygonById);
+
+      if (clippedHostFace) {
+        const polygonIndex = nextPolygons.findIndex((polygon) => polygon.id === clippedHostFace.id);
+
+        if (polygonIndex >= 0) {
+          nextPolygons[polygonIndex] = clippedHostFace;
+          nextPolygonById.set(clippedHostFace.id, clippedHostFace);
+        }
+      }
+
+      return;
+    }
+
+    if (profiles.length === 2 && weldCollinearBevelProfiles(vertexId, profiles, nextPolygons, nextPolygonById)) {
+      return;
+    }
+
+    createBevelVertexTransitionPolygons(vertexId, incidentFaces, profiles).forEach((polygon) => {
+      nextPolygons.push(polygon);
+    });
+  });
+
+  return createEditableMeshFromPolygons(orientPolygonLoops(nextPolygons));
 }
 
 export function extrudeEditableMeshFace(
@@ -527,10 +936,12 @@ export function extrudeEditableMeshFace(
 
   target.positions.forEach((position, index) => {
     const nextIndex = (index + 1) % target.positions.length;
+    const sidePositions = [position, target.positions[nextIndex], capPositions[nextIndex], capPositions[index]];
 
     extrudedPolygons.push({
+      expectedNormal: computePolygonNormal(sidePositions),
       id: `${target.id}:extrude:side:${index}`,
-      positions: [position, target.positions[nextIndex], capPositions[nextIndex], capPositions[index]]
+      positions: sidePositions
     });
   });
 
@@ -607,6 +1018,12 @@ export function extrudeEditableMeshEdge(
 
       nextPolygons.push(
         {
+          expectedNormal: computePolygonNormal([
+            polygon.positions[polygonEdgeIndex],
+            polygon.positions[polygonNextIndex],
+            localEndExtruded,
+            localStartExtruded
+          ]),
           id: `${polygon.id}:extrude:side:${polygonIndex}`,
           positions: [
             polygon.positions[polygonEdgeIndex],
@@ -628,6 +1045,12 @@ export function extrudeEditableMeshEdge(
   }
 
   nextPolygons.push({
+    expectedNormal: computePolygonNormal([
+      vec3(startPosition.x, startPosition.y, startPosition.z),
+      vec3(endPosition.x, endPosition.y, endPosition.z),
+      vec3(extrudedEnd.x, extrudedEnd.y, extrudedEnd.z),
+      vec3(extrudedStart.x, extrudedStart.y, extrudedStart.z)
+    ]),
     id: `${target.id}:extrude:${edgeKey}`,
     positions: [
       vec3(startPosition.x, startPosition.y, startPosition.z),
@@ -715,10 +1138,89 @@ function getMeshPolygons(mesh: EditableMesh): MeshPolygonData[] {
     .filter((polygon): polygon is MeshPolygonData => Boolean(polygon));
 }
 
+function fillEditableMeshFaceFromBoundaryEdges(
+  mesh: EditableMesh,
+  boundaryEdges: Array<{
+    endId: VertexID;
+    endPosition: Vec3;
+    key: string;
+    startId: VertexID;
+    startPosition: Vec3;
+  }>,
+  epsilon: number
+) {
+  const orderedBoundary = orderBoundaryEdges(boundaryEdges);
+
+  if (!orderedBoundary || orderedBoundary.length < 3) {
+    return undefined;
+  }
+
+  const orderedPositions = orderedBoundary.map((edge) => edge.startPosition);
+  const fillNormal = computePolygonNormal(orderedPositions);
+
+  if (lengthVec3(fillNormal) <= epsilon) {
+    return undefined;
+  }
+
+  const nextPolygons: OrientedEditablePolygon[] = getMeshPolygons(mesh).map((polygon) => ({
+    expectedNormal: polygon.normal,
+    id: polygon.id,
+    positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
+    vertexIds: [...polygon.vertexIds]
+  }));
+  const faceId = `face:fill:${orderedBoundary.map((edge) => edge.key).join("|")}`;
+
+  nextPolygons.push({
+    expectedNormal: fillNormal,
+    id: faceId,
+    positions: orderedPositions.map((position) => vec3(position.x, position.y, position.z)),
+    vertexIds: orderedBoundary.map((edge) => edge.startId)
+  });
+
+  return createEditableMeshFromPolygons(orientPolygonLoops(nextPolygons));
+}
+
+function collectFillBoundaryEdges(mesh: EditableMesh) {
+  const polygons = getMeshPolygons(mesh);
+  const edgeCounts = polygons.reduce<Map<string, number>>((counts, polygon) => {
+    polygon.vertexIds.forEach((vertexId, index) => {
+      const nextVertexId = polygon.vertexIds[(index + 1) % polygon.vertexIds.length];
+      const key = makeUndirectedEdgeKey(vertexId, nextVertexId);
+
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+
+    return counts;
+  }, new Map());
+
+  return polygons.flatMap((polygon) =>
+    polygon.vertexIds.flatMap((vertexId, index) => {
+      const nextIndex = (index + 1) % polygon.vertexIds.length;
+      const nextVertexId = polygon.vertexIds[nextIndex];
+      const key = makeUndirectedEdgeKey(vertexId, nextVertexId);
+
+      if ((edgeCounts.get(key) ?? 0) !== 1) {
+        return [];
+      }
+
+      return [
+        {
+          endId: vertexId,
+          endPosition: polygon.positions[index],
+          key,
+          startId: nextVertexId,
+          startPosition: polygon.positions[nextIndex]
+        }
+      ];
+    })
+  );
+}
+
 function orderBoundaryEdges(
   edges: Array<{
     endId: VertexID;
     endPosition: Vec3;
+    key?: string;
     startId: VertexID;
     startPosition: Vec3;
   }>
@@ -761,6 +1263,210 @@ function areAdjacentEdgeIndices(length: number, left: number, right: number) {
 
 function midpoint(left: Vec3, right: Vec3) {
   return vec3((left.x + right.x) * 0.5, (left.y + right.y) * 0.5, (left.z + right.z) * 0.5);
+}
+
+function makeBevelBoundaryCornerId(vertexId: VertexID, neighborId: VertexID) {
+  return `${makeUndirectedEdgeKey(vertexId, neighborId)}:bevel:corner:${vertexId}`;
+}
+
+function createSubdivisionBoundarySamples(polygon: MeshPolygonData, segments: number) {
+  return polygon.vertexIds.map((vertexId, edgeIndex) => {
+    const nextIndex = (edgeIndex + 1) % polygon.vertexIds.length;
+    const edge: [VertexID, VertexID] = [vertexId, polygon.vertexIds[nextIndex]];
+    const points = Array.from({ length: Math.max(0, segments - 1) }, (_, sampleIndex) => {
+      const step = sampleIndex + 1;
+      const t = step / segments;
+
+      return {
+        id: `${polygon.id}:subdiv:edge:${edgeIndex}:${step}`,
+        position: lerpVec3(polygon.positions[edgeIndex], polygon.positions[nextIndex], t)
+      };
+    });
+
+    return {
+      edge,
+      edgeIndex,
+      points
+    };
+  });
+}
+
+function stitchBoundarySubdivisionIntoNeighbors(
+  polygons: Array<OrientedEditablePolygon & { vertexIds: VertexID[] }>,
+  _target: MeshPolygonData,
+  boundarySamples: Array<{
+    edge: [VertexID, VertexID];
+    edgeIndex: number;
+    points: Array<{ id: VertexID; position: Vec3 }>;
+  }>
+) {
+  return boundarySamples.reduce(
+    (currentPolygons, boundary) =>
+      currentPolygons.map((polygon) => insertPointsOnPolygonEdge(polygon, boundary.edge, boundary.points)),
+    polygons
+  );
+}
+
+function buildQuadSubdivisionPolygons(
+  target: MeshPolygonData,
+  boundarySamples: Array<{
+    edge: [VertexID, VertexID];
+    edgeIndex: number;
+    points: Array<{ id: VertexID; position: Vec3 }>;
+  }>,
+  segments: number
+) {
+  const [corner0, corner1, corner2, corner3] = target.positions;
+  const gridPointAt = (column: number, row: number) => {
+    const u = column / segments;
+    const v = row / segments;
+    const bottom = lerpVec3(corner0, corner1, u);
+    const top = lerpVec3(corner3, corner2, u);
+
+    return lerpVec3(bottom, top, v);
+  };
+  const gridVertexIdAt = (column: number, row: number): VertexID => {
+    if (row === 0) {
+      if (column === 0) {
+        return target.vertexIds[0];
+      }
+
+      if (column === segments) {
+        return target.vertexIds[1];
+      }
+
+      return boundarySamples[0].points[column - 1].id;
+    }
+
+    if (column === segments) {
+      if (row === segments) {
+        return target.vertexIds[2];
+      }
+
+      return boundarySamples[1].points[row - 1].id;
+    }
+
+    if (row === segments) {
+      if (column === 0) {
+        return target.vertexIds[3];
+      }
+
+      return boundarySamples[2].points[segments - column - 1].id;
+    }
+
+    if (column === 0) {
+      return boundarySamples[3].points[segments - row - 1].id;
+    }
+
+    return `${target.id}:subdiv:inner:${column}:${row}`;
+  };
+  const polygons: OrientedEditablePolygon[] = [];
+
+  for (let row = 0; row < segments; row += 1) {
+    for (let column = 0; column < segments; column += 1) {
+      polygons.push({
+        expectedNormal: target.normal,
+        id: `${target.id}:subdiv:${column}:${row}`,
+        positions: [
+          gridPointAt(column, row),
+          gridPointAt(column + 1, row),
+          gridPointAt(column + 1, row + 1),
+          gridPointAt(column, row + 1)
+        ],
+        vertexIds: [
+          gridVertexIdAt(column, row),
+          gridVertexIdAt(column + 1, row),
+          gridVertexIdAt(column + 1, row + 1),
+          gridVertexIdAt(column, row + 1)
+        ]
+      });
+    }
+  }
+
+  return polygons;
+}
+
+function buildRadialSubdivisionPolygons(
+  target: MeshPolygonData,
+  boundarySamples: Array<{
+    edge: [VertexID, VertexID];
+    edgeIndex: number;
+    points: Array<{ id: VertexID; position: Vec3 }>;
+  }>,
+  segments: number
+) {
+  const boundaryLoop = buildSubdivisionBoundaryLoop(target, boundarySamples);
+  const rings = Array.from({ length: segments }, (_, ringIndex) => {
+    if (ringIndex === 0) {
+      return {
+        points: boundaryLoop.map((sample) => sample.position),
+        vertexIds: boundaryLoop.map((sample) => sample.id)
+      };
+    }
+
+    const t = 1 - ringIndex / segments;
+
+    return {
+      points: boundaryLoop.map((sample) => lerpVec3(target.center, sample.position, t)),
+      vertexIds: boundaryLoop.map((_, pointIndex) => `${target.id}:subdiv:ring:${ringIndex}:${pointIndex}`)
+    };
+  });
+  const polygons: OrientedEditablePolygon[] = [];
+
+  for (let ringIndex = 0; ringIndex < rings.length - 1; ringIndex += 1) {
+    const outerRing = rings[ringIndex];
+    const innerRing = rings[ringIndex + 1];
+
+    for (let pointIndex = 0; pointIndex < outerRing.points.length; pointIndex += 1) {
+      const nextPointIndex = (pointIndex + 1) % outerRing.points.length;
+
+      polygons.push({
+        expectedNormal: target.normal,
+        id: `${target.id}:subdiv:ring:${ringIndex}:cell:${pointIndex}`,
+        positions: [
+          outerRing.points[pointIndex],
+          outerRing.points[nextPointIndex],
+          innerRing.points[nextPointIndex],
+          innerRing.points[pointIndex]
+        ],
+        vertexIds: [
+          outerRing.vertexIds[pointIndex],
+          outerRing.vertexIds[nextPointIndex],
+          innerRing.vertexIds[nextPointIndex],
+          innerRing.vertexIds[pointIndex]
+        ]
+      });
+    }
+  }
+
+  const innerRing = rings[rings.length - 1];
+
+  polygons.push({
+    expectedNormal: target.normal,
+    id: `${target.id}:subdiv:center`,
+    positions: innerRing.points,
+    vertexIds: innerRing.vertexIds
+  });
+
+  return polygons;
+}
+
+function buildSubdivisionBoundaryLoop(
+  target: MeshPolygonData,
+  boundarySamples: Array<{
+    edge: [VertexID, VertexID];
+    edgeIndex: number;
+    points: Array<{ id: VertexID; position: Vec3 }>;
+  }>
+) {
+  return target.vertexIds.flatMap((vertexId, edgeIndex) => {
+    const vertex = {
+      id: vertexId,
+      position: target.positions[edgeIndex]
+    };
+
+    return [vertex, ...boundarySamples[edgeIndex].points];
+  });
 }
 
 function resolveEditableMeshFaceCut(
@@ -929,12 +1635,663 @@ function ringSlice(points: Vec3[], startIndex: number, endIndex: number) {
 }
 
 function computeInsetDirection(face: MeshPolygonData, edgeCenter: Vec3, axis: Vec3) {
-  const projected = projectOntoPlane(subVec3(face.center, edgeCenter), axis);
-  return normalizeVec3(projected);
+  const perpendicular = normalizeVec3(crossVec3(face.normal, axis));
+  const projectedCenter = projectOntoPlane(subVec3(face.center, edgeCenter), axis);
+
+  if (lengthVec3(perpendicular) <= 0.000001) {
+    return perpendicular;
+  }
+
+  return dotVec3(perpendicular, projectedCenter) >= 0
+    ? perpendicular
+    : scaleVec3(perpendicular, -1);
 }
 
 function projectOntoPlane(vector: Vec3, normal: Vec3) {
   return subVec3(vector, scaleVec3(normal, dotVec3(vector, normal)));
+}
+
+function createOffsetRailForFaceEdge(
+  face: MeshPolygonData,
+  edgeIndex: number,
+  width: number
+) {
+  const nextIndex = (edgeIndex + 1) % face.positions.length;
+  const start = face.positions[edgeIndex];
+  const end = face.positions[nextIndex];
+  const axis = normalizeVec3(subVec3(end, start));
+  const insetDirection = computeInsetDirection(face, averageVec3([start, end]), axis);
+
+  if (lengthVec3(insetDirection) <= 0.000001) {
+    return undefined;
+  }
+
+  const offset = scaleVec3(insetDirection, width);
+
+  return {
+    end: addVec3(end, offset),
+    start: addVec3(start, offset)
+  };
+}
+
+function intersectBevelRailsOnFace(
+  face: MeshPolygonData,
+  firstStart: Vec3,
+  firstEnd: Vec3,
+  secondStart: Vec3,
+  secondEnd: Vec3
+) {
+  const basis = createFacePlaneBasis(face.normal);
+  const firstStart2D = projectFacePoint(firstStart, face.center, basis);
+  const firstEnd2D = projectFacePoint(firstEnd, face.center, basis);
+  const secondStart2D = projectFacePoint(secondStart, face.center, basis);
+  const secondEnd2D = projectFacePoint(secondEnd, face.center, basis);
+  const denominator =
+    (firstStart2D.u - firstEnd2D.u) * (secondStart2D.v - secondEnd2D.v) -
+    (firstStart2D.v - firstEnd2D.v) * (secondStart2D.u - secondEnd2D.u);
+
+  if (Math.abs(denominator) <= 0.000001) {
+    return midpoint(firstEnd, secondStart);
+  }
+
+  const determinantFirst = firstStart2D.u * firstEnd2D.v - firstStart2D.v * firstEnd2D.u;
+  const determinantSecond = secondStart2D.u * secondEnd2D.v - secondStart2D.v * secondEnd2D.u;
+  const u =
+    (determinantFirst * (secondStart2D.u - secondEnd2D.u) -
+      (firstStart2D.u - firstEnd2D.u) * determinantSecond) /
+    denominator;
+  const v =
+    (determinantFirst * (secondStart2D.v - secondEnd2D.v) -
+      (firstStart2D.v - firstEnd2D.v) * determinantSecond) /
+    denominator;
+
+  return addVec3(
+    addVec3(face.center, scaleVec3(basis.u, u)),
+    scaleVec3(basis.v, v)
+  );
+}
+
+function createOrientedPolygon(
+  id: FaceID,
+  positions: Vec3[],
+  expectedNormal?: Vec3,
+  vertexIds?: VertexID[]
+) {
+  const compacted = compactPolygonLoop(positions, vertexIds);
+
+  if (!compacted || compacted.positions.length < 3) {
+    return undefined;
+  }
+
+  return {
+    expectedNormal,
+    id,
+    positions: compacted.positions,
+    vertexIds: compacted.vertexIds
+  };
+}
+
+function compactPolygonLoop(positions: Vec3[], vertexIds?: VertexID[]) {
+  const compactedPositions: Vec3[] = [];
+  const compactedVertexIds: VertexID[] = [];
+
+  positions.forEach((position, index) => {
+    const previous = compactedPositions[compactedPositions.length - 1];
+
+    if (
+      previous &&
+      lengthVec3(subVec3(position, previous)) <= 0.000001
+    ) {
+      return;
+    }
+
+    compactedPositions.push(vec3(position.x, position.y, position.z));
+
+    if (vertexIds) {
+      compactedVertexIds.push(vertexIds[index]);
+    }
+  });
+
+  if (
+    compactedPositions.length > 1 &&
+    lengthVec3(subVec3(compactedPositions[0], compactedPositions[compactedPositions.length - 1])) <= 0.000001
+  ) {
+    compactedPositions.pop();
+    compactedVertexIds.pop();
+  }
+
+  return compactedPositions.length >= 3
+    ? {
+        positions: compactedPositions,
+        vertexIds: vertexIds ? compactedVertexIds : undefined
+      }
+    : undefined;
+}
+
+function buildBevelRailsForSelectedEdge(
+  firstFace: MeshPolygonData,
+  firstEdgeIndex: number,
+  firstFaceData: BevelFaceData,
+  secondFace: MeshPolygonData,
+  secondEdgeIndex: number,
+  secondFaceData: BevelFaceData,
+  steps: number,
+  profile: EdgeBevelProfile,
+  epsilon: number
+) {
+  const stepCount = Math.max(1, Math.round(steps));
+  const railCount = stepCount + 1;
+  const startVertexId = firstFace.vertexIds[firstEdgeIndex];
+  const endVertexId = firstFace.vertexIds[(firstEdgeIndex + 1) % firstFace.vertexIds.length];
+  const firstRail = {
+    end: firstFaceData.corners[(firstEdgeIndex + 1) % firstFaceData.corners.length],
+    start: firstFaceData.corners[firstEdgeIndex]
+  };
+  const secondEdgeStartId = secondFace.vertexIds[secondEdgeIndex];
+  const secondEdgeEndId = secondFace.vertexIds[(secondEdgeIndex + 1) % secondFace.vertexIds.length];
+  const secondMatchesOrientation =
+    secondEdgeStartId === startVertexId && secondEdgeEndId === endVertexId;
+  const secondRail = secondMatchesOrientation
+    ? {
+        end: secondFaceData.corners[(secondEdgeIndex + 1) % secondFaceData.corners.length],
+        start: secondFaceData.corners[secondEdgeIndex]
+      }
+    : {
+        end: secondFaceData.corners[secondEdgeIndex],
+        start: secondFaceData.corners[(secondEdgeIndex + 1) % secondFaceData.corners.length]
+      };
+  const edgeStart = firstFace.positions[firstEdgeIndex];
+  const edgeEnd = firstFace.positions[(firstEdgeIndex + 1) % firstFace.positions.length];
+  const axis = normalizeVec3(subVec3(edgeEnd, edgeStart));
+  const startOffsetA = subVec3(firstRail.start.position, edgeStart);
+  const startOffsetB = subVec3(secondRail.start.position, edgeStart);
+  const endOffsetA = subVec3(firstRail.end.position, edgeEnd);
+  const endOffsetB = subVec3(secondRail.end.position, edgeEnd);
+  const startDirA = normalizeVec3(startOffsetA);
+  const startDirB = normalizeVec3(startOffsetB);
+  const endDirA = normalizeVec3(endOffsetA);
+  const endDirB = normalizeVec3(endOffsetB);
+  const startAngle = Math.atan2(dotVec3(axis, crossVec3(startDirA, startDirB)), dotVec3(startDirA, startDirB));
+  const endAngle = Math.atan2(dotVec3(axis, crossVec3(endDirA, endDirB)), dotVec3(endDirA, endDirB));
+  const startLengthA = lengthVec3(startOffsetA);
+  const startLengthB = lengthVec3(startOffsetB);
+  const endLengthA = lengthVec3(endOffsetA);
+  const endLengthB = lengthVec3(endOffsetB);
+
+  return Array.from({ length: railCount }, (_, index) => {
+    const t = railCount === 1 ? 0 : index / (railCount - 1);
+    const useRound =
+      profile === "round" &&
+      startLengthA > epsilon &&
+      startLengthB > epsilon &&
+      endLengthA > epsilon &&
+      endLengthB > epsilon;
+    const startPosition = useRound
+      ? addVec3(
+          edgeStart,
+          scaleVec3(
+            rotateAroundAxis(startDirA, axis, startAngle * t),
+            startLengthA + (startLengthB - startLengthA) * t
+          )
+        )
+      : lerpVec3(firstRail.start.position, secondRail.start.position, t);
+    const endPosition = useRound
+      ? addVec3(
+          edgeEnd,
+          scaleVec3(
+            rotateAroundAxis(endDirA, axis, endAngle * t),
+            endLengthA + (endLengthB - endLengthA) * t
+          )
+        )
+      : lerpVec3(firstRail.end.position, secondRail.end.position, t);
+
+    return {
+      end: endPosition,
+      endId:
+        index === 0
+          ? firstRail.end.id
+          : index === railCount - 1
+            ? secondRail.end.id
+            : `${makeUndirectedEdgeKey(startVertexId, endVertexId)}:bevel:${index}:end`,
+      start: startPosition,
+      startId:
+        index === 0
+          ? firstRail.start.id
+          : index === railCount - 1
+            ? secondRail.start.id
+            : `${makeUndirectedEdgeKey(startVertexId, endVertexId)}:bevel:${index}:start`
+    };
+  });
+}
+
+function registerBevelVertexProfile(
+  registry: Map<VertexID, BevelVertexProfile[]>,
+  profile: BevelVertexProfile
+) {
+  const profiles = registry.get(profile.vertexId) ?? [];
+
+  profiles.push(profile);
+  registry.set(profile.vertexId, profiles);
+}
+
+function collectOrderedIncidentFacesAtVertex(vertexId: VertexID, polygons: MeshPolygonData[]) {
+  const incidentFaces = polygons.filter((polygon) => polygon.vertexIds.includes(vertexId));
+
+  if (incidentFaces.length <= 1) {
+    return incidentFaces;
+  }
+
+  const vertexPosition = incidentFaces
+    .flatMap((polygon) =>
+      polygon.vertexIds.map((candidateId, index) => ({
+        candidateId,
+        position: polygon.positions[index]
+      }))
+    )
+    .find((entry) => entry.candidateId === vertexId)?.position;
+
+  if (!vertexPosition) {
+    return incidentFaces;
+  }
+
+  const averageNormal = normalizeVec3(averageVec3(incidentFaces.map((polygon) => polygon.normal)));
+  const basis = createFacePlaneBasis(averageNormal);
+
+  return incidentFaces.slice().sort((left, right) => {
+    const leftProjected = projectFacePoint(left.center, vertexPosition, basis);
+    const rightProjected = projectFacePoint(right.center, vertexPosition, basis);
+
+    return Math.atan2(leftProjected.v, leftProjected.u) - Math.atan2(rightProjected.v, rightProjected.u);
+  });
+}
+
+function clipEndpointBevelHostFace(
+  vertexId: VertexID,
+  incidentFaces: MeshPolygonData[],
+  profile: BevelVertexProfile,
+  nextPolygonById: Map<FaceID, OrientedEditablePolygon & { vertexIds?: VertexID[] }>
+) {
+  const boundaryPoints = [profile.points[0], profile.points[profile.points.length - 1]];
+  const hostFace = incidentFaces.find(
+    (face) => face.id !== profile.faceIds[0] && face.id !== profile.faceIds[1]
+  );
+
+  if (!hostFace) {
+    return undefined;
+  }
+
+  const orientedBoundary = orientBevelProfileBoundaryForFace(hostFace, vertexId, boundaryPoints);
+  const polygon = nextPolygonById.get(hostFace.id);
+
+  if (!orientedBoundary || !polygon?.vertexIds) {
+    return undefined;
+  }
+
+  return replacePolygonVertexWithSequence(
+    polygon as OrientedEditablePolygon & { vertexIds: VertexID[] },
+    vertexId,
+    orientedBoundary
+  );
+}
+
+function orientBevelProfileBoundaryForFace(
+  face: MeshPolygonData,
+  vertexId: VertexID,
+  boundaryPoints: BevelProfilePoint[]
+) {
+  const targetIndex = face.vertexIds.indexOf(vertexId);
+
+  if (targetIndex < 0 || boundaryPoints.length < 2) {
+    return undefined;
+  }
+
+  const previousPosition = face.positions[(targetIndex - 1 + face.positions.length) % face.positions.length];
+  const currentPosition = face.positions[targetIndex];
+  const nextPosition = face.positions[(targetIndex + 1) % face.positions.length];
+  const firstOnPrevious = pointLiesOnSegment(boundaryPoints[0].position, previousPosition, currentPosition);
+  const firstOnNext = pointLiesOnSegment(boundaryPoints[0].position, currentPosition, nextPosition);
+  const lastOnPrevious = pointLiesOnSegment(boundaryPoints[boundaryPoints.length - 1].position, previousPosition, currentPosition);
+  const lastOnNext = pointLiesOnSegment(boundaryPoints[boundaryPoints.length - 1].position, currentPosition, nextPosition);
+
+  if (firstOnPrevious && lastOnNext) {
+    return boundaryPoints.map((point) => ({
+      id: point.id,
+      position: vec3(point.position.x, point.position.y, point.position.z)
+    }));
+  }
+
+  if (firstOnNext && lastOnPrevious) {
+    return boundaryPoints.slice().reverse().map((point) => ({
+      id: point.id,
+      position: vec3(point.position.x, point.position.y, point.position.z)
+    }));
+  }
+
+  return undefined;
+}
+
+function weldCollinearBevelProfiles(
+  vertexId: VertexID,
+  profiles: BevelVertexProfile[],
+  nextPolygons: Array<OrientedEditablePolygon & { vertexIds?: VertexID[] }>,
+  nextPolygonById: Map<FaceID, OrientedEditablePolygon & { vertexIds?: VertexID[] }>,
+  epsilon = 0.0001
+) {
+  if (profiles.length !== 2) {
+    return false;
+  }
+
+  const firstPoints = profiles[0].points.map((point) => ({
+    id: point.id,
+    position: vec3(point.position.x, point.position.y, point.position.z)
+  }));
+  const secondPointsForward = profiles[1].points.map((point) => ({
+    id: point.id,
+    position: vec3(point.position.x, point.position.y, point.position.z)
+  }));
+  const secondPointsReverse = profiles[1].points.slice().reverse().map((point) => ({
+    id: point.id,
+    position: vec3(point.position.x, point.position.y, point.position.z)
+  }));
+  const forwardAlignment = measureProfileAlignment(firstPoints, secondPointsForward);
+  const reverseAlignment = measureProfileAlignment(firstPoints, secondPointsReverse);
+  const secondPoints =
+    forwardAlignment.totalDistance <= reverseAlignment.totalDistance
+      ? secondPointsForward
+      : secondPointsReverse;
+  const alignment =
+    forwardAlignment.totalDistance <= reverseAlignment.totalDistance
+      ? forwardAlignment
+      : reverseAlignment;
+
+  if (firstPoints.length !== secondPoints.length) {
+    return false;
+  }
+
+  const profileSpan = Math.max(
+    firstPoints.length > 1
+      ? lengthVec3(subVec3(firstPoints[0].position, firstPoints[firstPoints.length - 1].position))
+      : 0,
+    secondPoints.length > 1
+      ? lengthVec3(subVec3(secondPoints[0].position, secondPoints[secondPoints.length - 1].position))
+      : 0,
+    epsilon
+  );
+
+  if (
+    alignment.maxDistance > Math.max(epsilon * 20, profileSpan * 0.35) &&
+    dotVec3(profiles[0].edgeDirection, profiles[1].edgeDirection) > -0.5
+  ) {
+    return false;
+  }
+
+  const replacements = new Map<VertexID, BevelProfilePoint>();
+
+  firstPoints.forEach((point, index) => {
+    const otherPoint = secondPoints[index];
+    const canonicalId = `${vertexId}:bevel:chain:${index}`;
+    const canonicalPosition = midpoint(point.position, otherPoint.position);
+
+    replacements.set(point.id, {
+      id: canonicalId,
+      position: canonicalPosition
+    });
+    replacements.set(otherPoint.id, {
+      id: canonicalId,
+      position: canonicalPosition
+    });
+  });
+
+  if (replacements.size === 0) {
+    return false;
+  }
+
+  nextPolygons.forEach((polygon, polygonIndex) => {
+    if (!polygon.vertexIds) {
+      return;
+    }
+
+    let changed = false;
+    const positions = polygon.positions.map((position) => vec3(position.x, position.y, position.z));
+    const vertexIds = [...polygon.vertexIds];
+
+    vertexIds.forEach((vertexId, index) => {
+      const replacement = replacements.get(vertexId);
+
+      if (!replacement) {
+        return;
+      }
+
+      changed = true;
+      vertexIds[index] = replacement.id;
+      positions[index] = vec3(
+        replacement.position.x,
+        replacement.position.y,
+        replacement.position.z
+      );
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    const nextPolygon = {
+      expectedNormal: polygon.expectedNormal,
+      id: polygon.id,
+      positions,
+      vertexIds
+    };
+
+    nextPolygons[polygonIndex] = nextPolygon;
+    nextPolygonById.set(nextPolygon.id, nextPolygon);
+  });
+
+  return true;
+}
+
+function measureProfileAlignmentDistance(left: BevelProfilePoint[], right: BevelProfilePoint[]) {
+  return measureProfileAlignment(left, right).totalDistance;
+}
+
+function measureProfileAlignment(left: BevelProfilePoint[], right: BevelProfilePoint[]) {
+  if (left.length !== right.length) {
+    return {
+      maxDistance: Number.POSITIVE_INFINITY,
+      totalDistance: Number.POSITIVE_INFINITY
+    };
+  }
+
+  return left.reduce(
+    (result, point, index) => {
+      const distance = lengthVec3(subVec3(point.position, right[index].position));
+
+      return {
+        maxDistance: Math.max(result.maxDistance, distance),
+        totalDistance: result.totalDistance + distance
+      };
+    },
+    {
+      maxDistance: 0,
+      totalDistance: 0
+    }
+  );
+}
+
+function createBevelVertexTransitionPolygons(
+  vertexId: VertexID,
+  incidentFaces: MeshPolygonData[],
+  profiles: BevelVertexProfile[]
+) {
+  if (incidentFaces.length === 0 || profiles.length < 2) {
+    return [];
+  }
+
+  const vertexPosition = incidentFaces
+    .flatMap((polygon) =>
+      polygon.vertexIds.map((candidateId, index) => ({
+        candidateId,
+        position: polygon.positions[index]
+      }))
+    )
+    .find((entry) => entry.candidateId === vertexId)?.position;
+
+  if (!vertexPosition) {
+    return [];
+  }
+
+  const averageNormal = normalizeVec3(averageVec3(incidentFaces.map((polygon) => polygon.normal)));
+  const faceIndexById = new Map(incidentFaces.map((face, index) => [face.id, index]));
+  const orderedProfiles = profiles
+    .map((profile) =>
+      orientBevelVertexProfile(profile, faceIndexById, incidentFaces.length, vertexPosition, averageNormal)
+    )
+    .sort((left, right) => left.sortKey - right.sortKey);
+  const polygons: OrientedEditablePolygon[] = [];
+
+  for (let profileIndex = 0; profileIndex < orderedProfiles.length - 1; profileIndex += 1) {
+    const currentProfile = compactBevelProfilePoints(orderedProfiles[profileIndex].points);
+    const nextProfile = compactBevelProfilePoints(orderedProfiles[profileIndex + 1].points);
+    const stepCount = Math.min(currentProfile.length, nextProfile.length);
+
+    if (stepCount < 2) {
+      continue;
+    }
+
+    for (let stepIndex = 0; stepIndex < stepCount - 1; stepIndex += 1) {
+      const firstTriangle = createOrientedPolygon(
+        `${vertexId}:bevel:corner:${profileIndex}:${stepIndex}:a`,
+        [
+          currentProfile[stepIndex].position,
+          currentProfile[stepIndex + 1].position,
+          nextProfile[stepIndex].position
+        ],
+        averageNormal,
+        [
+          currentProfile[stepIndex].id,
+          currentProfile[stepIndex + 1].id,
+          nextProfile[stepIndex].id
+        ]
+      );
+      const secondTriangle = createOrientedPolygon(
+        `${vertexId}:bevel:corner:${profileIndex}:${stepIndex}:b`,
+        [
+          currentProfile[stepIndex + 1].position,
+          nextProfile[stepIndex + 1].position,
+          nextProfile[stepIndex].position
+        ],
+        averageNormal,
+        [
+          currentProfile[stepIndex + 1].id,
+          nextProfile[stepIndex + 1].id,
+          nextProfile[stepIndex].id
+        ]
+      );
+
+      if (firstTriangle) {
+        polygons.push(firstTriangle);
+      }
+
+      if (secondTriangle) {
+        polygons.push(secondTriangle);
+      }
+    }
+  }
+
+  return polygons;
+}
+
+function orientBevelVertexProfile(
+  profile: BevelVertexProfile,
+  faceIndexById: Map<FaceID, number>,
+  faceCount: number,
+  vertexPosition: Vec3,
+  averageNormal: Vec3
+) {
+  const firstFaceIndex = faceIndexById.get(profile.faceIds[0]);
+  const secondFaceIndex = faceIndexById.get(profile.faceIds[1]);
+
+  if (firstFaceIndex !== undefined && secondFaceIndex !== undefined) {
+    if ((firstFaceIndex + 1) % faceCount === secondFaceIndex) {
+      return {
+        points: profile.points.map((point) => ({
+          id: point.id,
+          position: vec3(point.position.x, point.position.y, point.position.z)
+        })),
+        sortKey: firstFaceIndex
+      };
+    }
+
+    if ((secondFaceIndex + 1) % faceCount === firstFaceIndex) {
+      return {
+        points: profile.points.slice().reverse().map((point) => ({
+          id: point.id,
+          position: vec3(point.position.x, point.position.y, point.position.z)
+        })),
+        sortKey: secondFaceIndex
+      };
+    }
+  }
+
+  const basis = createFacePlaneBasis(averageNormal);
+  const midpoint = averageVec3(profile.points.map((point) => point.position));
+  const projected = projectFacePoint(midpoint, vertexPosition, basis);
+
+  return {
+    points: profile.points.map((point) => ({
+      id: point.id,
+      position: vec3(point.position.x, point.position.y, point.position.z)
+    })),
+    sortKey: Math.atan2(projected.v, projected.u)
+  };
+}
+
+function compactBevelProfilePoints(points: BevelProfilePoint[]) {
+  const compacted: BevelProfilePoint[] = [];
+
+  points.forEach((point) => {
+    const previous = compacted[compacted.length - 1];
+
+    if (previous && sameBevelProfilePoint(previous, point)) {
+      return;
+    }
+
+    compacted.push({
+      id: point.id,
+      position: vec3(point.position.x, point.position.y, point.position.z)
+    });
+  });
+
+  if (compacted.length > 1 && sameBevelProfilePoint(compacted[0], compacted[compacted.length - 1])) {
+    compacted.pop();
+  }
+
+  return compacted;
+}
+
+function sameBevelProfilePoint(left: BevelProfilePoint, right: BevelProfilePoint) {
+  return (
+    left.id === right.id ||
+    lengthVec3(subVec3(left.position, right.position)) <= 0.000001
+  );
+}
+
+function pointLiesOnSegment(point: Vec3, start: Vec3, end: Vec3, epsilon = 0.0001) {
+  const segment = subVec3(end, start);
+  const pointOffset = subVec3(point, start);
+  const segmentLengthSquared = dotVec3(segment, segment);
+
+  if (segmentLengthSquared <= epsilon * epsilon) {
+    return lengthVec3(subVec3(point, start)) <= epsilon;
+  }
+
+  const t = dotVec3(pointOffset, segment) / segmentLengthSquared;
+
+  if (t < -epsilon || t > 1 + epsilon) {
+    return false;
+  }
+
+  const closestPoint = addVec3(start, scaleVec3(segment, Math.max(0, Math.min(1, t))));
+  return lengthVec3(subVec3(point, closestPoint)) <= epsilon;
 }
 
 function replacePolygonEdge(
@@ -963,32 +2320,43 @@ function replacePolygonEdge(
   };
 }
 
-function insertPointOnPolygonEdge(
-  polygon: MeshPolygonData,
-  edge: [VertexID, VertexID],
-  insertedPoint: Vec3
-): EditableMeshPolygon & { id: FaceID } {
-  const edgeIndex = findEdgeIndex(polygon.vertexIds, edge);
+function replacePolygonVertexWithSequence(
+  polygon: OrientedEditablePolygon & { vertexIds: VertexID[] },
+  targetVertexId: VertexID,
+  replacementPoints: BevelProfilePoint[]
+) {
+  const targetIndex = polygon.vertexIds.indexOf(targetVertexId);
 
-  if (edgeIndex < 0) {
+  if (targetIndex < 0 || replacementPoints.length === 0) {
     return {
+      expectedNormal: polygon.expectedNormal,
       id: polygon.id,
-      positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z))
+      positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
+      vertexIds: [...polygon.vertexIds]
     };
   }
 
-  const positions = polygon.positions.flatMap((position, index) =>
-    index === edgeIndex
-      ? [
-          vec3(position.x, position.y, position.z),
-          vec3(insertedPoint.x, insertedPoint.y, insertedPoint.z)
-        ]
-      : [vec3(position.x, position.y, position.z)]
-  );
+  const positions: Vec3[] = [];
+  const vertexIds: VertexID[] = [];
+
+  polygon.vertexIds.forEach((vertexId, index) => {
+    if (index !== targetIndex) {
+      positions.push(vec3(polygon.positions[index].x, polygon.positions[index].y, polygon.positions[index].z));
+      vertexIds.push(vertexId);
+      return;
+    }
+
+    replacementPoints.forEach((point) => {
+      positions.push(vec3(point.position.x, point.position.y, point.position.z));
+      vertexIds.push(point.id);
+    });
+  });
 
   return {
+    expectedNormal: polygon.expectedNormal,
     id: polygon.id,
-    positions
+    positions,
+    vertexIds
   };
 }
 
@@ -1089,27 +2457,68 @@ function getMeshPolygonWithInsertedPoint(
   edge: [VertexID, VertexID],
   insertedPoint: Vec3
 ): MeshPolygonData {
+  const insertedPolygon = insertPointsOnPolygonEdge(
+    {
+      expectedNormal: polygon.normal,
+      id: polygon.id,
+      positions: polygon.positions,
+      vertexIds: polygon.vertexIds
+    },
+    edge,
+    [
+      {
+        id: `inserted:${polygon.id}:${edge[0]}:${edge[1]}`,
+        position: insertedPoint
+      }
+    ]
+  );
+
+  return {
+    center: averageVec3(insertedPolygon.positions),
+    id: insertedPolygon.id,
+    normal: polygon.normal,
+    positions: insertedPolygon.positions,
+    vertexIds: insertedPolygon.vertexIds ?? polygon.vertexIds
+  };
+}
+
+function insertPointsOnPolygonEdge(
+  polygon: OrientedEditablePolygon & { vertexIds: VertexID[] },
+  edge: [VertexID, VertexID],
+  insertedPoints: Array<{ id: VertexID; position: Vec3 }>
+): OrientedEditablePolygon & { vertexIds: VertexID[] } {
   const edgeIndex = findEdgeIndex(polygon.vertexIds, edge);
 
-  if (edgeIndex < 0) {
-    return polygon;
+  if (edgeIndex < 0 || insertedPoints.length === 0) {
+    return {
+      ...polygon,
+      positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
+      vertexIds: [...polygon.vertexIds]
+    };
   }
 
+  const nextIndex = (edgeIndex + 1) % polygon.vertexIds.length;
+  const sameOrientation =
+    polygon.vertexIds[edgeIndex] === edge[0] && polygon.vertexIds[nextIndex] === edge[1];
+  const orderedInsertions = sameOrientation ? insertedPoints : insertedPoints.slice().reverse();
   const positions: Vec3[] = [];
   const vertexIds: VertexID[] = [];
 
   polygon.vertexIds.forEach((vertexId, index) => {
     vertexIds.push(vertexId);
-    positions.push(polygon.positions[index]);
+    positions.push(vec3(polygon.positions[index].x, polygon.positions[index].y, polygon.positions[index].z));
 
     if (index === edgeIndex) {
-      vertexIds.push(`inserted:${polygon.id}:${index}`);
-      positions.push(insertedPoint);
+      orderedInsertions.forEach((inserted) => {
+        vertexIds.push(inserted.id);
+        positions.push(vec3(inserted.position.x, inserted.position.y, inserted.position.z));
+      });
     }
   });
 
   return {
-    ...polygon,
+    expectedNormal: polygon.expectedNormal,
+    id: polygon.id,
     positions,
     vertexIds
   };

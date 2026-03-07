@@ -62,7 +62,7 @@ export type BevelState = {
   baseMesh: EditableMesh;
   dragDirection: Vec3;
   dragPlane: Plane;
-  edge: [string, string];
+  edges: Array<[string, string]>;
   profile: EdgeBevelProfile;
   previewMesh: EditableMesh;
   startPoint: Vec3;
