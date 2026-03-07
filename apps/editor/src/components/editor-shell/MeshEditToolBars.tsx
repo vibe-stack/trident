@@ -1,6 +1,7 @@
 import type { MeshEditMode } from "@/viewport/editing";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import {
+  ArcEdgeIcon,
   BevelIcon,
   CutMeshIcon,
   DeleteFacesIcon,
@@ -25,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 
 export function MeshEditToolBars({
+  onArc,
   onBevel,
   onDelete,
   meshEditMode,
@@ -44,6 +46,7 @@ export function MeshEditToolBars({
   selectedMesh,
   transformMode
 }: {
+  onArc: () => void;
   onBevel: () => void;
   onDelete: () => void;
   meshEditMode: MeshEditMode;
@@ -79,6 +82,7 @@ export function MeshEditToolBars({
         <MeshBarButton disabled={!selectedMesh} icon={DeflateIcon} onClick={onDeflate} tooltip="Deflate" />
         <MeshBarButton disabled={!selectedMesh} icon={RaiseTopIcon} onClick={onRaiseTop} tooltip="Raise top" />
         <MeshBarButton disabled={!selectedMesh} icon={LowerTopIcon} onClick={onLowerTop} tooltip="Lower top" />
+        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={ArcEdgeIcon} onClick={onArc} shortcut="A" tooltip="Arc" />
         <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={BevelIcon} onClick={onBevel} shortcut="B" tooltip="Bevel" />
       </FloatingPanel>
       <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">

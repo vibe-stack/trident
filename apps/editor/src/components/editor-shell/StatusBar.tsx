@@ -34,7 +34,7 @@ export function StatusBar({
     activeToolLabel === "Brush"
       ? "click anchor / move for base / click lock / move for height / click commit / Esc cancel"
       : activeToolLabel === "Mesh Edit" && meshEditMode === "edge"
-        ? "click select / Shift-drag marquee / K cut / B bevel / drag width / wheel steps / F flat-round"
+        ? "click select / Shift-drag marquee / A arc / drag radius / wheel segments / K cut / B bevel"
         : activeToolLabel === "Mesh Edit" && meshEditMode === "face"
           ? "click select / Shift-drag marquee / Delete faces / M merge / N invert normals"
       : "click select / double-click focus / Shift-drag marquee / empty click clear";

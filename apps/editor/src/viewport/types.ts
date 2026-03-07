@@ -7,6 +7,7 @@ import type { ConstructionPlane, ViewportPaneId, ViewportRenderMode } from "@/vi
 import type { Plane, Vector2 } from "three";
 
 export type MeshEditToolbarAction =
+  | "arc"
   | "bevel"
   | "cut"
   | "delete"
@@ -93,6 +94,17 @@ export type BevelState = {
   startPoint: Vec3;
   steps: number;
   width: number;
+};
+
+export type ArcState = {
+  baseMesh: EditableMesh;
+  dragDirection: Vec3;
+  dragPlane: Plane;
+  edges: Array<[string, string]>;
+  offset: number;
+  previewMesh: EditableMesh;
+  segments: number;
+  startPoint: Vec3;
 };
 
 export type FaceSubdivisionState = {

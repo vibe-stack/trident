@@ -158,6 +158,17 @@ export function BevelIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ArcEdgeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M6 16c2.2-5.2 9.8-5.2 12 0" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <path d="M6 16h12" opacity="0.28" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+      <circle cx="6" cy="16" r="1.7" fill="currentColor" />
+      <circle cx="18" cy="16" r="1.7" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function MergeFacesIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg fill="none" viewBox="0 0 24 24" {...props}>

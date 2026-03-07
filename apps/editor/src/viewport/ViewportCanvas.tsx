@@ -1,5 +1,6 @@
 import { Canvas, type RootState } from "@react-three/fiber";
 import {
+  arcEditableMeshEdges,
   bevelEditableMeshEdges,
   convertBrushToEditableMesh,
   cutEditableMeshBetweenEdges,
@@ -77,6 +78,7 @@ import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import { useEffect, useRef, useState, type PointerEventHandler } from "react";
 import { Camera, Mesh, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
 import type {
+  ArcState,
   BevelState,
   BrushCreateState,
   ExtrudeGestureState,
@@ -128,6 +130,7 @@ export function ViewportCanvas({
   const raycasterRef = useRef(new Raycaster());
   const [brushEditHandleIds, setBrushEditHandleIds] = useState<string[]>([]);
   const [brushCreateState, setBrushCreateState] = useState<BrushCreateState | null>(null);
+  const [arcState, setArcState] = useState<ArcState | null>(null);
   const [bevelState, setBevelState] = useState<BevelState | null>(null);
   const [extrudeState, setExtrudeState] = useState<ExtrudeGestureState | null>(null);
   const [faceCutState, setFaceCutState] = useState<{ faceId: string } | null>(null);
@@ -152,6 +155,7 @@ export function ViewportCanvas({
     extrudeStateRef.current = null;
     setMeshEditSelectionIds([]);
     setBrushEditHandleIds([]);
+    setArcState(null);
     setBevelState(null);
     setFaceCutState(null);
     setFaceSubdivisionState(null);
@@ -491,8 +495,95 @@ export function ViewportCanvas({
 
     onCommitMeshTopology(selectedNode.id, mesh);
     clearSubobjectSelection();
+    setArcState(null);
     setBevelState(null);
     setFaceSubdivisionState(null);
+  };
+
+  const startArcOperation = () => {
+    if (!editableMeshSource || !cameraRef.current || !selectedNode || !pointerPositionRef.current) {
+      return;
+    }
+
+    const selectedEdges = resolveSelectedEditableMeshEdgePairs();
+
+    if (selectedEdges.length === 0) {
+      return;
+    }
+
+    const bounds = viewportRootRef.current?.getBoundingClientRect();
+
+    if (!bounds) {
+      return;
+    }
+
+    const selectedEdgeHandles = selectedEdges.flatMap((selectedEdge) => {
+      const handle = editableMeshHandles.find(
+        (candidate) =>
+          candidate.vertexIds.length === 2 &&
+          makeUndirectedPairKey(candidate.vertexIds as [string, string]) === makeUndirectedPairKey(selectedEdge)
+      );
+
+      return handle?.points && handle.points.length === 2
+        ? [handle as typeof handle & { points: [Vec3, Vec3] }]
+        : [];
+    });
+
+    if (selectedEdgeHandles.length !== selectedEdges.length) {
+      return;
+    }
+
+    const midpoints = selectedEdgeHandles.map((handle) => averageVec3(handle.points!));
+    const anchor = averageVec3(midpoints);
+    const axes = selectedEdgeHandles.map((handle) => normalizeVec3(subVec3(handle.points![1], handle.points![0])));
+    const faceHandles = createMeshEditHandles(editableMeshSource, "face");
+    const faceDirections = selectedEdgeHandles
+      .flatMap((edgeHandle) => {
+        const midpoint = averageVec3(edgeHandle.points!);
+        const axis = normalizeVec3(subVec3(edgeHandle.points![1], edgeHandle.points![0]));
+
+        return faceHandles
+          .filter((handle) => edgeHandle.vertexIds.every((vertexId) => handle.vertexIds.includes(vertexId)))
+          .map((handle) => rejectVec3FromAxis(subVec3(handle.position, midpoint), axis));
+      })
+      .filter((direction) => vec3LengthSquared(direction) > 0.000001);
+    const averageAxis = normalizeVec3(averageVec3(axes));
+    const cameraDirection = cameraRef.current.getWorldDirection(new Vector3());
+    const dragPlane = new Plane().setFromNormalAndCoplanarPoint(
+      cameraDirection.clone().normalize(),
+      new Vector3(anchor.x, anchor.y, anchor.z)
+    );
+    const startPoint =
+      projectPointerToThreePlane(
+        pointerPositionRef.current.x + bounds.left,
+        pointerPositionRef.current.y + bounds.top,
+        bounds,
+        cameraRef.current,
+        raycasterRef.current,
+        dragPlane
+      ) ?? new Vector3(anchor.x, anchor.y, anchor.z);
+    const averagedFaceDirection = rejectVec3FromAxis(
+      normalizeVec3(averageVec3(faceDirections)),
+      vec3(cameraDirection.x, cameraDirection.y, cameraDirection.z)
+    );
+    const fallbackDirection = normalizeVec3(
+      crossVec3(
+        vec3(cameraDirection.x, cameraDirection.y, cameraDirection.z),
+        vec3LengthSquared(averageAxis) > 0.000001 ? averageAxis : vec3(0, 1, 0)
+      )
+    );
+
+    setArcState({
+      baseMesh: structuredClone(editableMeshSource),
+      dragDirection:
+        vec3LengthSquared(averagedFaceDirection) > 0.000001 ? averagedFaceDirection : fallbackDirection,
+      dragPlane,
+      edges: selectedEdges,
+      offset: 0,
+      previewMesh: structuredClone(editableMeshSource),
+      segments: 4,
+      startPoint: vec3(startPoint.x, startPoint.y, startPoint.z)
+    });
   };
 
   const startBevelOperation = () => {
@@ -722,11 +813,17 @@ export function ViewportCanvas({
   };
 
   const runMeshEditToolbarAction = (action: MeshEditToolbarAction) => {
-    if (activeToolId !== "mesh-edit" || !selectedNode || bevelState || extrudeState || faceCutState || faceSubdivisionState) {
+    if (activeToolId !== "mesh-edit" || !selectedNode || arcState || bevelState || extrudeState || faceCutState || faceSubdivisionState) {
       return;
     }
 
     switch (action) {
+      case "arc": {
+        if (meshEditMode === "edge") {
+          startArcOperation();
+        }
+        return;
+      }
       case "bevel": {
         if (meshEditMode === "edge") {
           startBevelOperation();
@@ -824,6 +921,38 @@ export function ViewportCanvas({
 
     runMeshEditToolbarAction(meshEditToolbarAction.kind);
   }, [meshEditToolbarAction?.id]);
+
+  useEffect(() => {
+    const handleWheel = (event: WheelEvent) => {
+      if (!arcState) {
+        return;
+      }
+
+      event.preventDefault();
+      setArcState((current) =>
+        current
+          ? {
+              ...current,
+              previewMesh:
+                arcEditableMeshEdges(
+                  current.baseMesh,
+                  current.edges,
+                  current.offset,
+                  Math.max(2, current.segments + (event.deltaY < 0 ? 1 : -1)),
+                  current.dragDirection
+                ) ?? current.previewMesh,
+              segments: Math.max(2, current.segments + (event.deltaY < 0 ? 1 : -1))
+            }
+          : current
+      );
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, [arcState]);
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
@@ -955,6 +1084,15 @@ export function ViewportCanvas({
         return;
       }
 
+      if (arcState) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setArcState(null);
+          setTransformDragging(false);
+        }
+        return;
+      }
+
       if (bevelState) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -1018,6 +1156,12 @@ export function ViewportCanvas({
         return;
       }
 
+      if (!event.shiftKey && event.key.toLowerCase() === "a" && meshEditMode === "edge") {
+        event.preventDefault();
+        runMeshEditToolbarAction("arc");
+        return;
+      }
+
       if (event.key.toLowerCase() === "b" && meshEditMode === "edge") {
         event.preventDefault();
         runMeshEditToolbarAction("bevel");
@@ -1043,6 +1187,7 @@ export function ViewportCanvas({
     };
   }, [
     activeToolId,
+    arcState,
     bevelState,
     brushEditHandleIds,
     brushEditHandles,
@@ -1058,6 +1203,67 @@ export function ViewportCanvas({
     selectedMeshNode,
     selectedNode
   ]);
+
+  const updateArcPreview = (clientX: number, clientY: number, bounds: DOMRect) => {
+    if (!cameraRef.current || !arcState) {
+      return;
+    }
+
+    const point = projectPointerToThreePlane(
+      clientX,
+      clientY,
+      bounds,
+      cameraRef.current,
+      raycasterRef.current,
+      arcState.dragPlane
+    );
+
+    if (!point) {
+      return;
+    }
+
+    const offset =
+      (point.x - arcState.startPoint.x) * arcState.dragDirection.x +
+      (point.y - arcState.startPoint.y) * arcState.dragDirection.y +
+      (point.z - arcState.startPoint.z) * arcState.dragDirection.z;
+
+    setArcState((currentState) => {
+      if (!currentState) {
+        return currentState;
+      }
+
+      const previewMesh =
+        arcEditableMeshEdges(
+          currentState.baseMesh,
+          currentState.edges,
+          offset,
+          currentState.segments,
+          currentState.dragDirection
+        ) ?? currentState.previewMesh;
+
+      return {
+        ...currentState,
+        offset,
+        previewMesh
+      };
+    });
+  };
+
+  const commitArcPreview = () => {
+    if (!arcState) {
+      return;
+    }
+
+    if (Math.abs(arcState.offset) <= 0.0001) {
+      setArcState(null);
+      setTransformDragging(false);
+      return;
+    }
+
+    setArcState(null);
+    setTransformDragging(false);
+    commitMeshTopology(arcState.previewMesh);
+  };
 
   const updateBevelPreview = (clientX: number, clientY: number, bounds: DOMRect) => {
     if (!cameraRef.current || !bevelState) {
@@ -1491,7 +1697,7 @@ export function ViewportCanvas({
         ? new Vector2(event.clientX - bounds.left, event.clientY - bounds.top)
         : null;
 
-    if (extrudeState || bevelState || faceCutState || faceSubdivisionState) {
+    if (extrudeState || arcState || bevelState || faceCutState || faceSubdivisionState) {
       return;
     }
 
@@ -1513,6 +1719,11 @@ export function ViewportCanvas({
 
     if (extrudeState) {
       updateExtrudePreview(event.clientX, event.clientY, bounds);
+      return;
+    }
+
+    if (arcState) {
+      updateArcPreview(event.clientX, event.clientY, bounds);
       return;
     }
 
@@ -1562,6 +1773,13 @@ export function ViewportCanvas({
     if (extrudeState) {
       if (event.button === 0) {
         commitExtrudePreview();
+      }
+      return;
+    }
+
+    if (arcState) {
+      if (event.button === 0) {
+        commitArcPreview();
       }
       return;
     }
@@ -1709,6 +1927,7 @@ export function ViewportCanvas({
           if (
             activeToolId === "brush" ||
             extrudeState ||
+            arcState ||
             bevelState ||
             faceCutState ||
             faceSubdivisionState ||
@@ -1763,7 +1982,7 @@ export function ViewportCanvas({
         <ScenePreview
           hiddenNodeIds={
             selectedNode &&
-            (bevelState || extrudeState?.kind === "brush-mesh" || (extrudeState?.kind === "mesh" && extrudeState.handle.kind === "edge"))
+            (arcState || bevelState || extrudeState?.kind === "brush-mesh" || (extrudeState?.kind === "mesh" && extrudeState.handle.kind === "edge"))
               ? [selectedNode.id]
               : []
           }
@@ -1775,6 +1994,7 @@ export function ViewportCanvas({
           renderScene={renderScene}
           selectedNodeIds={selectedNodeIds}
         />
+        {isActiveViewport && arcState && selectedNode ? <EditableMeshPreviewOverlay mesh={arcState.previewMesh} node={selectedNode} /> : null}
         {isActiveViewport && bevelState && selectedNode ? <EditableMeshPreviewOverlay mesh={bevelState.previewMesh} node={selectedNode} /> : null}
         {isActiveViewport && (extrudeState?.kind === "mesh" || extrudeState?.kind === "brush-mesh") && selectedNode ? (
           <EditableMeshPreviewOverlay mesh={extrudeState.previewMesh} node={selectedNode} />
@@ -1834,7 +2054,7 @@ export function ViewportCanvas({
             viewport={viewport}
           />
         ) : null}
-        {isActiveViewport && activeToolId === "mesh-edit" && selectedBrushNode && !bevelState && !extrudeState && !faceCutState && !faceSubdivisionState ? (
+        {isActiveViewport && activeToolId === "mesh-edit" && selectedBrushNode && !arcState && !bevelState && !extrudeState && !faceCutState && !faceSubdivisionState ? (
           <BrushEditOverlay
             handles={brushEditHandles}
             meshEditMode={meshEditMode}
@@ -1850,7 +2070,7 @@ export function ViewportCanvas({
             viewport={viewport}
           />
         ) : null}
-        {isActiveViewport && activeToolId === "mesh-edit" && selectedMeshNode && !bevelState && !extrudeState && !faceCutState && !faceSubdivisionState ? (
+        {isActiveViewport && activeToolId === "mesh-edit" && selectedMeshNode && !arcState && !bevelState && !extrudeState && !faceCutState && !faceSubdivisionState ? (
           <MeshEditOverlay
             handles={meshEditHandles}
             meshEditMode={meshEditMode}
@@ -1880,7 +2100,7 @@ export function ViewportCanvas({
         ) : null}
       </Canvas>
 
-      {bevelState || extrudeState || faceCutState || faceSubdivisionState ? (
+      {arcState || bevelState || extrudeState || faceCutState || faceSubdivisionState ? (
         <div className="pointer-events-none absolute inset-0 z-20 cursor-crosshair" />
       ) : null}
 

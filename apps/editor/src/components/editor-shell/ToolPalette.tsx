@@ -12,7 +12,7 @@ type ToolPaletteProps = {
   currentSnapSize: GridSnapValue;
   gridSnapValues: readonly GridSnapValue[];
   meshEditMode: MeshEditMode;
-  onMeshEditToolbarAction: (action: "bevel" | "cut" | "delete" | "extrude" | "fill-face" | "invert-normals" | "merge" | "subdivide") => void;
+  onMeshEditToolbarAction: (action: "arc" | "bevel" | "cut" | "delete" | "extrude" | "fill-face" | "invert-normals" | "merge" | "subdivide") => void;
   onInvertSelectionNormals: () => void;
   onLowerTop: () => void;
   onMeshInflate: (factor: number) => void;
@@ -63,6 +63,7 @@ export function ToolPalette({
       </div>
       {activeToolId === "mesh-edit" ? (
         <MeshEditToolBars
+          onArc={() => onMeshEditToolbarAction("arc")}
           onBevel={() => onMeshEditToolbarAction("bevel")}
           onCut={() => onMeshEditToolbarAction("cut")}
           onDelete={() => onMeshEditToolbarAction("delete")}
