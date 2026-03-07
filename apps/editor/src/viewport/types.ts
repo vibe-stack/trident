@@ -80,8 +80,8 @@ export type LastMeshEditAction =
   | {
       kind: "subobject-transform";
       mode: MeshEditMode;
-      rotation: Vec3;
-      scale: Vec3;
+      rotationDelta: Vec3;
+      scaleFactor: Vec3;
       translation: Vec3;
     };
 

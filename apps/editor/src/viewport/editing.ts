@@ -8,8 +8,8 @@ import {
 } from "@web-hammer/geometry-kernel";
 import type { BrushAxis } from "@web-hammer/geometry-kernel";
 import type { Brush, EditableMesh, Face, Plane, Transform, Vec3 } from "@web-hammer/shared";
-import { addVec3, averageVec3, dotVec3, normalizeVec3, scaleVec3, snapValue, vec3 } from "@web-hammer/shared";
-import { Euler, Quaternion, Vector3 } from "three";
+import { addVec3, averageVec3, crossVec3, dotVec3, lengthVec3, normalizeVec3, scaleVec3, snapValue, subVec3, vec3 } from "@web-hammer/shared";
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
 import { ConvexHull } from "three/examples/jsm/math/ConvexHull.js";
 
 export type MeshEditMode = "edge" | "face" | "vertex";
@@ -133,7 +133,30 @@ export function createMeshEditHandles(mesh: EditableMesh, mode: MeshEditMode): M
   }
 
   const verticesById = new Map(mesh.vertices.map((vertex) => [vertex.id, vertex]));
+  const edgeNormals = new Map<string, Vec3[]>();
   const handles = new Map<string, MeshEditHandle>();
+
+  mesh.faces.forEach((face) => {
+    const vertexIds = getFaceVertexIds(mesh, face.id);
+    const faceVertices = vertexIds
+      .map((vertexId) => verticesById.get(vertexId))
+      .filter((vertex): vertex is NonNullable<typeof vertex> => Boolean(vertex));
+
+    if (faceVertices.length < 3) {
+      return;
+    }
+
+    const faceNormal = computePolygonNormal(faceVertices.map((vertex) => vertex.position));
+
+    vertexIds.forEach((vertexId, index) => {
+      const nextVertexId = vertexIds[(index + 1) % vertexIds.length];
+      const key = makeMeshEdgeKey(vertexId, nextVertexId);
+      const normals = edgeNormals.get(key) ?? [];
+
+      normals.push(faceNormal);
+      edgeNormals.set(key, normals);
+    });
+  });
 
   mesh.halfEdges.forEach((halfEdge) => {
     if (!halfEdge.next) {
@@ -162,6 +185,7 @@ export function createMeshEditHandles(mesh: EditableMesh, mode: MeshEditMode): M
 
     handles.set(key, {
       id: key,
+      normal: edgeNormals.has(key) ? normalizeVec3(averageVec3(edgeNormals.get(key)!)) : undefined,
       points: [vec3(first.position.x, first.position.y, first.position.z), vec3(second.position.x, second.position.y, second.position.z)],
       position: averageVec3([first.position, second.position]),
       vertexIds: ids
@@ -184,6 +208,22 @@ export function computeMeshEditSelectionCenter(
   }
 
   return averageVec3(positions);
+}
+
+export function computeMeshEditSelectionOrientation(
+  handles: MeshEditHandle[],
+  selectedIds: string[],
+  mode: MeshEditMode
+): Vec3 | undefined {
+  return computeEditSelectionOrientation(handles.filter((handle) => selectedIds.includes(handle.id)), mode);
+}
+
+export function computeBrushEditSelectionOrientation(
+  handles: BrushEditHandle[],
+  selectedIds: string[],
+  mode: MeshEditMode
+): Vec3 | undefined {
+  return computeEditSelectionOrientation(handles.filter((handle) => selectedIds.includes(handle.id)), mode);
 }
 
 export function applyMeshEditTransform(
@@ -267,6 +307,7 @@ export function createBrushEditHandles(brush: Brush, mode: MeshEditMode): BrushE
 
   if (mode === "edge") {
     const edges = new Map<string, BrushEditHandle>();
+    const edgeNormals = new Map<string, Vec3[]>();
 
     rebuilt.faces.forEach((face) => {
       const faceTopology = topology.faces.get(face.id);
@@ -282,6 +323,10 @@ export function createBrushEditHandles(brush: Brush, mode: MeshEditMode): BrushE
         const vertexIds = [currentStableVertexId, nextStableVertexId].sort();
         const key = vertexIds.join(":");
         const existing = edges.get(key);
+        const normals = edgeNormals.get(key) ?? [];
+
+        normals.push(vec3(face.normal.x, face.normal.y, face.normal.z));
+        edgeNormals.set(key, normals);
 
         if (existing) {
           existing.faceIds = Array.from(new Set([...existing.faceIds, face.id]));
@@ -301,7 +346,12 @@ export function createBrushEditHandles(brush: Brush, mode: MeshEditMode): BrushE
       });
     });
 
-    return Array.from(edges.values());
+    return Array.from(edges.values()).map((handle) => ({
+      ...handle,
+      normal: edgeNormals.has(handle.vertexIds.join(":"))
+        ? normalizeVec3(averageVec3(edgeNormals.get(handle.vertexIds.join(":"))!))
+        : undefined
+    }));
   }
 
   return Array.from(topology.vertices.values()).map((vertex) => ({
@@ -377,63 +427,99 @@ export function createMeshExtrudeHandles(mesh: EditableMesh): MeshExtrudeHandle[
   return [...faceExtrudeHandles, ...edgeHandles];
 }
 
-export function collectMeshEdgeLoop(mesh: EditableMesh, edge: [string, string]) {
-  const facesById = new Map(mesh.faces.map((face) => [face.id, getFaceVertexIds(mesh, face.id)]));
-  const visited = new Set<string>();
-  const loop: Array<[string, string]> = [];
-  const adjacentFaces = Array.from(facesById.entries())
-    .filter(([, vertexIds]) => findLoopEdgeIndex(vertexIds, edge) >= 0)
-    .map(([faceId]) => faceId);
+export function collectMeshEdgeLoop(mesh: EditableMesh, edge: [string, string], clickPoint?: Vec3) {
+  const verticesById = new Map(mesh.vertices.map((vertex) => [vertex.id, vertex]));
+  const facesById = new Map(
+    mesh.faces.map((face) => {
+      const vertexIds = getFaceVertexIds(mesh, face.id);
+      const positions = vertexIds
+        .map((vertexId) => verticesById.get(vertexId))
+        .filter((vertex): vertex is NonNullable<typeof vertex> => Boolean(vertex))
+        .map((vertex) => vertex.position);
 
-  const visitEdge = (candidate: [string, string]) => {
-    const key = makeMeshEdgeKey(candidate[0], candidate[1]);
+      return [
+        face.id,
+        {
+          center: averageVec3(positions),
+          normal: computePolygonNormal(positions),
+          vertexIds
+        }
+      ] as const;
+    })
+  );
+  const edgesByKey = new Map<string, { faceIds: string[]; vertexIds: [string, string] }>();
+  const edgesByVertex = new Map<string, Set<string>>();
 
-    if (visited.has(key)) {
-      return false;
-    }
+  facesById.forEach((face, faceId) => {
+    face.vertexIds.forEach((vertexId, index) => {
+      const nextVertexId = face.vertexIds[(index + 1) % face.vertexIds.length];
+      const key = makeMeshEdgeKey(vertexId, nextVertexId);
+      const entry = edgesByKey.get(key);
 
-    visited.add(key);
-    loop.push(candidate[0] < candidate[1] ? candidate : [candidate[1], candidate[0]]);
-    return true;
-  };
+      if (entry) {
+        entry.faceIds = Array.from(new Set([...entry.faceIds, faceId]));
+      } else {
+        edgesByKey.set(key, {
+          faceIds: [faceId],
+          vertexIds: vertexId < nextVertexId ? [vertexId, nextVertexId] : [nextVertexId, vertexId]
+        });
+      }
 
-  const traverse = (faceId: string, incomingEdge: [string, string]) => {
-    const vertexIds = facesById.get(faceId);
-
-    if (!vertexIds || vertexIds.length < 4 || vertexIds.length % 2 !== 0) {
-      return;
-    }
-
-    const edgeIndex = findLoopEdgeIndex(vertexIds, incomingEdge);
-
-    if (edgeIndex < 0) {
-      return;
-    }
-
-    const oppositeIndex = (edgeIndex + vertexIds.length / 2) % vertexIds.length;
-    const oppositeEdge: [string, string] = [
-      vertexIds[oppositeIndex],
-      vertexIds[(oppositeIndex + 1) % vertexIds.length]
-    ];
-
-    if (!visitEdge(oppositeEdge)) {
-      return;
-    }
-
-    const nextFaceId = Array.from(facesById.entries()).find(
-      ([candidateFaceId, candidateVertexIds]) =>
-        candidateFaceId !== faceId && findLoopEdgeIndex(candidateVertexIds, oppositeEdge) >= 0
-    )?.[0];
-
-    if (nextFaceId) {
-      traverse(nextFaceId, oppositeEdge);
-    }
-  };
-
-  visitEdge(edge);
-  adjacentFaces.forEach((faceId) => {
-    traverse(faceId, edge);
+      registerLoopVertexEdge(edgesByVertex, vertexId, key);
+      registerLoopVertexEdge(edgesByVertex, nextVertexId, key);
+    });
   });
+
+  const startKey = makeMeshEdgeKey(edge[0], edge[1]);
+  const startEdge = edgesByKey.get(startKey);
+
+  if (!startEdge) {
+    return [edge[0] < edge[1] ? edge : [edge[1], edge[0]]];
+  }
+
+  const preferredFaceId = resolvePreferredMeshLoopFace(startEdge, clickPoint, facesById, verticesById);
+  const preferredNormal = preferredFaceId ? facesById.get(preferredFaceId)?.normal : undefined;
+  const visited = new Set<string>([startKey]);
+  const loop: Array<[string, string]> = [startEdge.vertexIds];
+
+  const traverse = (vertexId: string, previousVertexId: string) => {
+    let currentEdgeKey = startKey;
+    let currentVertexId = vertexId;
+    let lastVertexId = previousVertexId;
+
+    while (true) {
+      const nextEdgeKey = selectNextMeshLoopEdge(
+        currentEdgeKey,
+        currentVertexId,
+        lastVertexId,
+        preferredNormal,
+        visited,
+        edgesByKey,
+        edgesByVertex,
+        facesById,
+        verticesById
+      );
+
+      if (!nextEdgeKey) {
+        return;
+      }
+
+      visited.add(nextEdgeKey);
+      const nextEdge = edgesByKey.get(nextEdgeKey);
+
+      if (!nextEdge) {
+        return;
+      }
+
+      loop.push(nextEdge.vertexIds);
+      lastVertexId = currentVertexId;
+      currentVertexId = nextEdge.vertexIds[0] === currentVertexId ? nextEdge.vertexIds[1] : nextEdge.vertexIds[0];
+      currentEdgeKey = nextEdgeKey;
+    }
+  };
+
+  traverse(startEdge.vertexIds[0], startEdge.vertexIds[1]);
+  traverse(startEdge.vertexIds[1], startEdge.vertexIds[0]);
 
   return loop;
 }
@@ -794,11 +880,261 @@ function makeMeshEdgeKey(left: string, right: string) {
   return left < right ? `${left}:${right}` : `${right}:${left}`;
 }
 
-function findLoopEdgeIndex(vertexIds: string[], edge: [string, string]) {
-  return vertexIds.findIndex((vertexId, index) => {
-    const nextVertexId = vertexIds[(index + 1) % vertexIds.length];
-    return makeMeshEdgeKey(vertexId, nextVertexId) === makeMeshEdgeKey(edge[0], edge[1]);
-  });
+function computeEditSelectionOrientation(
+  handles: Array<Pick<BrushEditHandle | MeshEditHandle, "normal" | "points">>,
+  mode: MeshEditMode
+) {
+  if (mode === "vertex" || handles.length !== 1) {
+    return undefined;
+  }
+
+  const handle = handles[0];
+
+  if (mode === "face") {
+    return computeFaceSelectionOrientation(handle.normal, handle.points);
+  }
+
+  return computeEdgeSelectionOrientation(handle.normal, handle.points);
+}
+
+function computeFaceSelectionOrientation(normal?: Vec3, points?: Vec3[]) {
+  if (!normal || !points || points.length < 3) {
+    return undefined;
+  }
+
+  const zAxis = normalizeVec3(normal);
+  const xAxis = findLoopTangent(points, zAxis);
+
+  if (lengthVec3(zAxis) <= 0.0001 || lengthVec3(xAxis) <= 0.0001) {
+    return undefined;
+  }
+
+  const yAxis = normalizeVec3(crossVec3(zAxis, xAxis));
+
+  if (lengthVec3(yAxis) <= 0.0001) {
+    return undefined;
+  }
+
+  return rotationFromBasis(normalizeVec3(crossVec3(yAxis, zAxis)), yAxis, zAxis);
+}
+
+function computeEdgeSelectionOrientation(normal?: Vec3, points?: Vec3[]) {
+  if (!points || points.length !== 2) {
+    return undefined;
+  }
+
+  const xAxis = normalizeVec3(subVec3(points[1], points[0]));
+  let zAxis = lengthVec3(xAxis) > 0.0001 && normal ? projectVecOntoPlane(normal, xAxis) : vec3(0, 0, 0);
+
+  if (lengthVec3(zAxis) <= 0.0001) {
+    zAxis = resolvePerpendicularAxis(xAxis);
+  } else {
+    zAxis = normalizeVec3(zAxis);
+  }
+
+  const yAxis = normalizeVec3(crossVec3(zAxis, xAxis));
+
+  if (lengthVec3(xAxis) <= 0.0001 || lengthVec3(yAxis) <= 0.0001 || lengthVec3(zAxis) <= 0.0001) {
+    return undefined;
+  }
+
+  return rotationFromBasis(normalizeVec3(crossVec3(yAxis, zAxis)), yAxis, normalizeVec3(zAxis));
+}
+
+function findLoopTangent(points: Vec3[], planeNormal: Vec3) {
+  let best = vec3(0, 0, 0);
+  let bestLength = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const projected = projectVecOntoPlane(subVec3(next, current), planeNormal);
+    const projectedLength = lengthVec3(projected);
+
+    if (projectedLength <= bestLength) {
+      continue;
+    }
+
+    best = normalizeVec3(projected);
+    bestLength = projectedLength;
+  }
+
+  return bestLength > 0.0001 ? best : resolvePerpendicularAxis(planeNormal);
+}
+
+function rotationFromBasis(xAxis: Vec3, yAxis: Vec3, zAxis: Vec3) {
+  const rotationMatrix = new Matrix4().makeBasis(
+    new Vector3(xAxis.x, xAxis.y, xAxis.z),
+    new Vector3(yAxis.x, yAxis.y, yAxis.z),
+    new Vector3(zAxis.x, zAxis.y, zAxis.z)
+  );
+  const rotation = new Euler().setFromRotationMatrix(rotationMatrix, "XYZ");
+
+  return vec3(rotation.x, rotation.y, rotation.z);
+}
+
+function resolvePerpendicularAxis(axis: Vec3) {
+  const reference = Math.abs(axis.y) < 0.95 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+  let perpendicular = normalizeVec3(crossVec3(reference, axis));
+
+  if (lengthVec3(perpendicular) <= 0.0001) {
+    perpendicular = normalizeVec3(crossVec3(vec3(0, 0, 1), axis));
+  }
+
+  return perpendicular;
+}
+
+function projectVecOntoPlane(vector: Vec3, planeNormal: Vec3) {
+  return subVec3(vector, scaleVec3(planeNormal, dotVec3(vector, planeNormal)));
+}
+
+function registerLoopVertexEdge(edgesByVertex: Map<string, Set<string>>, vertexId: string, edgeKey: string) {
+  const incidentEdges = edgesByVertex.get(vertexId) ?? new Set<string>();
+
+  incidentEdges.add(edgeKey);
+  edgesByVertex.set(vertexId, incidentEdges);
+}
+
+function resolvePreferredMeshLoopFace(
+  edge: { faceIds: string[]; vertexIds: [string, string] },
+  clickPoint: Vec3 | undefined,
+  facesById: Map<string, { center: Vec3; normal: Vec3; vertexIds: string[] }>,
+  verticesById: Map<string, { id: string; position: Vec3 }>
+) {
+  if (edge.faceIds.length <= 1 || !clickPoint) {
+    return edge.faceIds[0];
+  }
+
+  const startVertex = verticesById.get(edge.vertexIds[0]);
+  const endVertex = verticesById.get(edge.vertexIds[1]);
+
+  if (!startVertex || !endVertex) {
+    return edge.faceIds[0];
+  }
+
+  const midpoint = averageVec3([startVertex.position, endVertex.position]);
+  const edgeDirection = normalizeVec3(subVec3(endVertex.position, startVertex.position));
+  const clickDirection = normalizeVec3(projectVecOntoPlane(subVec3(clickPoint, midpoint), edgeDirection));
+
+  if (lengthVec3(clickDirection) <= 0.0001) {
+    return edge.faceIds[0];
+  }
+
+  return edge.faceIds.reduce((bestFaceId, faceId) => {
+    const bestFace = facesById.get(bestFaceId);
+    const candidateFace = facesById.get(faceId);
+
+    if (!candidateFace) {
+      return bestFaceId;
+    }
+
+    if (!bestFace) {
+      return faceId;
+    }
+
+    const bestDirection = normalizeVec3(projectVecOntoPlane(subVec3(bestFace.center, midpoint), edgeDirection));
+    const candidateDirection = normalizeVec3(projectVecOntoPlane(subVec3(candidateFace.center, midpoint), edgeDirection));
+
+    return dotVec3(candidateDirection, clickDirection) > dotVec3(bestDirection, clickDirection)
+      ? faceId
+      : bestFaceId;
+  }, edge.faceIds[0]);
+}
+
+function selectNextMeshLoopEdge(
+  currentEdgeKey: string,
+  currentVertexId: string,
+  previousVertexId: string,
+  preferredNormal: Vec3 | undefined,
+  visited: Set<string>,
+  edgesByKey: Map<string, { faceIds: string[]; vertexIds: [string, string] }>,
+  edgesByVertex: Map<string, Set<string>>,
+  facesById: Map<string, { center: Vec3; normal: Vec3; vertexIds: string[] }>,
+  verticesById: Map<string, { id: string; position: Vec3 }>
+) {
+  const currentEdge = edgesByKey.get(currentEdgeKey);
+  const currentVertex = verticesById.get(currentVertexId);
+  const previousVertex = verticesById.get(previousVertexId);
+
+  if (!currentEdge || !currentVertex || !previousVertex) {
+    return undefined;
+  }
+
+  const continuationDirection = normalizeVec3(subVec3(currentVertex.position, previousVertex.position));
+  const candidates = Array.from(edgesByVertex.get(currentVertexId) ?? [])
+    .filter((edgeKey) => edgeKey !== currentEdgeKey && !visited.has(edgeKey))
+    .map((edgeKey) => {
+      const candidateEdge = edgesByKey.get(edgeKey);
+
+      if (!candidateEdge) {
+        return undefined;
+      }
+
+      const nextVertexId =
+        candidateEdge.vertexIds[0] === currentVertexId ? candidateEdge.vertexIds[1] : candidateEdge.vertexIds[0];
+      const nextVertex = verticesById.get(nextVertexId);
+
+      if (!nextVertex) {
+        return undefined;
+      }
+
+      const candidateDirection = normalizeVec3(subVec3(nextVertex.position, currentVertex.position));
+      const straightScore = dotVec3(candidateDirection, continuationDirection);
+      const sharedFaceIds = currentEdge.faceIds.filter((faceId) => candidateEdge.faceIds.includes(faceId));
+      const sharedFaceScore = preferredNormal
+        ? Math.max(
+            ...sharedFaceIds.map((faceId) => dotVec3(facesById.get(faceId)?.normal ?? vec3(0, 0, 0), preferredNormal)),
+            -1
+          )
+        : 0;
+      const candidateFaceScore = preferredNormal
+        ? Math.max(
+            ...candidateEdge.faceIds.map((faceId) => dotVec3(facesById.get(faceId)?.normal ?? vec3(0, 0, 0), preferredNormal)),
+            -1
+          )
+        : 0;
+
+      return {
+        candidateFaceScore,
+        edgeKey,
+        score: straightScore * 12 + sharedFaceScore * 3 + candidateFaceScore,
+        sharedFaceScore,
+        straightScore
+      };
+    })
+    .filter((candidate): candidate is {
+      candidateFaceScore: number;
+      edgeKey: string;
+      score: number;
+      sharedFaceScore: number;
+      straightScore: number;
+    } => Boolean(candidate))
+    .sort((left, right) => right.score - left.score);
+
+  const bestCandidate = candidates[0];
+
+  if (!bestCandidate) {
+    return undefined;
+  }
+
+  const incidentFaceIds = new Set(
+    Array.from(edgesByVertex.get(currentVertexId) ?? [])
+      .flatMap((edgeKey) => edgesByKey.get(edgeKey)?.faceIds ?? [])
+  );
+
+  if (currentEdge.faceIds.length === 2 && incidentFaceIds.size <= 2 && bestCandidate.straightScore < 0.25) {
+    return undefined;
+  }
+
+  if (
+    bestCandidate.straightScore < 0.25 &&
+    bestCandidate.sharedFaceScore < 0.25 &&
+    bestCandidate.candidateFaceScore < 0.25
+  ) {
+    return undefined;
+  }
+
+  return bestCandidate.edgeKey;
 }
 
 function collectHullPlaneGroups(hull: ConvexHull, epsilon: number) {

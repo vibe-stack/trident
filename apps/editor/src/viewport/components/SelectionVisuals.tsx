@@ -1,3 +1,4 @@
+import { Billboard } from "@react-three/drei";
 import { triangulatePolygon3D, type ReconstructedBrushFace } from "@web-hammer/geometry-kernel";
 import { averageVec3, normalizeVec3, toTuple, vec3, type Vec3 } from "@web-hammer/shared";
 import { useEffect, useMemo } from "react";
@@ -205,16 +206,14 @@ export function MeshEditHandleVisual({
       {mode === "face" && handle.points && handle.points.length >= 3 ? (
         <ClosedPolyline color={selected ? "#93c5fd" : "#38bdf8"} points={handle.points} />
       ) : null}
-      <mesh onClick={onSelect} position={toTuple(handle.position)}>
-        {mode === "vertex" ? <octahedronGeometry args={[selected ? 0.1 : 0.075, 0]} /> : null}
-        {mode === "edge" ? <boxGeometry args={selected ? [0.16, 0.16, 0.16] : [0.12, 0.12, 0.12]} /> : null}
-        {mode === "face" ? <boxGeometry args={selected ? [0.18, 0.18, 0.04] : [0.14, 0.14, 0.03]} /> : null}
-        <meshStandardMaterial
-          color={selected ? "#dbeafe" : mode === "face" ? "#67e8f9" : "#cbd5e1"}
-          emissive={selected ? "#60a5fa" : "#0f172a"}
-          emissiveIntensity={selected ? 0.35 : 0.08}
-        />
-      </mesh>
+      <HandleMarker
+        fillColor={selected ? "#dbeafe" : mode === "face" ? "#67e8f9" : "#cbd5e1"}
+        mode={mode}
+        onSelect={onSelect}
+        outlineColor={selected ? "#60a5fa" : "#0f172a"}
+        position={handle.position}
+        selected={selected}
+      />
     </group>
   );
 }
@@ -241,17 +240,67 @@ export function BrushEditHandleVisual({
       {faceOutline ? (
         <ClosedPolyline color={selected ? "#f8fafc" : "#94a3b8"} points={handle.points!} />
       ) : null}
-      <mesh onClick={onSelect} position={toTuple(handle.position)}>
-        {mode === "vertex" ? <octahedronGeometry args={[selected ? 0.11 : 0.085, 0]} /> : null}
-        {mode === "edge" ? <boxGeometry args={selected ? [0.18, 0.18, 0.18] : [0.14, 0.14, 0.14]} /> : null}
-        {mode === "face" ? <boxGeometry args={selected ? [0.2, 0.2, 0.04] : [0.16, 0.16, 0.03]} /> : null}
-        <meshStandardMaterial
-          color={selected ? "#f8fafc" : "#e2e8f0"}
-          emissive={selected ? "#93c5fd" : "#0f172a"}
-          emissiveIntensity={selected ? 0.24 : 0.06}
-        />
-      </mesh>
+      <HandleMarker
+        fillColor={selected ? "#f8fafc" : "#e2e8f0"}
+        mode={mode}
+        onSelect={onSelect}
+        outlineColor={selected ? "#93c5fd" : "#0f172a"}
+        position={handle.position}
+        selected={selected}
+      />
     </group>
+  );
+}
+
+function HandleMarker({
+  fillColor,
+  mode,
+  onSelect,
+  outlineColor,
+  position,
+  selected
+}: {
+  fillColor: string;
+  mode: MeshEditMode;
+  onSelect: (event: any) => void;
+  outlineColor: string;
+  position: Vec3;
+  selected: boolean;
+}) {
+  const rotationZ = mode === "vertex" ? Math.PI / 4 : 0;
+  const outerSize: [number, number] =
+    mode === "face"
+      ? [selected ? 0.28 : 0.24, selected ? 0.2 : 0.17]
+      : mode === "edge"
+        ? [selected ? 0.22 : 0.18, selected ? 0.22 : 0.18]
+        : [selected ? 0.2 : 0.16, selected ? 0.2 : 0.16];
+  const innerSize: [number, number] =
+    mode === "face"
+      ? [selected ? 0.2 : 0.17, selected ? 0.13 : 0.11]
+      : mode === "edge"
+        ? [selected ? 0.14 : 0.11, selected ? 0.14 : 0.11]
+        : [selected ? 0.12 : 0.095, selected ? 0.12 : 0.095];
+
+  return (
+    <Billboard position={toTuple(position)}>
+      <group onClick={mode === "vertex" ? onSelect : undefined} renderOrder={11}>
+        <mesh rotation={[0, 0, rotationZ]} renderOrder={11}>
+          <planeGeometry args={outerSize} />
+          <meshBasicMaterial
+            color={outlineColor}
+            depthTest={false}
+            depthWrite={false}
+            opacity={selected ? 0.98 : 0.82}
+            toneMapped={false}
+            transparent
+          />
+        </mesh>
+        <mesh position={[0, 0, 0.001]} rotation={[0, 0, rotationZ]} renderOrder={12}>
+          <planeGeometry args={innerSize} />
+          <meshBasicMaterial color={fillColor} depthTest={false} depthWrite={false} toneMapped={false} transparent />
+        </mesh>
+      </group>
+    </Billboard>
   );
 }
 

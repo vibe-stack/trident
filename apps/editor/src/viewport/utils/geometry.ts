@@ -1,5 +1,5 @@
 import { resolveTransformPivot, vec3, type Transform, type Vec3 } from "@web-hammer/shared";
-import { BufferGeometry, Euler, Float32BufferAttribute, Object3D, Vector3 } from "three";
+import { BufferGeometry, Euler, Float32BufferAttribute, Object3D, Quaternion, Vector3 } from "three";
 
 export function createIndexedGeometry(positions: number[], indices?: number[]) {
   const geometry = new BufferGeometry();
@@ -50,4 +50,35 @@ export function rebaseTransformPivot(transform: Transform, nextPivot?: Vec3): Tr
       transform.position.z + offset.z
     )
   };
+}
+
+export function composeTransformRotation(baselineRotation: Vec3, rotationDelta: Vec3): Vec3 {
+  const baselineQuaternion = new Quaternion().setFromEuler(
+    new Euler(baselineRotation.x, baselineRotation.y, baselineRotation.z, "XYZ")
+  );
+  const deltaQuaternion = new Quaternion().setFromEuler(
+    new Euler(rotationDelta.x, rotationDelta.y, rotationDelta.z, "XYZ")
+  );
+  const composed = deltaQuaternion.multiply(baselineQuaternion);
+  const nextRotation = new Euler().setFromQuaternion(composed, "XYZ");
+
+  return vec3(nextRotation.x, nextRotation.y, nextRotation.z);
+}
+
+export function worldPointToNodeLocal(point: Vec3, transform: Transform): Vec3 {
+  const pivot = resolveTransformPivot(transform);
+  const position = new Vector3(transform.position.x, transform.position.y, transform.position.z);
+  const quaternion = new Quaternion().setFromEuler(
+    new Euler(transform.rotation.x, transform.rotation.y, transform.rotation.z, "XYZ")
+  );
+  const local = new Vector3(point.x, point.y, point.z)
+    .sub(position)
+    .applyQuaternion(quaternion.invert());
+
+  local.x /= Math.abs(transform.scale.x) <= 0.0001 ? 1 : transform.scale.x;
+  local.y /= Math.abs(transform.scale.y) <= 0.0001 ? 1 : transform.scale.y;
+  local.z /= Math.abs(transform.scale.z) <= 0.0001 ? 1 : transform.scale.z;
+  local.add(new Vector3(pivot.x, pivot.y, pivot.z));
+
+  return vec3(local.x, local.y, local.z);
 }

@@ -1,13 +1,15 @@
 import { convertBrushToEditableMesh } from "@web-hammer/geometry-kernel";
 import { TransformControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type Brush, type EditableMesh, type GeometryNode, type Transform } from "@web-hammer/shared";
+import { type Brush, type EditableMesh, type GeometryNode, type Transform, type Vec3, vec3 } from "@web-hammer/shared";
 import {
   applyBrushEditTransform,
   collectMeshEdgeLoop,
   applyMeshEditTransform,
   computeBrushEditSelectionCenter,
+  computeBrushEditSelectionOrientation,
   computeMeshEditSelectionCenter,
+  computeMeshEditSelectionOrientation,
   createMeshEditHandles,
   type BrushEditHandle,
   type MeshEditHandle,
@@ -16,7 +18,7 @@ import {
 import type { ViewportCanvasProps } from "@/viewport/types";
 import type { ViewportState } from "@web-hammer/render-pipeline";
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
-import { objectToTransform } from "@/viewport/utils/geometry";
+import { objectToTransform, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { findMatchingBrushEdgeHandleId, findMatchingMeshEdgePair, resolveSubobjectSelection } from "@/viewport/utils/interaction";
 import {
   BrushEditHandleVisual,
@@ -24,7 +26,7 @@ import {
   EditableFaceSelectionHitArea,
   MeshEditHandleVisual
 } from "@/viewport/components/SelectionVisuals";
-import { Object3D } from "three";
+import { Euler, Object3D, Quaternion } from "three";
 import type { LastMeshEditAction } from "@/viewport/types";
 
 export function MeshEditOverlay({
@@ -58,6 +60,11 @@ export function MeshEditOverlay({
     () => computeMeshEditSelectionCenter(handles, selectedHandleIds),
     [handles, selectedHandleIds]
   );
+  const selectionOrientation = useMemo(
+    () => computeMeshEditSelectionOrientation(handles, selectedHandleIds, meshEditMode),
+    [handles, meshEditMode, selectedHandleIds]
+  );
+  const selectionPivot = node.transform.pivot ?? selectionCenter;
 
   useEffect(() => {
     if (baselineMeshRef.current) {
@@ -78,19 +85,26 @@ export function MeshEditOverlay({
     }
 
     if (!baselineMeshRef.current) {
-      controlRef.current.position.set(selectionCenter.x, selectionCenter.y, selectionCenter.z);
-      controlRef.current.rotation.set(0, 0, 0);
+      controlRef.current.position.set(selectionPivot.x, selectionPivot.y, selectionPivot.z);
+      controlRef.current.rotation.set(
+        selectionOrientation?.x ?? 0,
+        selectionOrientation?.y ?? 0,
+        selectionOrientation?.z ?? 0
+      );
       controlRef.current.scale.set(1, 1, 1);
     }
-  }, [selectedHandleIds.length, selectionCenter]);
+  }, [selectedHandleIds.length, selectionOrientation, selectionPivot]);
 
-  const resolveHandleSelection = (handle: MeshEditHandle, event: { altKey: boolean; shiftKey: boolean }) => {
+  const resolveHandleSelection = (handle: MeshEditHandle, event: { altKey: boolean; point?: { x: number; y: number; z: number }; shiftKey: boolean }) => {
     if (meshEditMode !== "edge" || !event.altKey || handle.vertexIds.length !== 2) {
       setSelectedHandleIds(resolveSubobjectSelection(selectedHandleIds, handle.id, event.shiftKey));
       return;
     }
 
-    const loopIds = collectMeshEdgeLoop(node.data, handle.vertexIds as [string, string])
+    const clickPoint = event.point
+      ? worldPointToNodeLocal(vec3(event.point.x, event.point.y, event.point.z), node.transform)
+      : undefined;
+    const loopIds = collectMeshEdgeLoop(node.data, handle.vertexIds as [string, string], clickPoint)
       .map((edge) => handles.find((candidate) => candidate.vertexIds.length === 2 && candidate.vertexIds.every((vertexId) => edge.includes(vertexId)))?.id)
       .filter((id): id is string => Boolean(id));
 
@@ -155,8 +169,12 @@ export function MeshEditOverlay({
               setControlObject(object);
 
               if (object && !baselineMeshRef.current) {
-                object.position.set(selectionCenter.x, selectionCenter.y, selectionCenter.z);
-                object.rotation.set(0, 0, 0);
+                object.position.set(selectionPivot.x, selectionPivot.y, selectionPivot.z);
+                object.rotation.set(
+                  selectionOrientation?.x ?? 0,
+                  selectionOrientation?.y ?? 0,
+                  selectionOrientation?.z ?? 0
+                );
                 object.scale.set(1, 1, 1);
               }
             }}
@@ -184,19 +202,20 @@ export function MeshEditOverlay({
               return;
             }
 
+            const currentTransform = objectToTransform(controlObject);
             const nextMesh = applyMeshEditTransform(
               baselineMeshRef.current,
               meshEditMode,
               selectedHandleIds,
               baselineTransformRef.current,
-              objectToTransform(controlObject)
+              currentTransform
             );
             onUpdateMeshData(node.id, nextMesh, baselineMeshRef.current);
             onCommitTransformAction?.({
               kind: "subobject-transform",
               mode: meshEditMode,
-              rotation: objectToTransform(controlObject).rotation,
-              scale: objectToTransform(controlObject).scale,
+              rotationDelta: resolveRotationDelta(baselineTransformRef.current.rotation, currentTransform.rotation),
+              scaleFactor: resolveScaleFactor(baselineTransformRef.current.scale, currentTransform.scale),
               translation: {
                 x: controlObject.position.x - baselineTransformRef.current.position.x,
                 y: controlObject.position.y - baselineTransformRef.current.position.y,
@@ -222,6 +241,7 @@ export function MeshEditOverlay({
           }}
           rotationSnap={Math.PI / 12}
           scaleSnap={Math.max(viewport.grid.snapSize / 16, 0.125)}
+          space={selectionOrientation && transformMode !== "translate" ? "local" : "world"}
           showX
           showY
           showZ
@@ -264,6 +284,11 @@ export function BrushEditOverlay({
     () => computeBrushEditSelectionCenter(handles, selectedHandleIds),
     [handles, selectedHandleIds]
   );
+  const selectionOrientation = useMemo(
+    () => computeBrushEditSelectionOrientation(handles, selectedHandleIds, meshEditMode),
+    [handles, meshEditMode, selectedHandleIds]
+  );
+  const selectionPivot = node.transform.pivot ?? selectionCenter;
   const editableMesh = useMemo(() => convertBrushToEditableMesh(node.data), [node.data]);
   const editableMeshHandles = useMemo(
     () => (editableMesh ? createMeshEditHandles(editableMesh, "edge") : []),
@@ -289,13 +314,17 @@ export function BrushEditOverlay({
     }
 
     if (!baselineBrushRef.current) {
-      controlRef.current.position.set(selectionCenter.x, selectionCenter.y, selectionCenter.z);
-      controlRef.current.rotation.set(0, 0, 0);
+      controlRef.current.position.set(selectionPivot.x, selectionPivot.y, selectionPivot.z);
+      controlRef.current.rotation.set(
+        selectionOrientation?.x ?? 0,
+        selectionOrientation?.y ?? 0,
+        selectionOrientation?.z ?? 0
+      );
       controlRef.current.scale.set(1, 1, 1);
     }
-  }, [selectedHandleIds.length, selectionCenter]);
+  }, [selectedHandleIds.length, selectionOrientation, selectionPivot]);
 
-  const resolveHandleSelection = (handle: BrushEditHandle, event: { altKey: boolean; shiftKey: boolean }) => {
+  const resolveHandleSelection = (handle: BrushEditHandle, event: { altKey: boolean; point?: { x: number; y: number; z: number }; shiftKey: boolean }) => {
     if (
       meshEditMode !== "edge" ||
       !event.altKey ||
@@ -314,7 +343,10 @@ export function BrushEditOverlay({
       return;
     }
 
-    const loopIds = collectMeshEdgeLoop(editableMesh, edgePair)
+    const clickPoint = event.point
+      ? worldPointToNodeLocal(vec3(event.point.x, event.point.y, event.point.z), node.transform)
+      : undefined;
+    const loopIds = collectMeshEdgeLoop(editableMesh, edgePair, clickPoint)
       .map((edge) =>
         editableMeshHandles.find(
           (candidate) => candidate.vertexIds.length === 2 && candidate.vertexIds.every((vertexId) => edge.includes(vertexId))
@@ -384,8 +416,12 @@ export function BrushEditOverlay({
               setControlObject(object);
 
               if (object && !baselineBrushRef.current) {
-                object.position.set(selectionCenter.x, selectionCenter.y, selectionCenter.z);
-                object.rotation.set(0, 0, 0);
+                object.position.set(selectionPivot.x, selectionPivot.y, selectionPivot.z);
+                object.rotation.set(
+                  selectionOrientation?.x ?? 0,
+                  selectionOrientation?.y ?? 0,
+                  selectionOrientation?.z ?? 0
+                );
                 object.scale.set(1, 1, 1);
               }
             }}
@@ -414,12 +450,13 @@ export function BrushEditOverlay({
               return;
             }
 
+            const currentTransform = objectToTransform(controlObject);
             const nextBrush = applyBrushEditTransform(
               baselineBrushRef.current,
               baselineHandlesRef.current ?? handles,
               selectedHandleIds,
               baselineTransformRef.current,
-              objectToTransform(controlObject),
+              currentTransform,
               viewport.grid.snapSize
             );
 
@@ -428,8 +465,8 @@ export function BrushEditOverlay({
               onCommitTransformAction?.({
                 kind: "subobject-transform",
                 mode: meshEditMode,
-                rotation: objectToTransform(controlObject).rotation,
-                scale: objectToTransform(controlObject).scale,
+                rotationDelta: resolveRotationDelta(baselineTransformRef.current.rotation, currentTransform.rotation),
+                scaleFactor: resolveScaleFactor(baselineTransformRef.current.scale, currentTransform.scale),
                 translation: {
                   x: controlObject.position.x - baselineTransformRef.current.position.x,
                   y: controlObject.position.y - baselineTransformRef.current.position.y,
@@ -467,9 +504,35 @@ export function BrushEditOverlay({
           showZ
           rotationSnap={Math.PI / 12}
           scaleSnap={Math.max(viewport.grid.snapSize / 16, 0.125)}
+          space={selectionOrientation && transformMode !== "translate" ? "local" : "world"}
           translationSnap={viewport.grid.snapSize}
         />
       ) : null}
     </>
   );
+}
+
+function resolveRotationDelta(baselineRotation: Vec3, currentRotation: Vec3) {
+  const baselineQuaternion = new Quaternion().setFromEuler(
+    new Euler(baselineRotation.x, baselineRotation.y, baselineRotation.z, "XYZ")
+  );
+  const currentQuaternion = new Quaternion().setFromEuler(
+    new Euler(currentRotation.x, currentRotation.y, currentRotation.z, "XYZ")
+  );
+  const deltaQuaternion = currentQuaternion.multiply(baselineQuaternion.invert());
+  const deltaRotation = new Euler().setFromQuaternion(deltaQuaternion, "XYZ");
+
+  return vec3(deltaRotation.x, deltaRotation.y, deltaRotation.z);
+}
+
+function resolveScaleFactor(baselineScale: Vec3, currentScale: Vec3) {
+  return vec3(
+    safeDivide(currentScale.x, baselineScale.x),
+    safeDivide(currentScale.y, baselineScale.y),
+    safeDivide(currentScale.z, baselineScale.z)
+  );
+}
+
+function safeDivide(value: number, divisor: number) {
+  return Math.abs(divisor) <= 0.0001 ? 1 : value / divisor;
 }

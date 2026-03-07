@@ -28,7 +28,9 @@ import {
   createBrushEditHandles,
   createBrushExtrudeHandles,
   computeBrushEditSelectionCenter,
+  computeBrushEditSelectionOrientation,
   computeMeshEditSelectionCenter,
+  computeMeshEditSelectionOrientation,
   createMeshEditHandles,
   createMeshExtrudeHandles,
   extrudeBrushHandle
@@ -66,7 +68,7 @@ import {
   projectLocalPointToScreen,
   rectContainsPoint
 } from "@/viewport/utils/screen-space";
-import { rebaseTransformPivot } from "@/viewport/utils/geometry";
+import { composeTransformRotation, rebaseTransformPivot } from "@/viewport/utils/geometry";
 import { useEffect, useRef, useState, type PointerEventHandler } from "react";
 import { Mesh, Raycaster, Vector2, Vector3, type PerspectiveCamera } from "three";
 import type {
@@ -319,17 +321,21 @@ export function ViewportCanvas({
       return;
     }
 
-    const baselinePosition =
-      selectedNode.transform.pivot && (Math.abs(selectedNode.transform.pivot.x) > 0.0001 || Math.abs(selectedNode.transform.pivot.y) > 0.0001 || Math.abs(selectedNode.transform.pivot.z) > 0.0001)
-        ? selectedNode.transform.pivot
-        : selectedMeshNode
-          ? computeMeshEditSelectionCenter(meshEditHandles, meshEditSelectionIds)
-          : selectedBrushNode
-            ? computeBrushEditSelectionCenter(brushEditHandles, brushEditHandleIds)
-            : vec3(0, 0, 0);
+    const baselinePosition = selectedNode.transform.pivot
+      ?? (selectedMeshNode
+        ? computeMeshEditSelectionCenter(meshEditHandles, meshEditSelectionIds)
+        : selectedBrushNode
+          ? computeBrushEditSelectionCenter(brushEditHandles, brushEditHandleIds)
+          : vec3(0, 0, 0));
+    const baselineRotation =
+      selectedMeshNode
+        ? computeMeshEditSelectionOrientation(meshEditHandles, meshEditSelectionIds, meshEditMode)
+        : selectedBrushNode
+          ? computeBrushEditSelectionOrientation(brushEditHandles, brushEditHandleIds, meshEditMode)
+          : undefined;
     const baselineTransform = {
       position: vec3(baselinePosition.x, baselinePosition.y, baselinePosition.z),
-      rotation: vec3(0, 0, 0),
+      rotation: baselineRotation ?? vec3(0, 0, 0),
       scale: vec3(1, 1, 1)
     };
     const currentTransform = {
@@ -338,8 +344,11 @@ export function ViewportCanvas({
         baselinePosition.y + action.translation.y,
         baselinePosition.z + action.translation.z
       ),
-      rotation: vec3(action.rotation.x, action.rotation.y, action.rotation.z),
-      scale: vec3(action.scale.x, action.scale.y, action.scale.z)
+      rotation: composeTransformRotation(
+        baselineTransform.rotation,
+        action.rotationDelta
+      ),
+      scale: vec3(action.scaleFactor.x, action.scaleFactor.y, action.scaleFactor.z)
     };
 
     if (selectedMeshNode && meshEditSelectionIds.length > 0) {
