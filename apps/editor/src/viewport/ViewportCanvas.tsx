@@ -74,6 +74,7 @@ import {
   rectContainsPoint
 } from "@/viewport/utils/screen-space";
 import { composeTransformRotation, rebaseTransformPivot } from "@/viewport/utils/geometry";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import { useEffect, useRef, useState, type PointerEventHandler } from "react";
 import { Mesh, Plane, Raycaster, Vector2, Vector3, type PerspectiveCamera } from "three";
 import type {
@@ -121,6 +122,7 @@ export function ViewportCanvas({
   const [extrudeState, setExtrudeState] = useState<ExtrudeGestureState | null>(null);
   const [faceCutState, setFaceCutState] = useState<{ faceId: string } | null>(null);
   const [faceSubdivisionState, setFaceSubdivisionState] = useState<FaceSubdivisionState | null>(null);
+  const snapSize = resolveViewportSnapSize(viewport);
   const [meshEditSelectionIds, setMeshEditSelectionIds] = useState<string[]>([]);
   const [transformDragging, setTransformDragging] = useState(false);
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
@@ -411,7 +413,7 @@ export function ViewportCanvas({
         brushEditHandleIds,
         baselineTransform,
         currentTransform,
-        viewport.grid.snapSize
+        snapSize
       );
 
       if (nextBrush) {
@@ -1059,8 +1061,8 @@ export function ViewportCanvas({
         point
           .clone()
           .sub(new Vector3(currentExtrudeState.startPoint.x, currentExtrudeState.startPoint.y, currentExtrudeState.startPoint.z))
-          .dot(extrusionNormal) / viewport.grid.snapSize
-      ) * viewport.grid.snapSize
+          .dot(extrusionNormal) / snapSize
+      ) * snapSize
     );
 
     const nextState = buildExtrudePreviewState(currentExtrudeState, amount);
@@ -1238,7 +1240,7 @@ export function ViewportCanvas({
       brushCreateState.startPoint.y,
       brushCreateState.startPoint.z
     );
-    const nextHeight = snapValue(point.clone().sub(startPoint).dot(normal), viewport.grid.snapSize);
+    const nextHeight = snapValue(point.clone().sub(startPoint).dot(normal), snapSize);
 
     setBrushCreateState((currentState) =>
       currentState?.stage === "height" && currentState.height !== nextHeight
@@ -1294,10 +1296,10 @@ export function ViewportCanvas({
         brushCreateState.anchor,
         brushCreateState.basis,
         point,
-        viewport.grid.snapSize
+        snapSize
       );
 
-      if (Math.abs(width) <= viewport.grid.snapSize * 0.5 || Math.abs(depth) <= viewport.grid.snapSize * 0.5) {
+      if (Math.abs(width) <= snapSize * 0.5 || Math.abs(depth) <= snapSize * 0.5) {
         return;
       }
 
@@ -1327,7 +1329,7 @@ export function ViewportCanvas({
         .clone()
         .sub(new Vector3(brushCreateState.startPoint.x, brushCreateState.startPoint.y, brushCreateState.startPoint.z))
         .dot(new Vector3(brushCreateState.basis.normal.x, brushCreateState.basis.normal.y, brushCreateState.basis.normal.z)),
-      viewport.grid.snapSize
+      snapSize
     );
     const placement = buildBrushCreatePlacement({
       ...brushCreateState,
@@ -1612,7 +1614,7 @@ export function ViewportCanvas({
           <ExtrudeAxisGuide node={selectedNode} state={extrudeState} viewport={viewport} />
         ) : null}
         {activeToolId === "brush" && brushCreateState ? (
-          <BrushCreatePreview snapSize={viewport.grid.snapSize} state={brushCreateState} />
+          <BrushCreatePreview snapSize={snapSize} state={brushCreateState} />
         ) : null}
         {activeToolId === "clip" && selectedBrushNode ? (
           <BrushClipOverlay

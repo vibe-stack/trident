@@ -32,6 +32,7 @@ type EditorShellProps = {
   onExtrudeSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   onFocusNode: (nodeId: string) => void;
   onLoadWhmap: () => void;
+  onInvertSelectionNormals: () => void;
   onPlaceEntity: (type: "spawn" | "light") => void;
   onMeshInflate: (factor: number) => void;
   onMirrorSelection: (axis: TransformAxis) => void;
@@ -44,8 +45,11 @@ type EditorShellProps = {
   onSelectAsset: (assetId: string) => void;
   onSelectMaterial: (materialId: string) => void;
   onSelectNodes: (nodeIds: string[]) => void;
+  onSetMeshEditMode: (mode: MeshEditMode) => void;
   onSetRightPanel: (panel: "inspector" | "materials") => void;
+  onSetSnapEnabled: (enabled: boolean) => void;
   onSetSnapSize: (snapSize: GridSnapValue) => void;
+  onSetTransformMode: (mode: "rotate" | "scale" | "translate") => void;
   onSetToolId: (toolId: ToolId) => void;
   onSplitBrushAtCoordinate: (nodeId: string, axis: TransformAxis, coordinate: number) => void;
   onPreviewNodeTransform: (nodeId: string, transform: Transform) => void;
@@ -57,6 +61,7 @@ type EditorShellProps = {
   renderScene: DerivedRenderScene;
   selectedAssetId: string;
   selectedMaterialId: string;
+  snapEnabled: boolean;
   transformMode: "rotate" | "scale" | "translate";
   tools: Array<{ id: ToolId; label: string }>;
   viewport: ViewportState;
@@ -83,6 +88,7 @@ export function EditorShell({
   onExtrudeSelection,
   onFocusNode,
   onLoadWhmap,
+  onInvertSelectionNormals,
   onPlaceEntity,
   onMeshInflate,
   onMirrorSelection,
@@ -95,8 +101,11 @@ export function EditorShell({
   onSelectAsset,
   onSelectMaterial,
   onSelectNodes,
+  onSetMeshEditMode,
   onSetRightPanel,
+  onSetSnapEnabled,
   onSetSnapSize,
+  onSetTransformMode,
   onSetToolId,
   onSplitBrushAtCoordinate,
   onPreviewNodeTransform,
@@ -108,6 +117,7 @@ export function EditorShell({
   renderScene,
   selectedAssetId,
   selectedMaterialId,
+  snapEnabled,
   transformMode,
   tools,
   viewport
@@ -118,6 +128,8 @@ export function EditorShell({
   const selectedNodeId = editor.selection.ids[0];
   const selectedNode = selectedNodeId ? editor.scene.getNode(selectedNodeId) : undefined;
   const activeToolLabel = tools.find((tool) => tool.id === activeToolId)?.label ?? activeToolId;
+  const selectedIsGeometry = selectedNode?.kind === "brush" || selectedNode?.kind === "mesh";
+  const selectedIsMesh = selectedNode?.kind === "mesh";
 
   return (
     <div className="flex h-screen flex-col bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.08),transparent_24%),linear-gradient(180deg,#08100d_0%,#050807_100%)] text-foreground">
@@ -171,8 +183,20 @@ export function EditorShell({
           activeToolId={activeToolId}
           currentSnapSize={viewport.grid.snapSize}
           gridSnapValues={gridSnapValues}
+          meshEditMode={meshEditMode}
+          onInvertSelectionNormals={onInvertSelectionNormals}
+          onLowerTop={() => onExtrudeSelection("y", -1)}
+          onMeshInflate={onMeshInflate}
+          onRaiseTop={() => onExtrudeSelection("y", 1)}
+          onSetMeshEditMode={onSetMeshEditMode}
+          onSetSnapEnabled={onSetSnapEnabled}
           onSetSnapSize={onSetSnapSize}
+          onSetTransformMode={onSetTransformMode}
           onSetToolId={onSetToolId}
+          selectedGeometry={selectedIsGeometry}
+          selectedMesh={selectedIsMesh}
+          snapEnabled={snapEnabled}
+          transformMode={transformMode}
           tools={tools}
         />
 

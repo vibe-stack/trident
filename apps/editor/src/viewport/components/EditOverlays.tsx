@@ -21,6 +21,7 @@ import type { ViewportState } from "@web-hammer/render-pipeline";
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { objectToTransform, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { findMatchingBrushEdgeHandleId, findMatchingMeshEdgePair, resolveSubobjectSelection } from "@/viewport/utils/interaction";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import {
   BrushEditHandleMarker,
   BrushEditHandleVisual,
@@ -77,6 +78,7 @@ export function MeshEditOverlay({
     () => resolveMeshEdgeLabels(edgeHandles, faceHandles, meshEditMode, node.transform, selectedHandleIds),
     [edgeHandles, faceHandles, meshEditMode, node.transform, selectedHandleIds]
   );
+  const snapSize = resolveViewportSnapSize(viewport);
   const selectionCenter = useMemo(
     () => computeMeshEditSelectionCenter(handles, selectedHandleIds),
     [handles, selectedHandleIds]
@@ -297,12 +299,12 @@ export function MeshEditOverlay({
             onPreviewMeshData(node.id, nextMesh);
           }}
           rotationSnap={Math.PI / 12}
-          scaleSnap={Math.max(viewport.grid.snapSize / 16, 0.125)}
+          scaleSnap={Math.max(snapSize / 16, 0.125)}
           space={selectionOrientation && transformMode !== "translate" ? "local" : "world"}
           showX
           showY
           showZ
-          translationSnap={viewport.grid.snapSize}
+          translationSnap={snapSize}
         />
       ) : null}
     </>
@@ -347,6 +349,7 @@ export function BrushEditOverlay({
     () => resolveBrushEdgeLabels(edgeHandles, faceHandles, meshEditMode, node.transform, selectedHandleIds),
     [edgeHandles, faceHandles, meshEditMode, node.transform, selectedHandleIds]
   );
+  const snapSize = resolveViewportSnapSize(viewport);
   const selectionCenter = useMemo(
     () => computeBrushEditSelectionCenter(handles, selectedHandleIds),
     [handles, selectedHandleIds]
@@ -560,7 +563,7 @@ export function BrushEditOverlay({
               selectedHandleIds,
               baselineTransformRef.current,
               currentTransform,
-              viewport.grid.snapSize
+              snapSize
             );
 
             if (nextBrush) {
@@ -595,7 +598,7 @@ export function BrushEditOverlay({
               selectedHandleIds,
               baselineTransformRef.current,
               objectToTransform(controlObject),
-              viewport.grid.snapSize
+              snapSize
             );
 
             if (nextBrush) {
@@ -606,9 +609,9 @@ export function BrushEditOverlay({
           showY
           showZ
           rotationSnap={Math.PI / 12}
-          scaleSnap={Math.max(viewport.grid.snapSize / 16, 0.125)}
+          scaleSnap={Math.max(snapSize / 16, 0.125)}
           space={selectionOrientation && transformMode !== "translate" ? "local" : "world"}
-          translationSnap={viewport.grid.snapSize}
+          translationSnap={snapSize}
         />
       ) : null}
     </>

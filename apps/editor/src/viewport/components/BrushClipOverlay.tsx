@@ -7,6 +7,7 @@ import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { FaceHitArea, PreviewLine } from "@/viewport/components/SelectionVisuals";
 import type { ViewportCanvasProps } from "@/viewport/types";
 import type { ViewportState } from "@web-hammer/render-pipeline";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 
 export function BrushClipOverlay({
   node,
@@ -19,17 +20,18 @@ export function BrushClipOverlay({
 }) {
   const [preview, setPreview] = useState<{ faceId: string; line: ReturnType<typeof buildClipPreview> }>();
   const rebuilt = useMemo(() => reconstructBrushFaces(node.data), [node.data]);
+  const snapSize = resolveViewportSnapSize(viewport);
 
   useEffect(() => {
     setPreview(undefined);
-  }, [node.id, node.data, viewport.grid.snapSize]);
+  }, [node.id, node.data, snapSize]);
 
   if (!rebuilt.valid) {
     return null;
   }
 
   const handleFacePointer = (face: ReconstructedBrushFace, point: Vector3) => {
-    const line = buildClipPreview(face, vec3(point.x, point.y, point.z), viewport.grid.snapSize);
+    const line = buildClipPreview(face, vec3(point.x, point.y, point.z), snapSize);
 
     if (!line) {
       setPreview(undefined);
@@ -50,7 +52,7 @@ export function BrushClipOverlay({
           hovered={preview?.faceId === face.id}
           key={face.id}
           onClick={(localPoint) => {
-            const line = buildClipPreview(face, localPoint, viewport.grid.snapSize);
+            const line = buildClipPreview(face, localPoint, snapSize);
 
             if (!line) {
               return;

@@ -1,8 +1,8 @@
 import { vec3 } from "@web-hammer/shared";
 
-export const gridSnapValues = [1, 2, 4, 8, 16, 32] as const;
+export const gridSnapValues = [1, 2, 4, 8, 16, 32, 64, 128] as const;
 
-export type GridSnapValue = (typeof gridSnapValues)[number];
+export type GridSnapValue = number;
 
 export type ViewportProjection = "perspective";
 
@@ -22,6 +22,7 @@ export type ConstructionGridState = {
   minorDivisions: number;
   majorLineEvery: number;
   elevation: number;
+  enabled: boolean;
   snapSize: GridSnapValue;
 };
 
@@ -31,7 +32,7 @@ export type ViewportState = {
   grid: ConstructionGridState;
 };
 
-export function createViewportState(snapSize: GridSnapValue = 8): ViewportState {
+export function createViewportState(snapSize: GridSnapValue = 2): ViewportState {
   return {
     projection: "perspective",
     camera: {
@@ -49,6 +50,7 @@ export function createViewportState(snapSize: GridSnapValue = 8): ViewportState 
       minorDivisions: 64,
       majorLineEvery: 8,
       elevation: 0,
+      enabled: true,
       snapSize
     }
   };

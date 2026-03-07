@@ -5,6 +5,7 @@ import type { ViewportState } from "@web-hammer/render-pipeline";
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { createMeshEditHandles } from "@/viewport/editing";
 import { EditableFaceSelectionHitArea, PreviewLine } from "@/viewport/components/SelectionVisuals";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 
 export function MeshCutOverlay({
   faceId,
@@ -24,10 +25,11 @@ export function MeshCutOverlay({
     [faceId, mesh]
   );
   const [preview, setPreview] = useState<{ end: Vec3; start: Vec3 }>();
+  const snapSize = resolveViewportSnapSize(viewport);
 
   useEffect(() => {
     setPreview(undefined);
-  }, [faceHandle?.id, mesh, node.id, viewport.grid.snapSize]);
+  }, [faceHandle?.id, mesh, node.id, snapSize]);
 
   if (!faceHandle?.points || faceHandle.points.length < 3) {
     return null;
@@ -38,12 +40,12 @@ export function MeshCutOverlay({
       <EditableFaceSelectionHitArea
         normal={faceHandle.normal}
         onHover={(point) => {
-          setPreview(buildEditableMeshFaceCutPreview(mesh, faceId, point, viewport.grid.snapSize));
+          setPreview(buildEditableMeshFaceCutPreview(mesh, faceId, point, snapSize));
         }}
         onHoverEnd={() => setPreview(undefined)}
         onSelect={() => {}}
         onSelectPoint={(point) => {
-          const nextMesh = cutEditableMeshFace(mesh, faceId, point, viewport.grid.snapSize);
+          const nextMesh = cutEditableMeshFace(mesh, faceId, point, snapSize);
 
           if (nextMesh) {
             onCommitCut(nextMesh);

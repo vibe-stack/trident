@@ -21,6 +21,7 @@ export function StatusBar({
   selectedNode,
   viewport
 }: StatusBarProps) {
+  const snapText = viewport.grid.enabled ? `snap ${viewport.grid.snapSize}` : `snap off (${viewport.grid.snapSize})`;
   const focusText = selectedNode
     ? `focus ${selectedNode.name} @ ${selectedNode.transform.position.x}, ${selectedNode.transform.position.y}, ${selectedNode.transform.position.z}`
     : "focus none";
@@ -46,7 +47,9 @@ export function StatusBar({
         <span className="text-foreground/25">/</span>
         <span>{viewport.projection} camera</span>
         <span className="text-foreground/25">/</span>
-        <span>snap set {gridSnapValues.join(" / ")}</span>
+        <span>{snapText}</span>
+        <span className="text-foreground/25">/</span>
+        <span>presets {gridSnapValues.join(" / ")}</span>
         <span className="text-foreground/25">/</span>
         <span>grid {viewport.grid.size}u</span>
         <span className="text-foreground/25">/</span>

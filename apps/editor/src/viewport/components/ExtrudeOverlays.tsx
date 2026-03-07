@@ -20,6 +20,7 @@ import { EditableMeshPreviewOverlay } from "@/viewport/components/EditableMeshPr
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { PreviewLine } from "@/viewport/components/SelectionVisuals";
 import { addFaceOffset } from "@/viewport/utils/geometry";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import { axisLockColor, resolveExtrudeDirection } from "@/viewport/utils/interaction";
 import type { ExtrudeGestureState } from "@/viewport/types";
 
@@ -179,7 +180,8 @@ export function ExtrudeAxisGuide({
   }
 
   const direction = resolveExtrudeDirection(state);
-  const length = Math.max(viewport.grid.snapSize * 6, 6);
+  const snapSize = resolveViewportSnapSize(viewport);
+  const length = Math.max(snapSize * 6, 6);
   const start = addFaceOffset(state.handle.position, direction, -length * 0.5);
   const end = addFaceOffset(state.handle.position, direction, length * 0.5);
 
@@ -215,6 +217,7 @@ function BrushExtrudeDragHandle({
   } | null>(null);
   const raycasterRef = useRef(new Raycaster());
   const { camera, gl } = useThree();
+  const snapSize = resolveViewportSnapSize(viewport);
   const extrusionNormal = handle.normal ? new Vector3(handle.normal.x, handle.normal.y, handle.normal.z).normalize() : undefined;
   const tip = useMemo(
     () => (handle.normal ? addFaceOffset(handle.position, handle.normal, handle.kind === "face" ? 0.42 : 0.3) : handle.position),
@@ -289,7 +292,7 @@ function BrushExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
             const nextBrush = extrudeBrushHandle(
               dragStateRef.current.baseBrush,
               dragStateRef.current.baseHandle,
@@ -321,7 +324,7 @@ function BrushExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
             const nextBrush = extrudeBrushHandle(
               dragStateRef.current.baseBrush,
               dragStateRef.current.baseHandle,
@@ -378,6 +381,7 @@ function BrushMeshExtrudeDragHandle({
   } | null>(null);
   const raycasterRef = useRef(new Raycaster());
   const { camera, gl } = useThree();
+  const snapSize = resolveViewportSnapSize(viewport);
   const extrusionNormal = useMemo(
     () => new Vector3(handle.normal.x, handle.normal.y, handle.normal.z).normalize(),
     [handle.normal.x, handle.normal.y, handle.normal.z]
@@ -444,7 +448,7 @@ function BrushMeshExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
 
             if (snappedDelta <= 0.0001) {
               onPreviewMeshChange(null);
@@ -479,7 +483,7 @@ function BrushMeshExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
 
             if (snappedDelta <= 0.0001) {
               onPreviewMeshChange(null);
@@ -544,6 +548,7 @@ function MeshExtrudeDragHandle({
   } | null>(null);
   const raycasterRef = useRef(new Raycaster());
   const { camera, gl } = useThree();
+  const snapSize = resolveViewportSnapSize(viewport);
   const extrusionNormal = useMemo(
     () => new Vector3(handle.normal.x, handle.normal.y, handle.normal.z).normalize(),
     [handle.normal.x, handle.normal.y, handle.normal.z]
@@ -618,7 +623,7 @@ function MeshExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
 
             if (snappedDelta <= 0.0001) {
               onPreviewMeshChange(null);
@@ -660,7 +665,7 @@ function MeshExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / viewport.grid.snapSize) * viewport.grid.snapSize);
+            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
 
             if (snappedDelta <= 0.0001) {
               onPreviewMeshChange(null);

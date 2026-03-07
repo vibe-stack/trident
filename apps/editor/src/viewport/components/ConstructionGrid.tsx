@@ -2,6 +2,7 @@ import { snapVec3, toTuple, vec3 } from "@web-hammer/shared";
 import { useMemo } from "react";
 import type { ViewportCanvasProps } from "@/viewport/types";
 import { createIndexedGeometry } from "@/viewport/utils/geometry";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 
 export function ConstructionGrid({
   activeToolId,
@@ -12,6 +13,7 @@ export function ConstructionGrid({
     return null;
   }
 
+  const snapSize = resolveViewportSnapSize(viewport);
   const minorStep = viewport.grid.snapSize;
   const majorStep = minorStep * viewport.grid.majorLineEvery;
   const extent = viewport.grid.size;
@@ -27,7 +29,7 @@ export function ConstructionGrid({
           event.stopPropagation();
           const snapped = snapVec3(
             vec3(event.point.x, viewport.grid.elevation, event.point.z),
-            viewport.grid.snapSize
+            snapSize
           );
           onPlaceAsset(snapped);
         }}

@@ -51,6 +51,7 @@ import type { MeshEditMode } from "@/viewport/editing";
 import { useAppHotkeys } from "@/app/hooks/useAppHotkeys";
 import { useEditorSubscriptions } from "@/app/hooks/useEditorSubscriptions";
 import { useExportWorker } from "@/app/hooks/useExportWorker";
+import { clampSnapSize, resolveViewportSnapSize } from "@/viewport/utils/snap";
 
 export function App() {
   const [editor] = useState(() => createEditorCore(createSeedSceneDocument()));
@@ -110,8 +111,12 @@ export function App() {
     uiStore.viewport.camera.position = addVec3(node.transform.position, orbitOffset);
   };
 
-  const handleSetSnapSize = (snapSize: (typeof gridSnapValues)[number]) => {
-    uiStore.viewport.grid.snapSize = snapSize;
+  const handleSetSnapSize = (snapSize: number) => {
+    uiStore.viewport.grid.snapSize = clampSnapSize(snapSize);
+  };
+
+  const handleSetSnapEnabled = (enabled: boolean) => {
+    uiStore.viewport.grid.enabled = enabled;
   };
 
   const handleUpdateNodeTransform = (
@@ -208,7 +213,7 @@ export function App() {
       return;
     }
 
-    const delta = axisDelta(axis, uiStore.viewport.grid.snapSize * direction);
+    const delta = axisDelta(axis, resolveViewportSnapSize(uiStore.viewport) * direction);
     editor.execute(createTranslateNodesCommand(editor.selection.ids, delta));
     enqueueWorkerJob("Geometry rebuild", { task: "brush-rebuild", worker: "geometryWorker" }, 700);
   };
@@ -221,7 +226,7 @@ export function App() {
     const { command, duplicateIds } = createDuplicateNodesCommand(
       editor.scene,
       editor.selection.ids,
-      axisDelta("x", uiStore.viewport.grid.snapSize)
+      axisDelta("x", resolveViewportSnapSize(uiStore.viewport))
     );
 
     editor.execute(command);
@@ -273,7 +278,7 @@ export function App() {
           editor.scene,
           editor.selection.ids,
           axis,
-          uiStore.viewport.grid.snapSize,
+          resolveViewportSnapSize(uiStore.viewport),
           direction
         )
       );
@@ -283,7 +288,7 @@ export function App() {
 
     if (selectedNode && isMeshNode(selectedNode) && axis === "y") {
       editor.execute(
-        createMeshRaiseTopCommand(editor.scene, editor.selection.ids, uiStore.viewport.grid.snapSize * direction)
+        createMeshRaiseTopCommand(editor.scene, editor.selection.ids, resolveViewportSnapSize(uiStore.viewport) * direction)
       );
       enqueueWorkerJob("Mesh triangulation", { task: "triangulation", worker: "meshWorker" }, 850);
     }
@@ -299,7 +304,7 @@ export function App() {
   };
 
   const handlePlaceAsset = (position: Vec3) => {
-    const snapped = snapVec3(position, uiStore.viewport.grid.snapSize);
+    const snapped = snapVec3(position, resolveViewportSnapSize(uiStore.viewport));
     const asset = editor.scene.assets.get(uiStore.selectedAssetId);
 
     if (!asset || asset.type !== "model") {
@@ -321,7 +326,7 @@ export function App() {
   };
 
   const handleCreateBrush = () => {
-    const snappedTarget = snapVec3(uiStore.viewport.camera.target, uiStore.viewport.grid.snapSize);
+    const snappedTarget = snapVec3(uiStore.viewport.camera.target, resolveViewportSnapSize(uiStore.viewport));
     const { command, nodeId } = createPlaceBrushNodeCommand(
       editor.scene,
       makeTransform(vec3(snappedTarget.x, 1.5, snappedTarget.z))
@@ -550,6 +555,7 @@ export function App() {
         editor={editor}
         gridSnapValues={gridSnapValues}
         jobs={[...workerJobs, ...exportJobs]}
+        onInvertSelectionNormals={handleInvertSelectionNormals}
         onAssignMaterial={handleAssignMaterial}
         onClipSelection={handleClipSelection}
         onCreateBrush={handleCreateBrush}
@@ -575,8 +581,11 @@ export function App() {
         onSelectAsset={handleSelectAsset}
         onSelectMaterial={handleSelectMaterial}
         onSelectNodes={handleSelectNodes}
+        onSetMeshEditMode={setMeshEditMode}
         onSetRightPanel={handleSetRightPanel}
+        onSetSnapEnabled={handleSetSnapEnabled}
         onSetSnapSize={handleSetSnapSize}
+        onSetTransformMode={setTransformMode}
         onSetToolId={handleSetToolId}
         onSplitBrushAtCoordinate={handleSplitBrushAtCoordinate}
         onTranslateSelection={handleTranslateSelection}
@@ -588,6 +597,7 @@ export function App() {
         renderScene={renderScene}
         selectedAssetId={ui.selectedAssetId}
         selectedMaterialId={ui.selectedMaterialId}
+        snapEnabled={ui.viewport.grid.enabled}
         transformMode={transformMode}
         viewport={ui.viewport}
         tools={defaultTools}

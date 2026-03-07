@@ -4,6 +4,7 @@ import { useRef } from "react";
 import type { GeometryNode, Transform } from "@web-hammer/shared";
 import { resolveTransformPivot } from "@web-hammer/shared";
 import { objectToTransform } from "@/viewport/utils/geometry";
+import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import type { ViewportCanvasProps } from "@/viewport/types";
 
 export function ObjectTransformGizmo({
@@ -24,6 +25,7 @@ export function ObjectTransformGizmo({
   const scene = useThree((state) => state.scene);
   const selectedNodeId = selectedNode?.id ?? selectedNodeIds[0];
   const selectedObject = selectedNodeId ? scene.getObjectByName(`node:${selectedNodeId}`) : undefined;
+  const snapSize = resolveViewportSnapSize(viewport);
 
   if (activeToolId !== "transform" || !selectedNodeId || !selectedObject || !selectedNode) {
     return null;
@@ -51,11 +53,11 @@ export function ObjectTransformGizmo({
         onPreviewNodeTransform(selectedNodeId, objectToTransform(selectedObject, pivot));
       }}
       rotationSnap={Math.PI / 12}
-      scaleSnap={Math.max(viewport.grid.snapSize / 16, 0.125)}
+      scaleSnap={Math.max(snapSize / 16, 0.125)}
       showX
       showY
       showZ
-      translationSnap={viewport.grid.snapSize}
+      translationSnap={snapSize}
     />
   );
 }
