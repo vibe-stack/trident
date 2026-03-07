@@ -875,17 +875,7 @@ export function bevelEditableMeshEdges(
     const incidentFaces = collectOrderedIncidentFacesAtVertex(vertexId, polygons);
 
     if (profiles.length === 1) {
-      const clippedHostFace = clipEndpointBevelHostFace(vertexId, incidentFaces, profiles[0], nextPolygonById);
-
-      if (clippedHostFace) {
-        const polygonIndex = nextPolygons.findIndex((polygon) => polygon.id === clippedHostFace.id);
-
-        if (polygonIndex >= 0) {
-          nextPolygons[polygonIndex] = clippedHostFace;
-          nextPolygonById.set(clippedHostFace.id, clippedHostFace);
-        }
-      }
-
+      applyEndpointBevelHostClipping(vertexId, incidentFaces, profiles[0], nextPolygons, nextPolygonById);
       return;
     }
 
@@ -1905,33 +1895,94 @@ function collectOrderedIncidentFacesAtVertex(vertexId: VertexID, polygons: MeshP
   });
 }
 
-function clipEndpointBevelHostFace(
+function applyEndpointBevelHostClipping(
   vertexId: VertexID,
   incidentFaces: MeshPolygonData[],
   profile: BevelVertexProfile,
+  nextPolygons: Array<OrientedEditablePolygon & { vertexIds?: VertexID[] }>,
   nextPolygonById: Map<FaceID, OrientedEditablePolygon & { vertexIds?: VertexID[] }>
 ) {
-  const boundaryPoints = [profile.points[0], profile.points[profile.points.length - 1]];
-  const hostFace = incidentFaces.find(
-    (face) => face.id !== profile.faceIds[0] && face.id !== profile.faceIds[1]
-  );
+  const selectedFaceIds = new Set(profile.faceIds);
+  const selectedFaces = incidentFaces.filter((face) => selectedFaceIds.has(face.id));
+  const hostFaces = incidentFaces.filter((face) => !selectedFaceIds.has(face.id));
+  const firstBoundaryPoint = profile.points[0];
+  const secondBoundaryPoint = profile.points[profile.points.length - 1];
 
-  if (!hostFace) {
-    return undefined;
+  if (selectedFaces.length !== 2 || !firstBoundaryPoint || !secondBoundaryPoint || hostFaces.length === 0) {
+    return;
   }
 
-  const orientedBoundary = orientBevelProfileBoundaryForFace(hostFace, vertexId, boundaryPoints);
-  const polygon = nextPolygonById.get(hostFace.id);
+  if (hostFaces.length === 1) {
+    const polygon = nextPolygonById.get(hostFaces[0].id);
+    const orientedBoundary = orientBevelProfileBoundaryForFace(hostFaces[0], vertexId, [
+      firstBoundaryPoint,
+      secondBoundaryPoint
+    ]);
 
-  if (!orientedBoundary || !polygon?.vertexIds) {
-    return undefined;
+    if (orientedBoundary && polygon?.vertexIds) {
+      replacePolygonInCollection(
+        nextPolygons,
+        nextPolygonById,
+        replacePolygonVertexWithSequence(
+          polygon as OrientedEditablePolygon & { vertexIds: VertexID[] },
+          vertexId,
+          orientedBoundary
+        )
+      );
+    }
+
+    return;
   }
 
-  return replacePolygonVertexWithSequence(
-    polygon as OrientedEditablePolygon & { vertexIds: VertexID[] },
-    vertexId,
-    orientedBoundary
-  );
+  const boundaryPoints = [firstBoundaryPoint, secondBoundaryPoint];
+
+  hostFaces.forEach((hostFace) => {
+    const polygon = nextPolygonById.get(hostFace.id);
+
+    if (!polygon?.vertexIds) {
+      return;
+    }
+
+    for (const point of boundaryPoints) {
+      let clippedHostFace:
+        | (OrientedEditablePolygon & { vertexIds: VertexID[] })
+        | undefined;
+
+      for (const selectedFace of selectedFaces) {
+        clippedHostFace = insertEndpointBoundaryPointOnHostFace(
+          polygon as OrientedEditablePolygon & { vertexIds: VertexID[] },
+          hostFace,
+          vertexId,
+          selectedFace,
+          point
+        );
+
+        if (clippedHostFace) {
+          replacePolygonInCollection(nextPolygons, nextPolygonById, clippedHostFace);
+          break;
+        }
+      }
+
+      if (clippedHostFace) {
+        break;
+      }
+    }
+  });
+}
+
+function replacePolygonInCollection(
+  nextPolygons: Array<OrientedEditablePolygon & { vertexIds?: VertexID[] }>,
+  nextPolygonById: Map<FaceID, OrientedEditablePolygon & { vertexIds?: VertexID[] }>,
+  polygon: OrientedEditablePolygon & { vertexIds?: VertexID[] }
+) {
+  const polygonIndex = nextPolygons.findIndex((candidate) => candidate.id === polygon.id);
+
+  if (polygonIndex < 0) {
+    return;
+  }
+
+  nextPolygons[polygonIndex] = polygon;
+  nextPolygonById.set(polygon.id, polygon);
 }
 
 function orientBevelProfileBoundaryForFace(
@@ -1965,6 +2016,64 @@ function orientBevelProfileBoundaryForFace(
       id: point.id,
       position: vec3(point.position.x, point.position.y, point.position.z)
     }));
+  }
+
+  return undefined;
+}
+
+function insertEndpointBoundaryPointOnHostFace(
+  polygon: OrientedEditablePolygon & { vertexIds: VertexID[] },
+  hostFace: MeshPolygonData,
+  vertexId: VertexID,
+  selectedFace: MeshPolygonData,
+  point: BevelProfilePoint
+) {
+  const targetIndex = polygon.vertexIds.indexOf(vertexId);
+  const hostTargetIndex = hostFace.vertexIds.indexOf(vertexId);
+
+  if (targetIndex < 0 || hostTargetIndex < 0) {
+    return undefined;
+  }
+
+  const previousIndex = (hostTargetIndex - 1 + hostFace.vertexIds.length) % hostFace.vertexIds.length;
+  const nextIndex = (hostTargetIndex + 1) % hostFace.vertexIds.length;
+  const previousVertexId = hostFace.vertexIds[previousIndex];
+  const nextVertexId = hostFace.vertexIds[nextIndex];
+  const currentPosition = polygon.positions[targetIndex];
+  const previousPosition = hostFace.positions[previousIndex];
+  const nextPosition = hostFace.positions[nextIndex];
+  const hostCurrentPosition = hostFace.positions[hostTargetIndex];
+  const sharesPreviousEdge =
+    findEdgeIndex(hostFace.vertexIds, [previousVertexId, vertexId]) >= 0 &&
+    findEdgeIndex(selectedFace.vertexIds, [previousVertexId, vertexId]) >= 0;
+  const sharesNextEdge =
+    findEdgeIndex(hostFace.vertexIds, [vertexId, nextVertexId]) >= 0 &&
+    findEdgeIndex(selectedFace.vertexIds, [vertexId, nextVertexId]) >= 0;
+
+  if (sharesPreviousEdge && pointLiesOnSegment(point.position, previousPosition, hostCurrentPosition)) {
+    return replacePolygonVertexWithSequence(polygon, vertexId, [
+      {
+        id: point.id,
+        position: vec3(point.position.x, point.position.y, point.position.z)
+      },
+      {
+        id: vertexId,
+        position: vec3(currentPosition.x, currentPosition.y, currentPosition.z)
+      }
+    ]);
+  }
+
+  if (sharesNextEdge && pointLiesOnSegment(point.position, hostCurrentPosition, nextPosition)) {
+    return replacePolygonVertexWithSequence(polygon, vertexId, [
+      {
+        id: vertexId,
+        position: vec3(currentPosition.x, currentPosition.y, currentPosition.z)
+      },
+      {
+        id: point.id,
+        position: vec3(point.position.x, point.position.y, point.position.z)
+      }
+    ]);
   }
 
   return undefined;
