@@ -66,6 +66,9 @@ export function MeshEditToolBars({
   selectedMesh: boolean;
   transformMode: "rotate" | "scale" | "translate";
 }) {
+  const mergeTooltip =
+    meshEditMode === "face" ? "Merge faces" : meshEditMode === "edge" ? "Merge edges" : "Merge vertices";
+
   return (
     <div className="flex items-stretch gap-2">
       <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
@@ -88,7 +91,7 @@ export function MeshEditToolBars({
       <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
         <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={ExtrudeIcon} onClick={onExtrude} shortcut="X" tooltip="Extrude" />
         <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={CutMeshIcon} onClick={onCut} shortcut={meshEditMode === "face" ? "Shift+K" : "K"} tooltip={meshEditMode === "face" ? "Face cut" : "Edge cut"} />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={MergeFacesIcon} onClick={onMerge} shortcut="M" tooltip="Merge faces" />
+        <MeshBarButton disabled={!selectedGeometry} icon={MergeFacesIcon} onClick={onMerge} shortcut="M" tooltip={mergeTooltip} />
         <MeshBarButton disabled={!selectedGeometry} icon={FillFaceIcon} onClick={onFillFace} shortcut="Shift+F" tooltip={meshEditMode === "vertex" ? "Fill from vertices" : "Fill from edges"} />
         <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={SubdivideIcon} onClick={onSubdivide} shortcut="D" tooltip="Subdivide face" />
         <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={DeleteFacesIcon} onClick={onDelete} shortcut="Del" tooltip="Delete faces" />

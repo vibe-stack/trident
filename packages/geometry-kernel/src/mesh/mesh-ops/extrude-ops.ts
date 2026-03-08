@@ -10,7 +10,7 @@ export function extrudeEditableMeshFace(
   amount: number,
   epsilon = 0.0001
 ): EditableMesh | undefined {
-  if (amount <= epsilon) {
+  if (Math.abs(amount) <= epsilon) {
     return structuredClone(mesh);
   }
 
@@ -23,6 +23,7 @@ export function extrudeEditableMeshFace(
 
   const offset = scaleVec3(normalizeVec3(target.normal), amount);
   const capPositions = target.positions.map((position) => addVec3(position, offset));
+  const extrudedVertexIds = target.vertexIds.map((vertexId) => `${vertexId}:extrude`);
   const extrudedPolygons: OrientedEditablePolygon[] = polygons
     .filter((polygon) => polygon.id !== target.id)
     .map((polygon) => ({
@@ -41,7 +42,7 @@ export function extrudeEditableMeshFace(
     materialId: target.materialId,
     positions: capPositions,
     uvScale: target.uvScale,
-    vertexIds: target.vertexIds.map((vertexId, index) => `${vertexId}:extrude:cap:${index}`)
+    vertexIds: extrudedVertexIds
   });
 
   target.positions.forEach((position, index) => {
@@ -57,8 +58,8 @@ export function extrudeEditableMeshFace(
       vertexIds: [
         target.vertexIds[index],
         target.vertexIds[nextIndex],
-        `${target.vertexIds[nextIndex]}:extrude:side:${index}`,
-        `${target.vertexIds[index]}:extrude:side:${index}`
+        extrudedVertexIds[nextIndex],
+        extrudedVertexIds[index]
       ]
     });
   });
@@ -73,7 +74,7 @@ export function extrudeEditableMeshEdge(
   overrideNormal?: Vec3,
   epsilon = 0.0001
 ): EditableMesh | undefined {
-  if (amount <= epsilon) {
+  if (Math.abs(amount) <= epsilon) {
     return structuredClone(mesh);
   }
 

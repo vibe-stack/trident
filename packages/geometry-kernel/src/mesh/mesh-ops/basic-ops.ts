@@ -1,7 +1,7 @@
 import type { Brush, EditableMesh, FaceID, VertexID } from "@web-hammer/shared";
-import { dotVec3, normalizeVec3, vec3 } from "@web-hammer/shared";
+import { averageVec3, dotVec3, normalizeVec3, vec3 } from "@web-hammer/shared";
 import { reconstructBrushFaces } from "../../brush/brush-kernel";
-import { getMeshPolygons, makeUndirectedEdgeKey, orderBoundaryEdges, createEditableMeshFromPolygons } from "./shared";
+import { compactPolygonLoop, getMeshPolygons, makeUndirectedEdgeKey, orderBoundaryEdges, createEditableMeshFromPolygons } from "./shared";
 import type { EdgeBevelProfile } from "./types";
 import type { EditableMeshPolygon } from "../editable-mesh";
 
@@ -146,5 +146,152 @@ export function mergeEditableMeshFaces(mesh: EditableMesh, faceIds: string[], ep
     }));
 
   nextPolygons.push(mergedPolygon);
+  return createEditableMeshFromPolygons(nextPolygons);
+}
+
+export function mergeEditableMeshVertices(mesh: EditableMesh, vertexIds: VertexID[]): EditableMesh | undefined {
+  const selectedVertexIds = Array.from(new Set(vertexIds));
+
+  if (selectedVertexIds.length < 2) {
+    return undefined;
+  }
+
+  const verticesById = new Map(mesh.vertices.map((vertex) => [vertex.id, vertex]));
+  const selectedVertices = selectedVertexIds
+    .map((vertexId) => verticesById.get(vertexId))
+    .filter((vertex): vertex is NonNullable<typeof vertex> => Boolean(vertex));
+
+  if (selectedVertices.length < 2) {
+    return undefined;
+  }
+
+  const mergedPosition = averageVec3(selectedVertices.map((vertex) => vertex.position));
+  const mergedVertexId = selectedVertices[0].id;
+  const replacements = new Map(
+    selectedVertices.map((vertex) => [
+      vertex.id,
+      {
+        id: mergedVertexId,
+        position: mergedPosition
+      }
+    ])
+  );
+
+  return rebuildMeshWithMergedVertices(mesh, replacements);
+}
+
+export function mergeEditableMeshEdges(
+  mesh: EditableMesh,
+  edges: Array<[VertexID, VertexID]>
+): EditableMesh | undefined {
+  if (edges.length === 0) {
+    return undefined;
+  }
+
+  const verticesById = new Map(mesh.vertices.map((vertex) => [vertex.id, vertex]));
+  const adjacency = new Map<VertexID, Set<VertexID>>();
+
+  edges.forEach(([startId, endId]) => {
+    if (!verticesById.has(startId) || !verticesById.has(endId)) {
+      return;
+    }
+
+    const startNeighbors = adjacency.get(startId) ?? new Set<VertexID>();
+    const endNeighbors = adjacency.get(endId) ?? new Set<VertexID>();
+
+    startNeighbors.add(endId);
+    endNeighbors.add(startId);
+    adjacency.set(startId, startNeighbors);
+    adjacency.set(endId, endNeighbors);
+  });
+
+  if (adjacency.size === 0) {
+    return undefined;
+  }
+
+  const visited = new Set<VertexID>();
+  const replacements = new Map<VertexID, { id: VertexID; position: ReturnType<typeof vec3> }>();
+
+  adjacency.forEach((_, startId) => {
+    if (visited.has(startId)) {
+      return;
+    }
+
+    const stack = [startId];
+    const component: VertexID[] = [];
+
+    while (stack.length > 0) {
+      const currentId = stack.pop();
+
+      if (!currentId || visited.has(currentId)) {
+        continue;
+      }
+
+      visited.add(currentId);
+      component.push(currentId);
+
+      (adjacency.get(currentId) ?? []).forEach((neighborId) => {
+        if (!visited.has(neighborId)) {
+          stack.push(neighborId);
+        }
+      });
+    }
+
+    if (component.length < 2) {
+      return;
+    }
+
+    const mergedPosition = averageVec3(
+      component
+        .map((vertexId) => verticesById.get(vertexId)?.position)
+        .filter((position): position is NonNullable<typeof position> => Boolean(position))
+    );
+    const mergedVertexId = component[0];
+
+    component.forEach((vertexId) => {
+      replacements.set(vertexId, {
+        id: mergedVertexId,
+        position: mergedPosition
+      });
+    });
+  });
+
+  if (replacements.size === 0) {
+    return undefined;
+  }
+
+  return rebuildMeshWithMergedVertices(mesh, replacements);
+}
+
+function rebuildMeshWithMergedVertices(
+  mesh: EditableMesh,
+  replacements: Map<VertexID, { id: VertexID; position: ReturnType<typeof vec3> }>
+): EditableMesh | undefined {
+  const nextPolygons = getMeshPolygons(mesh).flatMap((polygon) => {
+    const positions = polygon.positions.map((position, index) => {
+      const replacement = replacements.get(polygon.vertexIds[index]);
+
+      return replacement ? replacement.position : vec3(position.x, position.y, position.z);
+    });
+    const vertexIds = polygon.vertexIds.map((vertexId) => replacements.get(vertexId)?.id ?? vertexId);
+    const compacted = compactPolygonLoop(positions, vertexIds);
+
+    if (!compacted || !compacted.vertexIds) {
+      return [];
+    }
+
+    return [{
+      id: polygon.id,
+      materialId: polygon.materialId,
+      positions: compacted.positions,
+      uvScale: polygon.uvScale,
+      vertexIds: compacted.vertexIds
+    }];
+  });
+
+  if (nextPolygons.length === 0) {
+    return undefined;
+  }
+
   return createEditableMeshFromPolygons(nextPolygons);
 }

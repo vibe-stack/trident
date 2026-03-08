@@ -583,7 +583,7 @@ export function extrudeBrushHandle(
   overrideNormal?: Vec3,
   epsilon = 0.0001
 ): Brush | undefined {
-  if (amount <= epsilon) {
+  if (Math.abs(amount) <= epsilon) {
     return structuredClone(brush);
   }
 

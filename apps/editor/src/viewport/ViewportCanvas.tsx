@@ -10,7 +10,9 @@ import {
   fillEditableMeshFaceFromEdges,
   fillEditableMeshFaceFromVertices,
   invertEditableMeshNormals,
+  mergeEditableMeshEdges,
   mergeEditableMeshFaces,
+  mergeEditableMeshVertices,
   subdivideEditableMeshFace
 } from "@web-hammer/geometry-kernel";
 import {
@@ -904,6 +906,24 @@ export function ViewportCanvas({
           if (selectedFaces.length > 1) {
             commitMeshTopology(mergeEditableMeshFaces(editableMeshSource ?? emptyEditableMesh(), selectedFaces));
           }
+          return;
+        }
+
+        if (meshEditMode === "edge") {
+          const selectedEdges = resolveSelectedEditableMeshEdgePairs();
+
+          if (selectedEdges.length > 0) {
+            commitMeshTopology(mergeEditableMeshEdges(editableMeshSource ?? emptyEditableMesh(), selectedEdges));
+          }
+          return;
+        }
+
+        if (meshEditMode === "vertex") {
+          const selectedVertices = resolveSelectedEditableMeshVertexIds();
+
+          if (selectedVertices.length > 1) {
+            commitMeshTopology(mergeEditableMeshVertices(editableMeshSource ?? emptyEditableMesh(), selectedVertices));
+          }
         }
         return;
       }
@@ -1396,15 +1416,13 @@ export function ViewportCanvas({
       effectiveNormal.y,
       effectiveNormal.z
     ).normalize();
-    const amount = Math.max(
-      0,
+    const amount =
       Math.round(
         point
           .clone()
           .sub(new Vector3(currentExtrudeState.startPoint.x, currentExtrudeState.startPoint.y, currentExtrudeState.startPoint.z))
           .dot(extrusionNormal) / snapSize
-      ) * snapSize
-    );
+      ) * snapSize;
 
     const nextState = buildExtrudePreviewState(currentExtrudeState, amount);
     extrudeStateRef.current = nextState;
@@ -1430,7 +1448,7 @@ export function ViewportCanvas({
       return;
     }
 
-    if (extrudeState.amount <= 0.0001) {
+    if (Math.abs(extrudeState.amount) <= 0.0001) {
       cancelExtrudePreview();
       return;
     }

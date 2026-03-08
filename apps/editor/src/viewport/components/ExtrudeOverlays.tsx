@@ -24,6 +24,10 @@ import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import { axisLockColor, resolveExtrudeDirection } from "@/viewport/utils/interaction";
 import type { ExtrudeGestureState } from "@/viewport/types";
 
+function snapSignedDistance(value: number, snapSize: number) {
+  return Math.round(value / snapSize) * snapSize;
+}
+
 export function BrushExtrudeOverlay({
   node,
   onCommitMeshTopology,
@@ -292,7 +296,7 @@ function BrushExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
             const nextBrush = extrudeBrushHandle(
               dragStateRef.current.baseBrush,
               dragStateRef.current.baseHandle,
@@ -324,7 +328,7 @@ function BrushExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
             const nextBrush = extrudeBrushHandle(
               dragStateRef.current.baseBrush,
               dragStateRef.current.baseHandle,
@@ -448,9 +452,9 @@ function BrushMeshExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
 
-            if (snappedDelta <= 0.0001) {
+            if (Math.abs(snappedDelta) <= 0.0001) {
               onPreviewMeshChange(null);
               return;
             }
@@ -483,9 +487,9 @@ function BrushMeshExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
 
-            if (snappedDelta <= 0.0001) {
+            if (Math.abs(snappedDelta) <= 0.0001) {
               onPreviewMeshChange(null);
               dragStateRef.current = null;
               return;
@@ -623,9 +627,9 @@ function MeshExtrudeDragHandle({
             }
 
             const delta = point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal);
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
 
-            if (snappedDelta <= 0.0001) {
+            if (Math.abs(snappedDelta) <= 0.0001) {
               onPreviewMeshChange(null);
               return;
             }
@@ -665,9 +669,9 @@ function MeshExtrudeDragHandle({
             raycasterRef.current.setFromCamera(ndc, camera);
             const point = raycasterRef.current.ray.intersectPlane(dragStateRef.current.plane, new Vector3());
             const delta = point ? point.clone().sub(dragStateRef.current.startPoint).dot(extrusionNormal) : 0;
-            const snappedDelta = Math.max(0, Math.round(delta / snapSize) * snapSize);
+            const snappedDelta = snapSignedDistance(delta, snapSize);
 
-            if (snappedDelta <= 0.0001) {
+            if (Math.abs(snappedDelta) <= 0.0001) {
               onPreviewMeshChange(null);
               dragStateRef.current = null;
               return;
