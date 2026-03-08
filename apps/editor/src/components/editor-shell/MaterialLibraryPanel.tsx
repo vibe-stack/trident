@@ -43,6 +43,7 @@ type MaterialLibraryPanelProps = {
     faceIds: string[],
   ) => void;
   onDeleteMaterial: (materialId: string) => void;
+  onDeleteTexture: (textureId: string) => void;
   onSelectMaterial: (materialId: string) => void;
   onSetUvOffset: (
     scope: "faces" | "object",
@@ -82,6 +83,7 @@ export function MaterialLibraryPanel({
   materials,
   onApplyMaterial,
   onDeleteMaterial,
+  onDeleteTexture,
   onSelectMaterial,
   onSetUvOffset,
   onSetUvScale,
@@ -148,7 +150,9 @@ export function MaterialLibraryPanel({
     [faceSelectionSet, materialFaces],
   );
   const canApplyToObject =
-    selectedNode?.kind === "brush" || selectedNode?.kind === "mesh";
+    selectedNode?.kind === "brush" ||
+    selectedNode?.kind === "mesh" ||
+    selectedNode?.kind === "primitive";
   const canApplyToFaces = canApplyToObject && selectedFaceIds.length > 0;
   const targetUvScale =
     (canApplyToFaces ? selectedFaces[0]?.uvScale : materialFaces[0]?.uvScale) ??
@@ -330,6 +334,22 @@ export function MaterialLibraryPanel({
 
       return next;
     });
+  };
+
+  const handleDeleteTexture = (texture: TextureRecord) => {
+    setDraftMaterial((current) => {
+      const next = { ...current };
+
+      (["colorTexture", "normalTexture", "metalnessTexture", "roughnessTexture"] as const).forEach((field) => {
+        if (next[field] === texture.dataUrl) {
+          next[field] = undefined;
+        }
+      });
+
+      return next;
+    });
+
+    onDeleteTexture(texture.id);
   };
 
   return (
@@ -611,6 +631,7 @@ export function MaterialLibraryPanel({
         onApplyGeneratedTextures={handleApplyGeneratedTextures}
         onClose={() => setTextureBrowserState(null)}
         onCreateTexture={onUpsertTexture}
+        onDeleteTexture={handleDeleteTexture}
         onSelectTexture={handleAssignTexture}
         open={Boolean(textureBrowserState)}
         targetKind={textureBrowserState?.kind ?? "color"}

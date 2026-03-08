@@ -12,6 +12,7 @@ export type TextureGenerationRequest = {
   model: TextureGenerationModelId;
   prompt: string;
   size: 256 | 512 | 1024 | 2048 | 4096;
+  sourceTextureDataUrl?: string;
 };
 
 export type GeneratedTextureDraft = Omit<TextureRecord, "createdAt" | "id">;
@@ -101,6 +102,8 @@ export function isTextureGenerationRequest(
     typeof request.prompt === "string" &&
     typeof request.model === "string" &&
     typeof request.size === "number" &&
+    (request.sourceTextureDataUrl === undefined ||
+      typeof request.sourceTextureDataUrl === "string") &&
     typeof request.maps === "object" &&
     request.maps !== null &&
     typeof request.maps.color === "boolean" &&
@@ -135,6 +138,14 @@ export function createAiTextureDraft(
     ...input,
     source: "ai" satisfies TextureSource
   };
+}
+
+export function createSourceColorPrompt(prompt: string) {
+  return [
+    `Use the input image as the source ${prompt.trim()} material.`,
+    "Output a seamless tileable PBR base color texture only.",
+    "Flat orthographic material scan, no lighting, no shadows, no text."
+  ].join(" ");
 }
 
 function formatTextureKind(kind: TextureKind) {

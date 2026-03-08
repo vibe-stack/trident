@@ -5,6 +5,7 @@ import {
   axisDelta,
   createAssignMaterialCommand,
   createDeleteMaterialCommand,
+  createDeleteTextureCommand,
   createDeleteSelectionCommand,
   createExtrudeBrushNodesCommand,
   createDuplicateNodesCommand,
@@ -87,6 +88,7 @@ import {
   createPrimitiveNodeData,
   createPrimitiveNodeLabel
 } from "@/lib/authoring";
+import { convertPrimitiveNodeToMeshNode } from "@/lib/primitive-to-mesh";
 import {
   focusViewportOnPoint,
   resolveVisibleViewportPaneIds,
@@ -135,6 +137,27 @@ export function App() {
   const handleSetToolId = (toolId: ToolId) => {
     setActiveToolId(toolId);
   };
+
+  useEffect(() => {
+    if (activeToolId !== "mesh-edit") {
+      return;
+    }
+
+    const selectedNodeId = editor.selection.ids[0];
+    const selectedNode = selectedNodeId ? editor.scene.getNode(selectedNodeId) : undefined;
+
+    if (!selectedNode || !isPrimitiveNode(selectedNode) || selectedNode.data.role !== "prop") {
+      return;
+    }
+
+    editor.execute(
+      createReplaceNodesCommand(
+        editor.scene,
+        [convertPrimitiveNodeToMeshNode(selectedNode)],
+        "promote prop to mesh"
+      )
+    );
+  }, [activeToolId, editor, revision]);
 
   const handleSetRightPanel = (panel: "inspector" | "materials" | "player" | "scene" | "world") => {
     uiStore.rightPanel = panel;
@@ -300,7 +323,7 @@ export function App() {
       return;
     }
 
-    node.data = structuredClone(mesh);
+    node.data = preserveMeshMetadata(mesh, node.data);
     editor.scene.touch();
     setRevision((revision) => revision + 1);
   };
@@ -312,7 +335,14 @@ export function App() {
       return;
     }
 
-    editor.execute(createSetMeshDataCommand(editor.scene, nodeId, mesh, beforeMesh));
+    editor.execute(
+      createSetMeshDataCommand(
+        editor.scene,
+        nodeId,
+        preserveMeshMetadata(mesh, node.data),
+        beforeMesh
+      )
+    );
     enqueueWorkerJob("Mesh edit", { task: "triangulation", worker: "meshWorker" }, 800);
   };
 
@@ -648,7 +678,22 @@ export function App() {
 
   const handlePlaceProp = (shape: PrimitiveShape) => {
     const data = createPrimitiveNodeData("prop", shape);
-    handlePlacePrimitiveNode(data, createDefaultPrimitiveTransform(resolvePlacementPosition(data.size)), createPrimitiveNodeLabel("prop", shape));
+    const transform = createDefaultPrimitiveTransform(
+      resolvePlacementPosition(data.size)
+    );
+    const meshData = convertPrimitiveNodeToMeshNode({
+      id: `node:prop:${shape}:${crypto.randomUUID()}`,
+      kind: "primitive",
+      name: createPrimitiveNodeLabel("prop", shape),
+      transform,
+      data
+    }).data;
+
+    handlePlaceMeshNode(
+      meshData,
+      transform,
+      createPrimitiveNodeLabel("prop", shape)
+    );
   };
 
   const handlePlaceLight = (type: LightType) => {
@@ -673,7 +718,14 @@ export function App() {
     }
 
     if (isMeshNode(node)) {
-      editor.execute(createSetMeshDataCommand(editor.scene, nodeId, mesh, node.data));
+      editor.execute(
+        createSetMeshDataCommand(
+          editor.scene,
+          nodeId,
+          preserveMeshMetadata(mesh, node.data),
+          node.data
+        )
+      );
     } else if (isBrushNode(node)) {
       const replacement: MeshNode = {
         id: node.id,
@@ -783,6 +835,11 @@ export function App() {
 
   const handleUpsertTexture = (texture: TextureRecord) => {
     editor.execute(createUpsertTextureCommand(editor.scene, texture));
+  };
+
+  const handleDeleteTexture = (textureId: string) => {
+    editor.execute(createDeleteTextureCommand(editor.scene, textureId));
+    enqueueWorkerJob("Texture library update", { task: "triangulation", worker: "geometryWorker" }, 250);
   };
 
   const handleDeleteMaterial = (materialId: string) => {
@@ -1034,6 +1091,7 @@ export function App() {
         onUpdateSceneSettings={handleUpdateSceneSettings}
         onUpdateViewport={handleUpdateViewport}
         onUpsertMaterial={handleUpsertMaterial}
+        onDeleteTexture={handleDeleteTexture}
         onUpsertTexture={handleUpsertTexture}
         onUpdateBrushData={handleUpdateBrushData}
         onUpdateMeshData={handleUpdateMeshData}
@@ -1062,4 +1120,14 @@ export function App() {
       />
     </>
   );
+}
+
+function preserveMeshMetadata(mesh: EditableMesh, existingMesh?: EditableMesh) {
+  return existingMesh?.role === "prop" || existingMesh?.physics
+    ? {
+        ...structuredClone(mesh),
+        physics: structuredClone(existingMesh.physics),
+        role: existingMesh.role
+      }
+    : structuredClone(mesh);
 }

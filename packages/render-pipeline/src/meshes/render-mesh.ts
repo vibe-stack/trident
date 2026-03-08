@@ -105,11 +105,19 @@ export function createDerivedRenderMesh(
     sourceKind: node.kind,
     dirty: false,
     bvhEnabled: true,
-    physics: isPrimitiveNode(node) ? node.data.physics : undefined,
+    physics: isPrimitiveNode(node)
+      ? node.data.physics
+      : isMeshNode(node)
+        ? node.data.physics
+        : undefined,
     label: `${node.name} (${appearance.primitiveLabel})`,
     position: node.transform.position,
     pivot: node.transform.pivot,
-    primitiveRole: isPrimitiveNode(node) ? node.data.role : undefined,
+    primitiveRole: isPrimitiveNode(node)
+      ? node.data.role
+      : isMeshNode(node)
+        ? node.data.role
+        : undefined,
     rotation: node.transform.rotation,
     scale: node.transform.scale,
     primitive: resolveNodePrimitive(node),

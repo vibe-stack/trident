@@ -1,7 +1,9 @@
 import {
   ImagePlus,
+  Layers,
   LoaderCircle,
   Sparkles,
+  Trash2,
   Upload,
   X
 } from "lucide-react";
@@ -13,6 +15,7 @@ import {
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { createPortal } from "react-dom";
 import type { TextureKind, TextureRecord } from "@web-hammer/shared";
 import {
   createTextureGenerator,
@@ -22,6 +25,24 @@ import {
 } from "@/lib/texture-generation";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger
+} from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -39,6 +60,7 @@ type TextureBrowserOverlayProps = {
   onApplyGeneratedTextures: (textures: TextureRecord[]) => void;
   onClose: () => void;
   onCreateTexture: (texture: TextureRecord) => void;
+  onDeleteTexture: (texture: TextureRecord) => void;
   onSelectTexture: (texture: TextureRecord) => void;
   open: boolean;
   targetKind: TextureKind;
@@ -53,6 +75,7 @@ export function TextureBrowserOverlay({
   onApplyGeneratedTextures,
   onClose,
   onCreateTexture,
+  onDeleteTexture,
   onSelectTexture,
   open,
   targetKind,
@@ -72,6 +95,11 @@ export function TextureBrowserOverlay({
   const [position, setPosition] = useState({ x: 340, y: 88 });
   const [error, setError] = useState<string>();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingDeleteTexture, setPendingDeleteTexture] =
+    useState<TextureRecord | null>(null);
+  const [quickGeneratingTextureIds, setQuickGeneratingTextureIds] = useState<
+    string[]
+  >([]);
   const [generationRequest, setGenerationRequest] =
     useState<TextureGenerationRequest>(() =>
       createDefaultGenerationRequest(targetKind)
@@ -174,6 +202,43 @@ export function TextureBrowserOverlay({
     }
   };
 
+  const handleQuickGenerate = async (
+    texture: TextureRecord,
+    kind: TextureKind
+  ) => {
+    try {
+      setError(undefined);
+      setQuickGeneratingTextureIds((current) => [...current, texture.id]);
+      const generator = createTextureGenerator();
+      const generated = await generator.generateTextures({
+        maps: {
+          color: kind === "color",
+          metalness: kind === "metalness",
+          normal: kind === "normal",
+          roughness: kind === "roughness"
+        },
+        model: "nano-banana-2",
+        prompt: texture.prompt ?? texture.name,
+        size: coerceTextureSize(texture.size),
+        sourceTextureDataUrl: texture.dataUrl
+      });
+
+      generated
+        .map((entry) => createTextureRecord(entry))
+        .forEach(onCreateTexture);
+    } catch (generationError) {
+      setError(
+        generationError instanceof Error
+          ? generationError.message
+          : "Failed to generate texture maps."
+      );
+    } finally {
+      setQuickGeneratingTextureIds((current) =>
+        current.filter((id) => id !== texture.id)
+      );
+    }
+  };
+
   const handleHeaderPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>
   ) => {
@@ -223,7 +288,7 @@ export function TextureBrowserOverlay({
     }
   };
 
-  return (
+  const overlay = (
     <div className="pointer-events-none fixed inset-0 z-40">
       <FloatingPanel
         className="absolute flex h-[min(44rem,calc(100vh-7rem))] w-[min(40rem,calc(100vw-2rem))] flex-col overflow-hidden border border-white/10 bg-[#09110f]/88"
@@ -339,32 +404,83 @@ export function TextureBrowserOverlay({
 
               {sortedTextures.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3 pr-1 sm:grid-cols-3">
-                  {sortedTextures.map((texture) => (
-                    <button
-                      className={cn(
-                        "group flex min-h-36 flex-col overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] text-left transition-colors hover:border-emerald-400/28 hover:bg-white/[0.05]",
-                        texture.kind === targetKind &&
-                          "border-emerald-400/26 shadow-[0_0_0_1px_rgba(16,185,129,0.22)]"
-                      )}
-                      key={texture.id}
-                      onClick={() => handleSelectExistingTexture(texture)}
-                      type="button"
-                    >
-                      <div
-                        className="aspect-square w-full bg-[#121619] bg-cover bg-center"
-                        style={{ backgroundImage: `url(${texture.dataUrl})` }}
-                      />
-                      <div className="flex flex-1 flex-col gap-1 px-3 py-2">
-                        <div className="truncate text-[11px] font-medium text-foreground/84">
-                          {texture.name}
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.16em] text-foreground/38">
-                          <span>{formatTextureKind(texture.kind)}</span>
-                          <span>{formatTextureSource(texture.source)}</span>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                  {sortedTextures.map((texture) => {
+                    const quickGenerating = quickGeneratingTextureIds.includes(
+                      texture.id
+                    );
+
+                    return (
+                      <ContextMenu key={texture.id}>
+                        <ContextMenuTrigger>
+                          <button
+                            className={cn(
+                              "group relative flex min-h-36 w-full flex-col overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] text-left transition-colors hover:border-emerald-400/28 hover:bg-white/[0.05]",
+                              texture.kind === targetKind &&
+                                "border-emerald-400/26 shadow-[0_0_0_1px_rgba(16,185,129,0.22)]"
+                            )}
+                            onClick={() => handleSelectExistingTexture(texture)}
+                            type="button"
+                          >
+                            <div
+                              className="aspect-square w-full bg-[#121619] bg-cover bg-center"
+                              style={{ backgroundImage: `url(${texture.dataUrl})` }}
+                            />
+                            {quickGenerating ? (
+                              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-foreground/82">
+                                <LoaderCircle className="size-3 animate-spin" />
+                                <span>AI</span>
+                              </div>
+                            ) : null}
+                            <div className="flex flex-1 flex-col gap-1 px-3 py-2">
+                              <div className="truncate text-[11px] font-medium text-foreground/84">
+                                {texture.name}
+                              </div>
+                              <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.16em] text-foreground/38">
+                                <span>{formatTextureKind(texture.kind)}</span>
+                                <span>{formatTextureSource(texture.source)}</span>
+                              </div>
+                            </div>
+                          </button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="rounded-2xl bg-[#0d1714]/96">
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <Layers />
+                              <span>Generate</span>
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent className="rounded-2xl bg-[#0d1714]/96">
+                              {(
+                                [
+                                  ["color", "Color Texture"],
+                                  ["normal", "Normal Map"],
+                                  ["roughness", "Roughness Map"],
+                                  ["metalness", "Metalness Map"]
+                                ] as const
+                              ).map(([kind, label]) => (
+                                <ContextMenuItem
+                                  key={kind}
+                                  onClick={() =>
+                                    void handleQuickGenerate(texture, kind)
+                                  }
+                                >
+                                  <Sparkles />
+                                  <span>{label}</span>
+                                </ContextMenuItem>
+                              ))}
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onClick={() => setPendingDeleteTexture(texture)}
+                            variant="destructive"
+                          >
+                            <Trash2 />
+                            <span>Delete</span>
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center text-xs text-foreground/46">
@@ -506,8 +622,58 @@ export function TextureBrowserOverlay({
           </ScrollArea>
         )}
       </FloatingPanel>
+
+      <Dialog
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setPendingDeleteTexture(null);
+          }
+        }}
+        open={Boolean(pendingDeleteTexture)}
+      >
+        <DialogContent className="max-w-sm rounded-2xl border border-white/10 bg-[#0b1311]/96" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Texture</DialogTitle>
+            <DialogDescription>
+              This removes the texture from the file and clears every material
+              slot using it. Deleted color textures fall back to the default
+              grey blockout base.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-white/8 bg-white/[0.03]">
+            <Button
+              onClick={() => setPendingDeleteTexture(null)}
+              size="sm"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-rose-500/16 text-rose-100 hover:bg-rose-500/24"
+              onClick={() => {
+                if (!pendingDeleteTexture) {
+                  return;
+                }
+
+                onDeleteTexture(pendingDeleteTexture);
+                setPendingDeleteTexture(null);
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(overlay, document.body);
 }
 
 function FieldLabel({ children }: { children: string }) {
@@ -613,6 +779,12 @@ function formatTextureSize(size: number) {
   }
 
   return `${size}`;
+}
+
+function coerceTextureSize(size?: number): (typeof TEXTURE_SIZES)[number] {
+  return TEXTURE_SIZES.includes(size as (typeof TEXTURE_SIZES)[number])
+    ? (size as (typeof TEXTURE_SIZES)[number])
+    : 1024;
 }
 
 function formatTextureSource(source: TextureRecord["source"]) {

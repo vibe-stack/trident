@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  type EditableMesh,
   isLightNode,
   isPrimitiveNode,
   vec3,
@@ -42,6 +43,7 @@ type InspectorSidebarProps = {
   onChangeRightPanel: (panel: RightPanelId) => void;
   onClipSelection: (axis: "x" | "y" | "z") => void;
   onDeleteMaterial: (materialId: string) => void;
+  onDeleteTexture: (textureId: string) => void;
   onExtrudeSelection: (axis: "x" | "y" | "z", direction: -1 | 1) => void;
   onFocusNode: (nodeId: string) => void;
   onMeshInflate: (factor: number) => void;
@@ -57,6 +59,7 @@ type InspectorSidebarProps = {
   onUpsertTexture: (texture: TextureRecord) => void;
   onUpdateEntityProperties: (entityId: string, properties: Entity["properties"]) => void;
   onUpdateEntityTransform: (entityId: string, transform: Transform, beforeTransform?: Transform) => void;
+  onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpdateNodeData: (nodeId: string, data: PrimitiveNodeData | LightNodeData) => void;
   onUpdateNodeTransform: (nodeId: string, transform: Transform, beforeTransform?: Transform) => void;
   onUpdateSceneSettings: (settings: SceneSettings, beforeSettings?: SceneSettings) => void;
@@ -86,6 +89,7 @@ export function InspectorSidebar({
   onChangeRightPanel,
   onClipSelection,
   onDeleteMaterial,
+  onDeleteTexture,
   onExtrudeSelection,
   onFocusNode,
   onMeshInflate,
@@ -101,6 +105,7 @@ export function InspectorSidebar({
   onUpsertTexture,
   onUpdateEntityProperties,
   onUpdateEntityTransform,
+  onUpdateMeshData,
   onUpdateNodeData,
   onUpdateNodeTransform,
   onUpdateSceneSettings,
@@ -147,6 +152,7 @@ export function InspectorSidebar({
 
   const selectedIsBrush = selectedNode?.kind === "brush";
   const selectedIsMesh = selectedNode?.kind === "mesh";
+  const selectedMeshNode = selectedNode?.kind === "mesh" ? selectedNode : undefined;
   const selectedPrimitive = selectedNode && isPrimitiveNode(selectedNode) ? selectedNode : undefined;
   const selectedLight = selectedNode && isLightNode(selectedNode) ? selectedNode : undefined;
 
@@ -541,6 +547,12 @@ export function InspectorSidebar({
                     {selectedPrimitive ? (
                       <PrimitiveInspector node={selectedPrimitive} onUpdateNodeData={onUpdateNodeData} />
                     ) : null}
+                    {selectedMeshNode ? (
+                      <MeshPhysicsInspector
+                        node={selectedMeshNode}
+                        onUpdateMeshData={onUpdateMeshData}
+                      />
+                    ) : null}
                     {selectedLight ? <LightInspector node={selectedLight} onUpdateNodeData={onUpdateNodeData} /> : null}
                     {selectedEntity ? (
                       <EntityInspector entity={selectedEntity} onUpdateEntityProperties={onUpdateEntityProperties} />
@@ -618,6 +630,7 @@ export function InspectorSidebar({
               materials={materials}
               onApplyMaterial={onApplyMaterial}
               onDeleteMaterial={onDeleteMaterial}
+              onDeleteTexture={onDeleteTexture}
               onSelectMaterial={onSelectMaterial}
               onSetUvOffset={onSetUvOffset}
               onSetUvScale={onSetUvScale}
@@ -680,62 +693,156 @@ function PrimitiveInspector({
       </div>
 
       {node.data.role === "prop" && node.data.physics ? (
-        <div className="space-y-2">
-          <SectionTitle>Physics</SectionTitle>
-          <BooleanField
-            label="Physics Enabled"
-            onCheckedChange={(checked) => updateData({ ...node.data, physics: { ...node.data.physics!, enabled: checked } })}
-            checked={node.data.physics.enabled}
-          />
-          <EnumGrid
-            activeValue={node.data.physics.bodyType}
-            entries={[
-              { label: "Static", value: "fixed" },
-              { label: "Dynamic", value: "dynamic" },
-              { label: "Kinematic", value: "kinematicPosition" }
-            ]}
-            onSelect={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, bodyType: value as PropBodyType } })}
-          />
-          <EnumGrid
-            activeValue={node.data.physics.colliderShape}
-            entries={[
-              { label: "Cuboid", value: "cuboid" },
-              { label: "Ball", value: "ball" },
-              { label: "Cylinder", value: "cylinder" },
-              { label: "Cone", value: "cone" },
-              { label: "Trimesh", value: "trimesh" }
-            ]}
-            onSelect={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, colliderShape: value as PropColliderShape } })}
-          />
-          <NumberField label="Mass" onChange={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, mass: value } })} value={node.data.physics.mass ?? 1} />
-          <NumberField label="Density" onChange={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, density: value } })} value={node.data.physics.density ?? 0} />
-          <NumberField label="Friction" onChange={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, friction: value } })} value={node.data.physics.friction} />
-          <NumberField label="Restitution" onChange={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, restitution: value } })} value={node.data.physics.restitution} />
-          <NumberField label="Gravity Scale" onChange={(value) => updateData({ ...node.data, physics: { ...node.data.physics!, gravityScale: value } })} value={node.data.physics.gravityScale} />
-          <BooleanField
-            label="Sensor"
-            onCheckedChange={(checked) => updateData({ ...node.data, physics: { ...node.data.physics!, sensor: checked } })}
-            checked={node.data.physics.sensor}
-          />
-          <BooleanField
-            label="CCD"
-            onCheckedChange={(checked) => updateData({ ...node.data, physics: { ...node.data.physics!, ccd: checked } })}
-            checked={node.data.physics.ccd}
-          />
-          <BooleanField
-            label="Lock Rotations"
-            onCheckedChange={(checked) => updateData({ ...node.data, physics: { ...node.data.physics!, lockRotations: checked } })}
-            checked={node.data.physics.lockRotations}
-          />
-          <BooleanField
-            label="Lock Translations"
-            onCheckedChange={(checked) => updateData({ ...node.data, physics: { ...node.data.physics!, lockTranslations: checked } })}
-            checked={node.data.physics.lockTranslations}
-          />
-        </div>
+        <PropPhysicsFields
+          physics={node.data.physics}
+          onChange={(physics) => updateData({ ...node.data, physics })}
+        />
       ) : null}
     </ToolSection>
   );
+}
+
+function MeshPhysicsInspector({
+  node,
+  onUpdateMeshData
+}: {
+  node: Extract<GeometryNode, { kind: "mesh" }>;
+  onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
+}) {
+  const physics = node.data.physics;
+
+  return (
+    <ToolSection title="Mesh Physics">
+      <BooleanField
+        label="Enabled"
+        onCheckedChange={(checked) => {
+          if (checked) {
+            onUpdateMeshData(
+              node.id,
+              {
+                ...node.data,
+                physics: physics ?? createDefaultMeshPhysics()
+              },
+              node.data
+            );
+            return;
+          }
+
+          onUpdateMeshData(
+            node.id,
+            {
+              ...node.data,
+              physics: undefined
+            },
+            node.data
+          );
+        }}
+        checked={Boolean(physics)}
+      />
+
+      {physics ? (
+        <PropPhysicsFields
+          physics={physics}
+          onChange={(nextPhysics) =>
+            onUpdateMeshData(
+              node.id,
+              { ...node.data, physics: nextPhysics },
+              node.data
+            )
+          }
+        />
+      ) : (
+        <div className="rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-[11px] text-foreground/52">
+          Enable physics to simulate this mesh at runtime.
+        </div>
+      )}
+    </ToolSection>
+  );
+}
+
+function PropPhysicsFields({
+  physics,
+  onChange
+}: {
+  physics: NonNullable<PrimitiveNodeData["physics"]>;
+  onChange: (physics: NonNullable<PrimitiveNodeData["physics"]>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <SectionTitle>Physics</SectionTitle>
+      <BooleanField
+        label="Physics Enabled"
+        onCheckedChange={(checked) => onChange({ ...physics, enabled: checked })}
+        checked={physics.enabled}
+      />
+      <EnumGrid
+        activeValue={physics.bodyType}
+        entries={[
+          { label: "Static", value: "fixed" },
+          { label: "Dynamic", value: "dynamic" },
+          { label: "Kinematic", value: "kinematicPosition" }
+        ]}
+        onSelect={(value) => onChange({ ...physics, bodyType: value as PropBodyType })}
+      />
+      <EnumGrid
+        activeValue={physics.colliderShape}
+        entries={[
+          { label: "Cuboid", value: "cuboid" },
+          { label: "Ball", value: "ball" },
+          { label: "Cylinder", value: "cylinder" },
+          { label: "Cone", value: "cone" },
+          { label: "Trimesh", value: "trimesh" }
+        ]}
+        onSelect={(value) => onChange({ ...physics, colliderShape: value as PropColliderShape })}
+      />
+      <NumberField label="Mass" onChange={(value) => onChange({ ...physics, mass: value })} value={physics.mass ?? 1} />
+      <NumberField label="Density" onChange={(value) => onChange({ ...physics, density: value })} value={physics.density ?? 0} />
+      <NumberField label="Friction" onChange={(value) => onChange({ ...physics, friction: value })} value={physics.friction} />
+      <NumberField label="Restitution" onChange={(value) => onChange({ ...physics, restitution: value })} value={physics.restitution} />
+      <NumberField label="Gravity Scale" onChange={(value) => onChange({ ...physics, gravityScale: value })} value={physics.gravityScale} />
+      <BooleanField
+        label="Sensor"
+        onCheckedChange={(checked) => onChange({ ...physics, sensor: checked })}
+        checked={physics.sensor}
+      />
+      <BooleanField
+        label="CCD"
+        onCheckedChange={(checked) => onChange({ ...physics, ccd: checked })}
+        checked={physics.ccd}
+      />
+      <BooleanField
+        label="Lock Rotations"
+        onCheckedChange={(checked) => onChange({ ...physics, lockRotations: checked })}
+        checked={physics.lockRotations}
+      />
+      <BooleanField
+        label="Lock Translations"
+        onCheckedChange={(checked) => onChange({ ...physics, lockTranslations: checked })}
+        checked={physics.lockTranslations}
+      />
+    </div>
+  );
+}
+
+function createDefaultMeshPhysics(): NonNullable<PrimitiveNodeData["physics"]> {
+  return {
+    angularDamping: 0.8,
+    bodyType: "fixed",
+    canSleep: true,
+    ccd: false,
+    colliderShape: "trimesh",
+    contactSkin: 0,
+    density: undefined,
+    enabled: true,
+    friction: 0.8,
+    gravityScale: 1,
+    linearDamping: 0.7,
+    lockRotations: false,
+    lockTranslations: false,
+    mass: 1,
+    restitution: 0.05,
+    sensor: false
+  };
 }
 
 function LightInspector({

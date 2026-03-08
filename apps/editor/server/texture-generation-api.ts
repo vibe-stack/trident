@@ -6,6 +6,7 @@ import {
   createAiTextureDraft,
   createColorPrompt,
   createDerivativePrompt,
+  createSourceColorPrompt,
   createTextureName,
   ensureColorMapSelection,
   isTextureGenerationRequest,
@@ -78,6 +79,24 @@ async function generateTextures(
   });
 
   const normalizedRequest = ensureColorMapSelection(request);
+  if (normalizedRequest.sourceTextureDataUrl) {
+    return {
+      textures: await Promise.all(
+        (
+          ["color", "normal", "metalness", "roughness"] as const
+        )
+          .filter((kind) => normalizedRequest.maps[kind])
+          .map((kind) =>
+            generateTextureFromSource(
+              kind,
+              normalizedRequest.sourceTextureDataUrl!,
+              normalizedRequest
+            )
+          )
+      )
+    };
+  }
+
   const colorTexture = await generateColorTexture(normalizedRequest);
   const derivativeKinds = (
     ["normal", "metalness", "roughness"] as const
@@ -124,6 +143,31 @@ async function generateDerivedTexture(
       num_images: 1,
       output_format: "png",
       prompt: createDerivativePrompt(kind, request.prompt),
+      resolution: mapFalResolution(request.size),
+      sync_mode: true
+    },
+    logs: false
+  });
+
+  return buildTextureDraft(kind, result, request);
+}
+
+async function generateTextureFromSource(
+  kind: TextureKind,
+  sourceTextureDataUrl: string,
+  request: TextureGenerationRequest
+) {
+  const result = await fal.subscribe("fal-ai/nano-banana-2/edit", {
+    input: {
+      aspect_ratio: "1:1",
+      image_urls: [sourceTextureDataUrl],
+      limit_generations: true,
+      num_images: 1,
+      output_format: "png",
+      prompt:
+        kind === "color"
+          ? createSourceColorPrompt(request.prompt)
+          : createDerivativePrompt(kind, request.prompt),
       resolution: mapFalResolution(request.size),
       sync_mode: true
     },

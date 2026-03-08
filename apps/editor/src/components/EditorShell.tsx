@@ -61,6 +61,7 @@ type EditorShellProps = {
   onExtrudeSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   onFocusNode: (nodeId: string) => void;
   onDeleteMaterial: (materialId: string) => void;
+  onDeleteTexture: (textureId: string) => void;
   onLoadWhmap: () => void;
   onInvertSelectionNormals: () => void;
   onPausePhysics: () => void;
@@ -106,13 +107,13 @@ type EditorShellProps = {
   onUndo: () => void;
   onUpdateEntityProperties: (entityId: string, properties: Record<string, string | number | boolean>) => void;
   onUpdateEntityTransform: (entityId: string, transform: Transform, beforeTransform?: Transform) => void;
+  onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpdateNodeData: (nodeId: string, data: PrimitiveNodeData | LightNodeData) => void;
   onUpdateSceneSettings: (settings: SceneSettings, beforeSettings?: SceneSettings) => void;
   onUpdateViewport: (viewportId: ViewportPaneId, viewport: ViewportState) => void;
   onUpsertMaterial: (material: Material) => void;
   onUpsertTexture: (texture: TextureRecord) => void;
   onUpdateBrushData: (nodeId: string, brush: Brush, beforeBrush?: Brush) => void;
-  onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpdateNodeTransform: (nodeId: string, transform: Transform, beforeTransform?: Transform) => void;
   physicsPlayback: "paused" | "running" | "stopped";
   physicsRevision: number;
@@ -155,6 +156,7 @@ export function EditorShell({
   onExtrudeSelection,
   onFocusNode,
   onDeleteMaterial,
+  onDeleteTexture,
   onLoadWhmap,
   onInvertSelectionNormals,
   onPausePhysics,
@@ -379,6 +381,7 @@ export function EditorShell({
           onChangeRightPanel={onSetRightPanel}
           onClipSelection={onClipSelection}
           onDeleteMaterial={onDeleteMaterial}
+          onDeleteTexture={onDeleteTexture}
           onExtrudeSelection={onExtrudeSelection}
           onFocusNode={onFocusNode}
           onMeshInflate={onMeshInflate}
@@ -394,6 +397,7 @@ export function EditorShell({
           onUpsertTexture={onUpsertTexture}
           onUpdateEntityProperties={onUpdateEntityProperties}
           onUpdateEntityTransform={onUpdateEntityTransform}
+          onUpdateMeshData={onUpdateMeshData}
           onUpdateNodeData={onUpdateNodeData}
           onUpdateSceneSettings={onUpdateSceneSettings}
           onUpdateNodeTransform={onUpdateNodeTransform}

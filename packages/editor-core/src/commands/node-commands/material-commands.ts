@@ -1,5 +1,5 @@
-import type { Brush, EditableMesh, Face, Material, Vec2 } from "@web-hammer/shared";
-import { isBrushNode, isMeshNode } from "@web-hammer/shared";
+import type { Brush, EditableMesh, Face, Material, PrimitiveNodeData, Vec2 } from "@web-hammer/shared";
+import { isBrushNode, isMeshNode, isPrimitiveNode } from "@web-hammer/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 
@@ -44,9 +44,9 @@ export function createDeleteMaterialCommand(
   }
 
   const affectedNodes: Array<{
-    before: Brush | EditableMesh;
-    kind: "brush" | "mesh";
-    next: Brush | EditableMesh;
+    before: Brush | EditableMesh | PrimitiveNodeData;
+    kind: "brush" | "mesh" | "primitive";
+    next: Brush | EditableMesh | PrimitiveNodeData;
     nodeId: string;
   }> = [];
 
@@ -88,6 +88,19 @@ export function createDeleteMaterialCommand(
             )
           } satisfies EditableMesh
         });
+        return;
+      }
+
+      if (isPrimitiveNode(node) && node.data.materialId === materialId) {
+        affectedNodes.push({
+          before: structuredClone(node.data),
+          kind: "primitive",
+          nodeId: node.id,
+          next: {
+            ...structuredClone(node.data),
+            materialId: fallbackMaterialId
+          } satisfies PrimitiveNodeData
+        });
       }
     });
 
@@ -104,6 +117,11 @@ export function createDeleteMaterialCommand(
 
         if (node && isMeshNode(node) && entry.kind === "mesh") {
           node.data = structuredClone(entry.next as EditableMesh);
+          nextScene.touch();
+        }
+
+        if (node && isPrimitiveNode(node) && entry.kind === "primitive") {
+          node.data = structuredClone(entry.next as PrimitiveNodeData);
           nextScene.touch();
         }
       });
@@ -125,6 +143,11 @@ export function createDeleteMaterialCommand(
           node.data = structuredClone(entry.before as EditableMesh);
           nextScene.touch();
         }
+
+        if (node && isPrimitiveNode(node) && entry.kind === "primitive") {
+          node.data = structuredClone(entry.before as PrimitiveNodeData);
+          nextScene.touch();
+        }
       });
     }
   };
@@ -136,10 +159,16 @@ export function createAssignMaterialCommand(
   materialId: string
 ): Command {
   const snapshots = targets
-    .map((target) => buildFaceMutationSnapshot(scene, target, (face) => ({
-      ...face,
-      materialId
-    })))
+    .map((target) =>
+      buildPrimitiveMutationSnapshot(scene, target, (data) => ({
+        ...data,
+        materialId
+      })) ??
+      buildFaceMutationSnapshot(scene, target, (face) => ({
+        ...face,
+        materialId
+      }))
+    )
     .filter((snapshot): snapshot is FaceMutationSnapshot => Boolean(snapshot));
 
   return createFaceMutationCommand("assign material", snapshots);
@@ -151,10 +180,16 @@ export function createSetUvScaleCommand(
   uvScale: Vec2
 ): Command {
   const snapshots = targets
-    .map((target) => buildFaceMutationSnapshot(scene, target, (face) => ({
-      ...face,
-      uvScale: { x: uvScale.x, y: uvScale.y }
-    })))
+    .map((target) =>
+      buildPrimitiveMutationSnapshot(scene, target, (data) => ({
+        ...data,
+        uvScale: { x: uvScale.x, y: uvScale.y }
+      })) ??
+      buildFaceMutationSnapshot(scene, target, (face) => ({
+        ...face,
+        uvScale: { x: uvScale.x, y: uvScale.y }
+      }))
+    )
     .filter((snapshot): snapshot is FaceMutationSnapshot => Boolean(snapshot));
 
   return createFaceMutationCommand("set uv scale", snapshots);
@@ -188,6 +223,12 @@ type FaceMutationSnapshot =
       faceIds?: string[];
       kind: "mesh";
       next: EditableMesh["faces"];
+      nodeId: string;
+    }
+  | {
+      before: PrimitiveNodeData;
+      kind: "primitive";
+      next: PrimitiveNodeData;
       nodeId: string;
     };
 
@@ -228,6 +269,25 @@ function buildFaceMutationSnapshot(
   return undefined;
 }
 
+function buildPrimitiveMutationSnapshot(
+  scene: SceneDocument,
+  target: MaterialTarget,
+  mutate: (data: PrimitiveNodeData) => PrimitiveNodeData
+): FaceMutationSnapshot | undefined {
+  const node = scene.getNode(target.nodeId);
+
+  if (!node || !isPrimitiveNode(node) || target.faceIds?.length) {
+    return undefined;
+  }
+
+  return {
+    before: structuredClone(node.data),
+    kind: "primitive",
+    next: mutate(structuredClone(node.data)),
+    nodeId: target.nodeId
+  };
+}
+
 function resolveBrushFaces(existingFaces: Face[], planes: Brush["planes"], nodeId: string): Face[] {
   if (existingFaces.length >= planes.length) {
     return existingFaces;
@@ -259,6 +319,11 @@ function createFaceMutationCommand(label: string, snapshots: FaceMutationSnapsho
           node.data.faces = structuredClone(snapshot.next);
           nextScene.touch();
         }
+
+        if (node && isPrimitiveNode(node) && snapshot.kind === "primitive") {
+          node.data = structuredClone(snapshot.next);
+          nextScene.touch();
+        }
       });
     },
     undo(nextScene) {
@@ -272,6 +337,11 @@ function createFaceMutationCommand(label: string, snapshots: FaceMutationSnapsho
 
         if (node && isMeshNode(node) && snapshot.kind === "mesh") {
           node.data.faces = structuredClone(snapshot.before);
+          nextScene.touch();
+        }
+
+        if (node && isPrimitiveNode(node) && snapshot.kind === "primitive") {
+          node.data = structuredClone(snapshot.before);
           nextScene.touch();
         }
       });

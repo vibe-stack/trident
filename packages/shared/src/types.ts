@@ -79,6 +79,8 @@ export type EditableMesh = {
   vertices: EditableMeshVertex[];
   halfEdges: EditableMeshHalfEdge[];
   faces: EditableMeshFace[];
+  physics?: PropPhysics;
+  role?: PrimitiveRole;
 };
 
 export type ModelReference = {

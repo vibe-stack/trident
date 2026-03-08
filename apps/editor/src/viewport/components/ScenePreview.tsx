@@ -55,7 +55,7 @@ export function ScenePreview({
   const physicsActive = renderMode === "lit" && physicsPlayback !== "stopped" && sceneSettings.world.physicsEnabled;
   const playerSpawn = physicsActive ? renderScene.entityMarkers.find((entity) => entity.entityType === "player-spawn") : undefined;
   const physicsPropMeshes = physicsActive
-    ? renderScene.meshes.filter((mesh) => !hiddenIds.has(mesh.nodeId) && mesh.primitiveRole === "prop" && mesh.physics?.enabled)
+    ? renderScene.meshes.filter((mesh) => !hiddenIds.has(mesh.nodeId) && mesh.physics?.enabled)
     : [];
   const staticMeshes = renderScene.meshes.filter(
     (mesh) => !hiddenIds.has(mesh.nodeId) && !physicsPropMeshes.some((candidate) => candidate.nodeId === mesh.nodeId)
@@ -535,9 +535,11 @@ function PhysicsPropMesh({
   const physics = mesh.physics;
   const colliderProps = useMemo(() => resolvePhysicsColliderProps(mesh.physics), [mesh.physics]);
 
-  if (!physics || !mesh.primitive) {
+  if (!physics) {
     return null;
   }
+
+  const useTrimeshCollider = physics.colliderShape === "trimesh" || !mesh.primitive;
 
   return (
     <RigidBody
@@ -553,7 +555,7 @@ function PhysicsPropMesh({
       rotation={toTuple(mesh.rotation)}
       type={physics.bodyType}
     >
-      {physics.colliderShape !== "trimesh" ? (
+      {!useTrimeshCollider ? (
         <ManualCollider mesh={mesh} />
       ) : (
         <TrimeshPhysicsCollider colliderProps={colliderProps} mesh={mesh} />
