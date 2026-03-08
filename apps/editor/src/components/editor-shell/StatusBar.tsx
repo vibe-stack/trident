@@ -1,12 +1,12 @@
 import type { GridSnapValue, ViewportState } from "@web-hammer/render-pipeline";
-import type { GeometryNode, PrimitiveShape } from "@web-hammer/shared";
+import type { BrushShape, GeometryNode } from "@web-hammer/shared";
 import type { WorkerJob } from "@web-hammer/workers";
 import { JobStatus } from "@/components/editor-shell/JobStatus";
 import type { MeshEditMode } from "@/viewport/editing";
 import type { ViewportPaneId } from "@/viewport/viewports";
 
 type StatusBarProps = {
-  activeBrushShape: PrimitiveShape;
+  activeBrushShape: BrushShape;
   activeToolLabel: string;
   activeViewportId: ViewportPaneId;
   gridSnapValues: readonly GridSnapValue[];
@@ -59,7 +59,15 @@ export function StatusBar({
   );
 }
 
-function resolveBrushInteractionHint(shape: PrimitiveShape) {
+function resolveBrushInteractionHint(shape: BrushShape) {
+  if (shape === "custom-polygon") {
+    return "click plane / click points / Enter close / move extrude / click commit / Esc cancel";
+  }
+
+  if (shape === "stairs") {
+    return "click anchor / move for base / wheel rotate / click lock / move height / wheel steps / click commit / Esc cancel";
+  }
+
   if (shape === "sphere") {
     return "click center / move for radius / click commit / Esc cancel";
   }

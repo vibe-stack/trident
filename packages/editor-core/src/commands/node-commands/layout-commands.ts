@@ -325,7 +325,7 @@ function createRoomShellMesh(size: Vec3, openSides: Set<BlockoutOpenSide>, idPre
   return applyMaterialToMesh(createEditableMeshFromPolygons(polygons), polygons, materialId);
 }
 
-function createStairMesh(
+export function createStairMesh(
   spec: {
     landingDepth: number;
     stepCount: number;
@@ -339,7 +339,7 @@ function createStairMesh(
 ) {
   const totalRun = spec.stepCount * spec.treadDepth;
   const totalRise = spec.stepCount * spec.stepHeight;
-  const baseThickness = Math.max(0.2, spec.stepHeight);
+  const baseThickness = Math.max(0.2, Math.abs(spec.stepHeight));
   const startX = -spec.landingDepth * 0.5;
   const profile: Array<{ x: number; y: number }> = [
     { x: startX, y: -baseThickness },
@@ -367,23 +367,25 @@ function createStairMesh(
     y: -baseThickness
   });
 
+  const outline = compactProfile(profile);
+
   const halfWidth = spec.width * 0.5;
   const polygons: EditableMeshPolygon[] = [
     createOrientedPolygon(
       `${idPrefix}:cap:front`,
-      profile.map((point) => vec3(point.x, point.y, -halfWidth)),
+      outline.map((point) => vec3(point.x, point.y, -halfWidth)),
       vec3(0, 0, -1)
     ),
     createOrientedPolygon(
       `${idPrefix}:cap:back`,
-      profile.map((point) => vec3(point.x, point.y, halfWidth)),
+      outline.map((point) => vec3(point.x, point.y, halfWidth)),
       vec3(0, 0, 1)
     )
   ];
 
-  for (let index = 0; index < profile.length; index += 1) {
-    const current = profile[index];
-    const next = profile[(index + 1) % profile.length];
+  for (let index = 0; index < outline.length; index += 1) {
+    const current = outline[index];
+    const next = outline[(index + 1) % outline.length];
 
     polygons.push(
       createOrientedPolygon(
@@ -407,7 +409,20 @@ function quadNormalFromEdge(
   end: { x: number; y: number }
 ) {
   const edge = vec3(end.x - start.x, end.y - start.y, 0);
-  return vec3(edge.y, -edge.x, 0);
+  return vec3(-edge.y, edge.x, 0);
+}
+
+function compactProfile(points: Array<{ x: number; y: number }>, epsilon = 0.0001) {
+  return points.reduce<Array<{ x: number; y: number }>>((collection, point) => {
+    const previous = collection[collection.length - 1];
+
+    if (previous && Math.abs(previous.x - point.x) <= epsilon && Math.abs(previous.y - point.y) <= epsilon) {
+      return collection;
+    }
+
+    collection.push(point);
+    return collection;
+  }, []);
 }
 
 function applyMaterialToMesh(mesh: MeshNode["data"], polygons: EditableMeshPolygon[], defaultMaterialId: string) {

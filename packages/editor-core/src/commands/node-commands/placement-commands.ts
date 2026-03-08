@@ -2,6 +2,7 @@ import type {
   BrushNode,
   Entity,
   LightNode,
+  MeshNode,
   ModelNode,
   PrimitiveNode,
   Transform,
@@ -79,6 +80,37 @@ export function createPlacePrimitiveNodeCommand(
   return {
     command: {
       label: `place ${primitive.data.role}`,
+      execute(nextScene) {
+        nextScene.addNode(structuredClone(node));
+      },
+      undo(nextScene) {
+        nextScene.removeNode(node.id);
+      }
+    },
+    nodeId
+  };
+}
+
+export function createPlaceMeshNodeCommand(
+  scene: SceneDocument,
+  transform: Transform,
+  mesh: Pick<MeshNode, "data" | "name">
+): {
+  command: Command;
+  nodeId: string;
+} {
+  const nodeId = createDuplicateNodeId(scene, "node:mesh:placed");
+  const node: MeshNode = {
+    id: nodeId,
+    kind: "mesh",
+    name: mesh.name,
+    transform: structuredClone(transform),
+    data: structuredClone(mesh.data)
+  };
+
+  return {
+    command: {
+      label: "place mesh",
       execute(nextScene) {
         nextScene.addNode(structuredClone(node));
       },

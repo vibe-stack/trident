@@ -1,4 +1,5 @@
 import {
+  type BrushShape,
   makeTransform,
   vec3,
   type Entity,
@@ -14,9 +15,11 @@ import {
   type Vec3
 } from "@web-hammer/shared";
 
-export const BRUSH_SHAPES: Array<{ label: string; shape: PrimitiveShape }> = [
+export const BRUSH_SHAPES: Array<{ label: string; shape: BrushShape }> = [
   { label: "Cube", shape: "cube" },
+  { label: "Custom Polygon", shape: "custom-polygon" },
   { label: "Sphere", shape: "sphere" },
+  { label: "Stairs", shape: "stairs" },
   { label: "Cylinder", shape: "cylinder" },
   { label: "Cone", shape: "cone" }
 ];

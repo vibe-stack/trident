@@ -59,7 +59,9 @@ import {
   resolveBrushCreateSurfaceHit
 } from "@/viewport/utils/brush-create";
 import {
+  adjustBrushCreateStateWithWheel,
   advanceBrushCreateState,
+  finalizeBrushCreateState,
   startBrushCreateState,
   updateBrushCreateState
 } from "@/viewport/utils/brush-create-session";
@@ -105,6 +107,7 @@ export function ViewportCanvas({
   onFocusNode,
   onPlaceAsset,
   onPlaceBrush,
+  onPlaceMeshNode,
   onPlacePrimitiveNode,
   onPreviewBrushData,
   onPreviewEntityTransform,
@@ -200,18 +203,65 @@ export function ViewportCanvas({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !brushCreateState) {
+      if (!brushCreateState) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setBrushCreateState(null);
+        return;
+      }
+
+      if (event.key !== "Enter" || brushCreateState.shape !== "custom-polygon" || brushCreateState.stage !== "outline") {
         return;
       }
 
       event.preventDefault();
-      setBrushCreateState(null);
+
+      const bounds = viewportRootRef.current?.getBoundingClientRect();
+      const pointer = pointerPositionRef.current;
+
+      const result = finalizeBrushCreateState(
+        brushCreateState,
+        cameraRef.current && bounds && pointer
+          ? {
+              bounds,
+              camera: cameraRef.current,
+              clientX: pointer.x + bounds.left,
+              clientY: pointer.y + bounds.top,
+              raycaster: raycasterRef.current,
+              snapSize
+            }
+          : undefined
+      );
+
+      if (result.nextState) {
+        setBrushCreateState(result.nextState);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [brushCreateState, snapSize]);
+
+  useEffect(() => {
+    const handleWheel = (event: WheelEvent) => {
+      if (!brushCreateState || brushCreateState.shape !== "stairs") {
+        return;
+      }
+
+      event.preventDefault();
+      setBrushCreateState((current) => (current ? adjustBrushCreateStateWithWheel(current, event.deltaY) : current));
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
     };
   }, [brushCreateState]);
 
@@ -1641,6 +1691,8 @@ export function ViewportCanvas({
 
     if (placement.kind === "brush") {
       onPlaceBrush(placement.brush, placement.transform);
+    } else if (placement.kind === "mesh") {
+      onPlaceMeshNode(placement.mesh, placement.transform, placement.name);
     } else {
       onPlacePrimitiveNode(placement.primitive, placement.transform, placement.name);
     }

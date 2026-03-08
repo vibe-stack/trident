@@ -1,5 +1,5 @@
 import type { GridSnapValue } from "@web-hammer/render-pipeline";
-import type { EntityType, LightType, PrimitiveShape } from "@web-hammer/shared";
+import type { BrushShape, EntityType, LightType, PrimitiveShape } from "@web-hammer/shared";
 import type { ToolId } from "@web-hammer/tool-system";
 import { AnimatePresence, motion } from "motion/react";
 import { CreationToolBar } from "@/components/editor-shell/CreationToolBar";
@@ -12,7 +12,7 @@ import type { MeshEditMode } from "@/viewport/editing";
 import type { ViewModeId } from "@/viewport/viewports";
 
 type ToolPaletteProps = {
-  activeBrushShape: PrimitiveShape;
+  activeBrushShape: BrushShape;
   activeToolId: ToolId;
   currentSnapSize: GridSnapValue;
   gridSnapValues: readonly GridSnapValue[];
@@ -31,7 +31,7 @@ type ToolPaletteProps = {
   onPlaceProp: (shape: PrimitiveShape) => void;
   onPlayPhysics: () => void;
   onRaiseTop: () => void;
-  onSelectBrushShape: (shape: PrimitiveShape) => void;
+  onSelectBrushShape: (shape: BrushShape) => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
   onSetSnapEnabled: (enabled: boolean) => void;
   onSetSnapSize: (snapSize: GridSnapValue) => void;

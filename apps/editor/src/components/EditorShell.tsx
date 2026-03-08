@@ -1,18 +1,18 @@
 import type { EditorCore, SceneSpatialAnalysis, TransformAxis } from "@web-hammer/editor-core";
 import type { GridSnapValue, DerivedRenderScene, ViewportState } from "@web-hammer/render-pipeline";
 import type {
+  BrushShape,
   Brush,
   EditableMesh,
   EntityType,
   LightNodeData,
   LightType,
   Material,
-  PrimitiveNodeData,
-  PrimitiveShape,
   SceneSettings,
   Transform,
   Vec2
 } from "@web-hammer/shared";
+import type { PrimitiveNodeData, PrimitiveShape } from "@web-hammer/shared";
 import type { ToolId } from "@web-hammer/tool-system";
 import type { WorkerJob } from "@web-hammer/workers";
 import type { ReactNode } from "react";
@@ -35,7 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type EditorShellProps = {
-  activeBrushShape: PrimitiveShape;
+  activeBrushShape: BrushShape;
   activeRightPanel: RightPanelId;
   activeToolId: ToolId;
   activeViewportId: ViewportPaneId;
@@ -74,6 +74,7 @@ type EditorShellProps = {
   onMirrorSelection: (axis: TransformAxis) => void;
   onPlaceAsset: (position: { x: number; y: number; z: number }) => void;
   onPlaceBrush: (brush: Brush, transform: Transform) => void;
+  onPlaceMeshNode: (mesh: EditableMesh, transform: Transform, name: string) => void;
   onPlacePrimitiveNode: (data: PrimitiveNodeData, transform: Transform, name: string) => void;
   onPlaceProp: (shape: PrimitiveShape) => void;
   onPlayPhysics: () => void;
@@ -88,7 +89,7 @@ type EditorShellProps = {
   onSetUvOffset: (scope: "faces" | "object", faceIds: string[], uvOffset: Vec2) => void;
   onSetUvScale: (scope: "faces" | "object", faceIds: string[], uvScale: Vec2) => void;
   onSelectNodes: (nodeIds: string[]) => void;
-  onSetActiveBrushShape: (shape: PrimitiveShape) => void;
+  onSetActiveBrushShape: (shape: BrushShape) => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
   onSetRightPanel: (panel: RightPanelId) => void;
   onSetSnapEnabled: (enabled: boolean) => void;
@@ -165,6 +166,7 @@ export function EditorShell({
   onMirrorSelection,
   onPlaceAsset,
   onPlaceBrush,
+  onPlaceMeshNode,
   onPlacePrimitiveNode,
   onPlaceProp,
   onPlayPhysics,
@@ -255,6 +257,7 @@ export function EditorShell({
           onFocusNode={onFocusNode}
           onPlaceAsset={onPlaceAsset}
           onPlaceBrush={onPlaceBrush}
+          onPlaceMeshNode={onPlaceMeshNode}
           onPlacePrimitiveNode={onPlacePrimitiveNode}
           onPreviewBrushData={onPreviewBrushData}
           onPreviewEntityTransform={onPreviewEntityTransform}
@@ -357,7 +360,7 @@ export function EditorShell({
           viewMode={viewMode}
         />
 
-        <SpatialAnalysisPanel analysis={analysis} />
+        {/* <SpatialAnalysisPanel analysis={analysis} /> */}
 
         <InspectorSidebar
           activeRightPanel={activeRightPanel}

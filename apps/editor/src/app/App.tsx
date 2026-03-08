@@ -24,6 +24,7 @@ import {
   createMeshRaiseTopCommand,
   createMirrorNodesCommand,
   createPlaceBrushNodeCommand,
+  createPlaceMeshNodeCommand,
   createPlaceModelNodeCommand,
   createSeedSceneDocument,
   createSetUvOffsetCommand,
@@ -38,6 +39,7 @@ import {
 import { convertBrushToEditableMesh, invertEditableMeshNormals } from "@web-hammer/geometry-kernel";
 import { deriveRenderScene, gridSnapValues, type ViewportState } from "@web-hammer/render-pipeline";
 import {
+  type BrushShape,
   type GeometryNode,
   isBrushNode,
   isLightNode,
@@ -47,7 +49,6 @@ import {
   type Material,
   type MeshNode,
   type PrimitiveNodeData,
-  type PrimitiveShape,
   snapVec3,
   vec2,
   vec3,
@@ -61,6 +62,7 @@ import {
   type Vec3,
   type SceneSettings
 } from "@web-hammer/shared";
+import type { PrimitiveShape } from "@web-hammer/shared";
 import { createToolSession, defaultToolId, defaultTools, type ToolId } from "@web-hammer/tool-system";
 import {
   createWorkerTaskManager,
@@ -94,7 +96,7 @@ import {
 export function App() {
   const [editor] = useState(() => createEditorCore(createSeedSceneDocument()));
   const [activeToolId, setActiveToolId] = useState<ToolId>(defaultToolId);
-  const [activeBrushShape, setActiveBrushShape] = useState<PrimitiveShape>("cube");
+  const [activeBrushShape, setActiveBrushShape] = useState<BrushShape>("cube");
   const [meshEditMode, setMeshEditMode] = useState<MeshEditMode>("vertex");
   const [meshEditToolbarAction, setMeshEditToolbarAction] = useState<MeshEditToolbarActionRequest>();
   const [physicsPlayback, setPhysicsPlayback] = useState<"paused" | "running" | "stopped">("stopped");
@@ -578,6 +580,11 @@ export function App() {
   };
 
   const handleCreateBrush = () => {
+    if (activeBrushShape === "custom-polygon" || activeBrushShape === "stairs") {
+      setActiveToolId("brush");
+      return;
+    }
+
     if (activeBrushShape !== "cube") {
       const data = createPrimitiveNodeData("brush", activeBrushShape);
       handlePlacePrimitiveNode(
@@ -609,6 +616,17 @@ export function App() {
     editor.execute(command);
     editor.select([nodeId], "object");
     enqueueWorkerJob("Brush creation", { task: "brush-rebuild", worker: "geometryWorker" }, 700);
+  };
+
+  const handlePlaceMeshNode = (mesh: EditableMesh, transform: Transform, name: string) => {
+    const { command, nodeId } = createPlaceMeshNodeCommand(editor.scene, transform, {
+      data: mesh,
+      name
+    });
+
+    editor.execute(command);
+    editor.select([nodeId], "object");
+    enqueueWorkerJob("Mesh creation", { task: "triangulation", worker: "geometryWorker" }, 700);
   };
 
   const handlePlacePrimitiveNode = (data: PrimitiveNodeData, transform: Transform, name: string) => {
@@ -969,6 +987,7 @@ export function App() {
         onMirrorSelection={handleMirrorSelection}
         onPlaceAsset={handlePlaceAsset}
         onPlaceBrush={handlePlaceBrush}
+        onPlaceMeshNode={handlePlaceMeshNode}
         onPlaceBlockoutOpenRoom={() => handlePlaceBlockoutRoom(["south"])}
         onPlaceBlockoutPlatform={handlePlaceBlockoutPlatform}
         onPlaceBlockoutRoom={() => handlePlaceBlockoutRoom()}

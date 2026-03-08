@@ -8,6 +8,7 @@ export type VertexID = string;
 export type HalfEdgeID = string;
 export type MetadataValue = string | number | boolean;
 export type PrimitiveShape = "cone" | "cube" | "cylinder" | "sphere";
+export type BrushShape = PrimitiveShape | "custom-polygon" | "stairs";
 export type PrimitiveRole = "brush" | "prop";
 export type PropBodyType = "dynamic" | "fixed" | "kinematicPosition";
 export type PropColliderShape = "ball" | "cone" | "cuboid" | "cylinder" | "trimesh";

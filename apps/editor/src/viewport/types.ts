@@ -1,12 +1,12 @@
 import type { EdgeBevelProfile } from "@web-hammer/geometry-kernel";
 import type { DerivedRenderScene, ViewportState } from "@web-hammer/render-pipeline";
 import type {
+  BrushShape,
   Brush,
   EditableMesh,
   Entity,
   GeometryNode,
   PrimitiveNodeData,
-  PrimitiveShape,
   SceneSettings,
   Transform,
   Vec3
@@ -33,7 +33,7 @@ export type MeshEditToolbarActionRequest = {
 };
 
 export type ViewportCanvasProps = {
-  activeBrushShape: PrimitiveShape;
+  activeBrushShape: BrushShape;
   activeToolId: ToolId;
   dprScale: number;
   isActiveViewport: boolean;
@@ -45,6 +45,7 @@ export type ViewportCanvasProps = {
   onFocusNode: (nodeId: string) => void;
   onPlaceAsset: (position: { x: number; y: number; z: number }) => void;
   onPlaceBrush: (brush: Brush, transform: Transform) => void;
+  onPlaceMeshNode: (mesh: EditableMesh, transform: Transform, name: string) => void;
   onPlacePrimitiveNode: (data: PrimitiveNodeData, transform: Transform, name: string) => void;
   onPreviewBrushData: (nodeId: string, brush: Brush) => void;
   onPreviewEntityTransform: (entityId: string, transform: Transform) => void;
@@ -89,6 +90,12 @@ export type BrushCreatePlacement =
   | {
       brush: Brush;
       kind: "brush";
+      transform: Transform;
+    }
+  | {
+      kind: "mesh";
+      mesh: EditableMesh;
+      name: string;
       transform: Transform;
     }
   | {
@@ -142,6 +149,45 @@ export type BrushCreateState =
       shape: "cone" | "cylinder";
       stage: "height";
       startPoint: Vec3;
+    }
+  | {
+      anchor: Vec3;
+      basis: BrushCreateBasis;
+      currentPoint: Vec3;
+      points: Vec3[];
+      shape: "custom-polygon";
+      stage: "outline";
+    }
+  | {
+      anchor: Vec3;
+      basis: BrushCreateBasis;
+      dragPlane: Plane;
+      height: number;
+      points: Vec3[];
+      shape: "custom-polygon";
+      stage: "height";
+      startPoint: Vec3;
+    }
+  | {
+      anchor: Vec3;
+      basis: BrushCreateBasis;
+      currentPoint: Vec3;
+      rotationSteps: number;
+      shape: "stairs";
+      stage: "base";
+    }
+  | {
+      anchor: Vec3;
+      basis: BrushCreateBasis;
+      depth: number;
+      dragPlane: Plane;
+      height: number;
+      rotationSteps: number;
+      shape: "stairs";
+      stage: "height";
+      startPoint: Vec3;
+      stepCount: number;
+      width: number;
     };
 
 export type BevelState = {

@@ -1,4 +1,4 @@
-import type { EntityType, LightType, PrimitiveShape } from "@web-hammer/shared";
+import type { BrushShape, EntityType, LightType, PrimitiveShape } from "@web-hammer/shared";
 import type { ComponentType, ReactNode } from "react";
 import {
   AmbientLightIcon,
@@ -34,7 +34,7 @@ export function CreationToolBar({
   onPlaceProp,
   onSelectBrushShape
 }: {
-  activeBrushShape: PrimitiveShape;
+  activeBrushShape: BrushShape;
   activeToolId: ToolId;
   disabled?: boolean;
   onPlaceEntity: (type: EntityType) => void;
@@ -44,7 +44,7 @@ export function CreationToolBar({
   onPlaceBlockoutRoom: () => void;
   onPlaceBlockoutStairs: () => void;
   onPlaceProp: (shape: PrimitiveShape) => void;
-  onSelectBrushShape: (shape: PrimitiveShape) => void;
+  onSelectBrushShape: (shape: BrushShape) => void;
 }) {
   return (
     <div className="flex items-end gap-2">
@@ -57,11 +57,25 @@ export function CreationToolBar({
           onClick={() => onSelectBrushShape("cube")}
         />
         <CreationButton
+          active={activeToolId === "brush" && activeBrushShape === "custom-polygon"}
+          disabled={disabled}
+          icon={CustomPolygonBrushIcon}
+          label="Custom Polygon Brush"
+          onClick={() => onSelectBrushShape("custom-polygon")}
+        />
+        <CreationButton
           active={activeToolId === "brush" && activeBrushShape === "sphere"}
           disabled={disabled}
           icon={SpherePrimitiveIcon}
           label="Sphere Brush"
           onClick={() => onSelectBrushShape("sphere")}
+        />
+        <CreationButton
+          active={activeToolId === "brush" && activeBrushShape === "stairs"}
+          disabled={disabled}
+          icon={StairBrushIcon}
+          label="Stairs Brush"
+          onClick={() => onSelectBrushShape("stairs")}
         />
         <CreationButton
           active={activeToolId === "brush" && activeBrushShape === "cylinder"}
@@ -198,6 +212,28 @@ function StairBlockoutIcon(props: { className?: string }) {
     <svg fill="none" viewBox="0 0 24 24" {...props}>
       <path d="M6 17h4v-3h4v-3h4V8" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
       <path d="M6 17h12" opacity="0.32" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function CustomPolygonBrushIcon(props: { className?: string }) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M7 6.5l10 2.5-3 8.5-9-2.5z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <circle cx="7" cy="6.5" fill="currentColor" r="1.3" />
+      <circle cx="17" cy="9" fill="currentColor" r="1.3" />
+      <circle cx="14" cy="17.5" fill="currentColor" r="1.3" />
+      <circle cx="5" cy="15" fill="currentColor" r="1.3" />
+    </svg>
+  );
+}
+
+function StairBrushIcon(props: { className?: string }) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M5.5 17.5h4v-3h4v-3h4v-3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+      <path d="M5.5 17.5V8.5" opacity="0.34" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+      <path d="M5.5 17.5h12" opacity="0.34" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
     </svg>
   );
 }
