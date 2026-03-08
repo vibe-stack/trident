@@ -85,6 +85,7 @@ export type DerivedRenderMesh = {
   modelAssetId?: AssetID;
   modelCenter?: Vec3;
   modelFormat?: string;
+  modelMtlText?: string;
   modelPath?: string;
   modelSize?: Vec3;
   modelTexturePath?: string;
@@ -132,6 +133,9 @@ export function createDerivedRenderMesh(
       : undefined,
     modelFormat: isModelNode(node)
       ? resolveModelStringMetadata(assetsById.get(node.data.assetId), "modelFormat")
+      : undefined,
+    modelMtlText: isModelNode(node)
+      ? resolveModelStringMetadata(assetsById.get(node.data.assetId), "materialMtlText")
       : undefined,
     modelPath: isModelNode(node)
       ? assetsById.get(node.data.assetId)?.path ?? node.data.path

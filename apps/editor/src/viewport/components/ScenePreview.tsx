@@ -18,6 +18,7 @@ import {
   Vector3,
   type BufferGeometry
 } from "three";
+import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { disableBvhRaycast, enableBvhRaycast, type DerivedEntityMarker, type DerivedLight, type DerivedRenderMesh, type DerivedRenderScene } from "@web-hammer/render-pipeline";
@@ -29,7 +30,7 @@ import type { SceneSettings } from "@web-hammer/shared";
 const previewTextureCache = new Map<string, ReturnType<TextureLoader["load"]>>();
 const modelSceneCache = new Map<string, Object3D>();
 const gltfLoader = new GLTFLoader();
-const objLoader = new OBJLoader();
+const mtlLoader = new MTLLoader();
 const modelTextureLoader = new TextureLoader();
 
 export function ScenePreview({
@@ -890,7 +891,8 @@ function RenderModelBody({
   const loadedScene = useLoadedModelScene(
     mesh.modelPath,
     mesh.modelFormat === "obj" ? "obj" : "glb",
-    mesh.modelTexturePath
+    mesh.modelTexturePath,
+    mesh.modelMtlText
   );
   const loadedBounds = useMemo(
     () => (loadedScene ? computeModelBounds(loadedScene) : undefined),
@@ -981,7 +983,8 @@ function RenderModelBody({
 function useLoadedModelScene(
   path?: string,
   format: "glb" | "obj" = "glb",
-  texturePath?: string
+  texturePath?: string,
+  mtlText?: string
 ) {
   const [scene, setScene] = useState<Object3D>();
 
@@ -991,7 +994,7 @@ function useLoadedModelScene(
       return;
     }
 
-    const cacheKey = `${format}:${path}:${texturePath ?? ""}`;
+    const cacheKey = `${format}:${path}:${texturePath ?? ""}:${mtlText ?? ""}`;
     const cachedScene = modelSceneCache.get(cacheKey);
 
     if (cachedScene) {
@@ -1001,7 +1004,7 @@ function useLoadedModelScene(
 
     let cancelled = false;
 
-    void loadModelScene(path, format, texturePath)
+    void loadModelScene(path, format, texturePath, mtlText)
       .then((loadedScene) => {
         if (cancelled) {
           return;
@@ -1019,7 +1022,7 @@ function useLoadedModelScene(
     return () => {
       cancelled = true;
     };
-  }, [format, path, texturePath]);
+  }, [format, mtlText, path, texturePath]);
 
   return scene;
 }
@@ -1027,12 +1030,24 @@ function useLoadedModelScene(
 async function loadModelScene(
   path: string,
   format: "glb" | "obj",
-  texturePath?: string
+  texturePath?: string,
+  mtlText?: string
 ) {
   if (format === "obj") {
+    const objLoader = new OBJLoader();
+
+    if (mtlText) {
+      const materialCreator = mtlLoader.parse(
+        patchMtlTextureReferences(mtlText, texturePath),
+        ""
+      );
+      materialCreator.preload();
+      objLoader.setMaterials(materialCreator);
+    }
+
     const object = await objLoader.loadAsync(path);
 
-    if (texturePath) {
+    if (!mtlText && texturePath) {
       const texture = await loadModelTexture(texturePath);
 
       object.traverse((child) => {
@@ -1064,6 +1079,27 @@ async function loadModelTexture(path: string) {
   texture.colorSpace = SRGBColorSpace;
   previewTextureCache.set(path, texture);
   return texture;
+}
+
+function patchMtlTextureReferences(mtlText: string, texturePath?: string) {
+  if (!texturePath) {
+    return mtlText;
+  }
+
+  const mapPattern =
+    /^(map_Ka|map_Kd|map_d|map_Bump|bump)\s+.+$/gm;
+  const hasDiffuseMap = /^map_Kd\s+.+$/m.test(mtlText);
+  const normalized = mtlText.replace(mapPattern, (line) => {
+    if (line.startsWith("map_Kd ")) {
+      return `map_Kd ${texturePath}`;
+    }
+
+    return line;
+  });
+
+  return hasDiffuseMap
+    ? normalized
+    : `${normalized.trim()}\nmap_Kd ${texturePath}\n`;
 }
 
 function computeModelBounds(scene: Object3D) {

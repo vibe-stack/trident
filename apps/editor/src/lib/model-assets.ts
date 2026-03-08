@@ -55,6 +55,7 @@ export async function analyzeModelSource(input: {
 export function createModelAsset(input: {
   center: Vec3;
   format?: ModelFormat;
+  materialMtlText?: string;
   name: string;
   path: string;
   size: Vec3;
@@ -66,6 +67,7 @@ export function createModelAsset(input: {
     id: `asset:model:${slugify(input.name)}:${crypto.randomUUID()}`,
     metadata: {
       modelFormat: input.format ?? "glb",
+      materialMtlText: input.materialMtlText ?? "",
       nativeCenterX: input.center.x,
       nativeCenterY: input.center.y,
       nativeCenterZ: input.center.z,

@@ -88,6 +88,9 @@ async function generateModel(
 
   return {
     asset: {
+      materialMtlText: generatedAsset.materialMtl?.url
+        ? await fetchAsText(generatedAsset.materialMtl.url)
+        : undefined,
       modelDataUrl: await fetchAsDataUrl(
         generatedAsset.modelObj.url,
         generatedAsset.modelObj.content_type ?? "model/obj"
@@ -119,8 +122,10 @@ function extractGeneratedAsset(result: unknown) {
   }
 
   const data = result.data as {
+    material_mtl?: { content_type?: string; url?: string };
     model_obj?: { content_type?: string; url?: string };
     model_urls?: {
+      mtl?: { content_type?: string; url?: string };
       obj?: { content_type?: string; url?: string };
       texture?: { content_type?: string; url?: string };
     };
@@ -128,6 +133,7 @@ function extractGeneratedAsset(result: unknown) {
   };
 
   return {
+    materialMtl: data.model_urls?.mtl ?? data.material_mtl,
     modelObj: data.model_urls?.obj ?? data.model_obj,
     texture: data.model_urls?.texture ?? data.texture
   };
@@ -144,6 +150,16 @@ async function fetchAsDataUrl(url: string, mimeType: string) {
   const base64 = Buffer.from(arrayBuffer).toString("base64");
 
   return `data:${mimeType};base64,${base64}`;
+}
+
+async function fetchAsText(url: string) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download generated material: ${response.status}`);
+  }
+
+  return response.text();
 }
 
 function readBody(req: IncomingMessage) {

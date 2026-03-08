@@ -763,6 +763,7 @@ export function App() {
       const asset = createModelAsset({
         center: bounds.center,
         format: "obj",
+        materialMtlText: generated.materialMtlText,
         name: generated.name,
         path: generated.modelDataUrl,
         prompt: generated.prompt,

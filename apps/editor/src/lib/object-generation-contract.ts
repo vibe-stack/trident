@@ -3,6 +3,7 @@ export type ObjectGenerationRequest = {
 };
 
 export type GeneratedModelDraft = {
+  materialMtlText?: string;
   modelDataUrl: string;
   modelMimeType: string;
   model: "fal-ai/hunyuan-3d/v3.1/rapid/text-to-3d";
