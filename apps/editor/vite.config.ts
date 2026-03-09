@@ -7,12 +7,19 @@ import { createTextureGenerationApiPlugin } from "./server/texture-generation-ap
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const explicitBase = process.env.VITE_BASE_PATH ?? env.VITE_BASE_PATH;
+  const githubRepository = process.env.GITHUB_REPOSITORY;
+  const inferredGithubPagesBase =
+    process.env.GITHUB_ACTIONS === "true" && githubRepository
+      ? `/${githubRepository.split("/")[1]}/`
+      : "/";
 
   if (env.FAL_KEY) {
     process.env.FAL_KEY = env.FAL_KEY;
   }
 
   return {
+    base: explicitBase ?? inferredGithubPagesBase,
     plugins: [
       react(),
       tsconfigPaths(),

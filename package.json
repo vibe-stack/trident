@@ -1,6 +1,7 @@
 {
   "name": "web-hammer",
   "private": true,
+  "license": "MIT",
   "packageManager": "bun@1.3.0",
   "workspaces": [
     "apps/*",
