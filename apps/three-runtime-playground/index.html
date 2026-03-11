@@ -4,24 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Web Hammer Runtime Playground</title>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </head>
   <body>
-    <div class="app">
-      <header class="topbar">
-        <div class="brand">Web Hammer Runtime Playground</div>
-        <div class="toolbar">
-          <button id="load-sample" type="button">Sample</button>
-          <label class="file-button" for="scene-file">Import Bundle</label>
-          <input id="scene-file" accept=".zip,.json" type="file" />
-          <button id="toggle-controller" type="button">Play</button>
-        </div>
-        <div class="status" id="status">Ready</div>
-      </header>
-
-      <main id="stage"></main>
-
-      <div class="error-banner hidden" id="error-banner"></div>
-    </div>
+    <div id="root"></div>
   </body>
 </html>
