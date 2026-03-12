@@ -21,6 +21,7 @@ import {
   createSetBrushDataCommand,
   createSetEntityCommand,
   createSetMeshDataCommand,
+  createSetNodeCommand,
   createSetNodeTransformCommand,
   createPlaceEntityCommand,
   createMeshRaiseTopCommand,
@@ -84,7 +85,7 @@ import {
   isWebHammerEngineBundle
 } from "@web-hammer/three-runtime";
 import { EditorShell } from "@/components/EditorShell";
-import { uiStore } from "@/state/ui-store";
+import { uiStore, type RightPanelId } from "@/state/ui-store";
 import type { Transform } from "@web-hammer/shared";
 import type { MeshEditMode } from "@/viewport/editing";
 import { useAppHotkeys } from "@/app/hooks/useAppHotkeys";
@@ -214,7 +215,7 @@ export function App() {
     );
   }, [activeToolId, editor, sceneRevision, selectionRevision]);
 
-  const handleSetRightPanel = (panel: "inspector" | "materials" | "player" | "scene" | "world") => {
+  const handleSetRightPanel = (panel: RightPanelId) => {
     uiStore.rightPanel = panel;
   };
 
@@ -343,6 +344,16 @@ export function App() {
       { task: node.kind === "brush" ? "brush-rebuild" : "triangulation", worker: "geometryWorker" },
       550
     );
+  };
+
+  const handleUpdateNode = (nodeId: string, nextNode: GeometryNode, beforeNode?: GeometryNode) => {
+    const node = editor.scene.getNode(nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    editor.execute(createSetNodeCommand(editor.scene, nodeId, nextNode, beforeNode));
   };
 
   const handlePreviewBrushData = (nodeId: string, brush: Brush) => {
@@ -488,6 +499,58 @@ export function App() {
         ? {
             ...structuredClone(entity),
             properties: structuredClone(beforeProperties)
+          }
+        : entity
+    );
+  };
+
+  const handleUpdateNodeHooks = (
+    nodeId: string,
+    hooks: NonNullable<GeometryNode["hooks"]>,
+    beforeHooks?: NonNullable<GeometryNode["hooks"]>
+  ) => {
+    const node = editor.scene.getNode(nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    handleUpdateNode(
+      nodeId,
+      {
+        ...structuredClone(node),
+        hooks: structuredClone(hooks)
+      },
+      beforeHooks
+        ? {
+            ...structuredClone(node),
+            hooks: structuredClone(beforeHooks)
+          }
+        : node
+    );
+  };
+
+  const handleUpdateEntityHooks = (
+    entityId: string,
+    hooks: NonNullable<Entity["hooks"]>,
+    beforeHooks?: NonNullable<Entity["hooks"]>
+  ) => {
+    const entity = editor.scene.getEntity(entityId);
+
+    if (!entity) {
+      return;
+    }
+
+    handleUpdateEntity(
+      entityId,
+      {
+        ...structuredClone(entity),
+        hooks: structuredClone(hooks)
+      },
+      beforeHooks
+        ? {
+            ...structuredClone(entity),
+            hooks: structuredClone(beforeHooks)
           }
         : entity
     );
@@ -1369,8 +1432,10 @@ export function App() {
         onTranslateSelection={handleTranslateSelection}
         onUndo={handleUndo}
         onUpdateEntityProperties={handleUpdateEntityProperties}
+        onUpdateEntityHooks={handleUpdateEntityHooks}
         onUpdateEntityTransform={handleUpdateEntityTransform}
         onUpdateNodeData={handleUpdateNodeData}
+        onUpdateNodeHooks={handleUpdateNodeHooks}
         onUpdateAiModelPrompt={handleUpdateAiModelPrompt}
         onUpdateSceneSettings={handleUpdateSceneSettings}
         onUpdateViewport={handleUpdateViewport}

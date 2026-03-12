@@ -7,6 +7,7 @@ export type FaceID = string;
 export type VertexID = string;
 export type HalfEdgeID = string;
 export type MetadataValue = string | number | boolean;
+export type GameplayValue = string | number | boolean | null | GameplayObject | GameplayValue[];
 export type PrimitiveShape = "cone" | "cube" | "cylinder" | "sphere";
 export type BrushShape = PrimitiveShape | "custom-polygon" | "stairs";
 export type PrimitiveRole = "brush" | "prop";
@@ -25,6 +26,10 @@ export type Vec3 = {
 export type Vec2 = {
   x: number;
   y: number;
+};
+
+export type GameplayObject = {
+  [key: string]: GameplayValue;
 };
 
 export type Transform = {
@@ -133,6 +138,7 @@ export type LightNodeData = {
 };
 
 export type GeometryNodeBase = {
+  hooks?: SceneHook[];
   id: NodeID;
   name: string;
   metadata?: Record<string, MetadataValue>;
@@ -226,12 +232,29 @@ export type Layer = {
 };
 
 export type Entity = {
+  hooks?: SceneHook[];
   id: EntityID;
   name: string;
   parentId?: NodeID;
   type: EntityType;
   transform: Transform;
   properties: Record<string, MetadataValue>;
+};
+
+export type SceneHook = {
+  config: GameplayObject;
+  enabled?: boolean;
+  id: string;
+  type: string;
+};
+
+export type SceneEventDefinition = {
+  category?: string;
+  custom?: boolean;
+  description?: string;
+  id: string;
+  name: string;
+  scope?: "entity-local" | "player" | "world" | "global" | "mission" | "custom";
 };
 
 export type PlayerSettings = {
@@ -257,6 +280,7 @@ export type WorldSettings = {
 };
 
 export type SceneSettings = {
+  events?: SceneEventDefinition[];
   player: PlayerSettings;
   world: WorldSettings;
 };

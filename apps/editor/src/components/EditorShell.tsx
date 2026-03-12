@@ -4,7 +4,9 @@ import type {
   BrushShape,
   Brush,
   EditableMesh,
+  Entity,
   EntityType,
+  GeometryNode,
   LightNodeData,
   LightType,
   Material,
@@ -123,9 +125,11 @@ type EditorShellProps = {
   onTranslateSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   onUndo: () => void;
   onUpdateEntityProperties: (entityId: string, properties: Record<string, string | number | boolean>) => void;
+  onUpdateEntityHooks: (entityId: string, hooks: NonNullable<Entity["hooks"]>, beforeHooks?: NonNullable<Entity["hooks"]>) => void;
   onUpdateEntityTransform: (entityId: string, transform: Transform, beforeTransform?: Transform) => void;
   onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpdateNodeData: (nodeId: string, data: PrimitiveNodeData | LightNodeData) => void;
+  onUpdateNodeHooks: (nodeId: string, hooks: NonNullable<GeometryNode["hooks"]>, beforeHooks?: NonNullable<GeometryNode["hooks"]>) => void;
   onUpdateAiModelPrompt: (prompt: string) => void;
   onUpdateSceneSettings: (settings: SceneSettings, beforeSettings?: SceneSettings) => void;
   onUpdateViewport: (viewportId: ViewportPaneId, viewport: ViewportState) => void;
@@ -235,8 +239,10 @@ export function EditorShell({
   onTranslateSelection,
   onUndo,
   onUpdateEntityProperties,
+  onUpdateEntityHooks,
   onUpdateEntityTransform,
   onUpdateNodeData,
+  onUpdateNodeHooks,
   onUpdateAiModelPrompt,
   onUpdateSceneSettings,
   onUpdateViewport,
@@ -455,9 +461,11 @@ export function EditorShell({
           onUpsertMaterial={onUpsertMaterial}
           onUpsertTexture={onUpsertTexture}
           onUpdateEntityProperties={onUpdateEntityProperties}
+          onUpdateEntityHooks={onUpdateEntityHooks}
           onUpdateEntityTransform={onUpdateEntityTransform}
           onUpdateMeshData={onUpdateMeshData}
           onUpdateNodeData={onUpdateNodeData}
+          onUpdateNodeHooks={onUpdateNodeHooks}
           onUpdateSceneSettings={onUpdateSceneSettings}
           onUpdateNodeTransform={onUpdateNodeTransform}
           sceneSettings={sceneSettings}

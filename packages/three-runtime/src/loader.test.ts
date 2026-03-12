@@ -28,6 +28,15 @@ describe("loadWebHammerEngineScene", () => {
       nodes: [
         {
           data: {},
+          hooks: [
+            {
+              config: {
+                tags: ["train"]
+              },
+              id: "hook:tags:test",
+              type: "tags"
+            }
+          ],
           id: "node:group",
           kind: "group",
           name: "Group",
@@ -83,6 +92,7 @@ describe("loadWebHammerEngineScene", () => {
 
     expect(groupObject).toBeDefined();
     expect(lightObject?.parent).toBe(groupObject);
+    expect(groupObject?.userData.webHammer.hooks?.[0]?.type).toBe("tags");
     expect(worldPosition?.x).toBeCloseTo(5, 5);
     expect(worldPosition?.z).toBeCloseTo(-1, 5);
     expect(loaded.entities[0]?.transform.position.x).toBeCloseTo(11, 5);

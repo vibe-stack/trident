@@ -2,6 +2,7 @@ export * from "./asset-commands";
 export * from "./brush-commands";
 export * from "./data-commands";
 export * from "./entity-commands";
+export * from "./general-node-commands";
 export * from "./layout-commands";
 export * from "./material-commands";
 export * from "./mesh-commands";

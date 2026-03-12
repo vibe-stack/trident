@@ -285,6 +285,7 @@ async function createObjectForNode(
   applyTransform(anchor, node.transform);
   anchor.userData.webHammer = {
     data: node.data,
+    hooks: node.hooks,
     id: node.id,
     kind: node.kind,
     metadata: node.metadata,

@@ -299,6 +299,7 @@ export function resolveSceneGraph(
 
 export function createDefaultSceneSettings(): SceneSettings {
   return {
+    events: [],
     player: {
       cameraMode: "fps",
       canCrouch: true,
@@ -328,6 +329,7 @@ export function normalizeSceneSettings(settings?: Partial<SceneSettings> | Scene
   return {
     ...defaults,
     ...settings,
+    events: normalizeSceneEvents(settings?.events),
     player: {
       ...defaults.player,
       ...(settings?.player ?? {})
@@ -349,6 +351,13 @@ function normalizeWorldSettings(world?: Partial<WorldSettings> | WorldSettings):
     fogFar: Math.max(resolvedFogNear + 0.01, fogFar),
     gravity: world?.gravity ?? defaults.gravity,
   };
+}
+
+function normalizeSceneEvents(events?: SceneSettings["events"]): NonNullable<SceneSettings["events"]> {
+  return (events ?? []).map((eventDefinition) => ({
+    ...eventDefinition,
+    custom: eventDefinition.custom ?? true
+  }));
 }
 
 function clampFiniteNumber(value: number | undefined, fallback: number): number {

@@ -170,6 +170,7 @@ export function createDefaultEntity(type: EntityType, position: Vec3, index: num
   const label = createEntityLabel(type);
 
   return {
+    hooks: [],
     id: `entity:${type}:${index}`,
     name: label,
     properties:

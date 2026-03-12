@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BellRing, Cable, FolderTree, Globe2, SlidersHorizontal, SwatchBook, User } from "lucide-react";
 import {
   type EditableMesh,
   isLightNode,
@@ -24,6 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
+import { EventsPanel, HooksPanel } from "@/components/editor-shell/GameplayPanels";
 import { MaterialLibraryPanel } from "@/components/editor-shell/MaterialLibraryPanel";
 import { SceneHierarchyPanel } from "@/components/editor-shell/SceneHierarchyPanel";
 import { rebaseTransformPivot } from "@/viewport/utils/geometry";
@@ -59,9 +61,11 @@ type InspectorSidebarProps = {
   onUpsertMaterial: (material: Material) => void;
   onUpsertTexture: (texture: TextureRecord) => void;
   onUpdateEntityProperties: (entityId: string, properties: Entity["properties"]) => void;
+  onUpdateEntityHooks: (entityId: string, hooks: NonNullable<Entity["hooks"]>, beforeHooks?: NonNullable<Entity["hooks"]>) => void;
   onUpdateEntityTransform: (entityId: string, transform: Transform, beforeTransform?: Transform) => void;
   onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpdateNodeData: (nodeId: string, data: PrimitiveNodeData | LightNodeData) => void;
+  onUpdateNodeHooks: (nodeId: string, hooks: NonNullable<GeometryNode["hooks"]>, beforeHooks?: NonNullable<GeometryNode["hooks"]>) => void;
   onUpdateNodeTransform: (nodeId: string, transform: Transform, beforeTransform?: Transform) => void;
   onUpdateSceneSettings: (settings: SceneSettings, beforeSettings?: SceneSettings) => void;
   sceneSettings: SceneSettings;
@@ -77,6 +81,10 @@ type InspectorSidebarProps = {
 };
 
 const AXES = ["x", "y", "z"] as const;
+const RIGHT_PANEL_TAB_TRIGGER_CLASS =
+  "!h-12 !gap-0.5 !px-0 !py-1 !text-foreground/70 data-active:!bg-emerald-500/14 data-active:!text-emerald-300 [&_svg]:size-3.5 [&_svg]:shrink-0 data-active:[&_svg]:!text-emerald-300";
+const RIGHT_PANEL_TAB_LABEL_CLASS =
+  "!text-[7px] !leading-none !font-medium !tracking-normal !text-foreground/50 data-active:!text-emerald-300";
 
 export function InspectorSidebar({
   activeRightPanel,
@@ -105,9 +113,11 @@ export function InspectorSidebar({
   onUpsertMaterial,
   onUpsertTexture,
   onUpdateEntityProperties,
+  onUpdateEntityHooks,
   onUpdateEntityTransform,
   onUpdateMeshData,
   onUpdateNodeData,
+  onUpdateNodeHooks,
   onUpdateNodeTransform,
   onUpdateSceneSettings,
   sceneSettings,
@@ -230,21 +240,34 @@ export function InspectorSidebar({
           value={activeRightPanel}
         >
           <div className="px-3 pt-3 pb-2">
-            <TabsList className="grid w-full grid-cols-5 rounded-xl bg-white/5 p-1" variant="default">
-              <TabsTrigger className="rounded-lg px-1 text-[10px]" value="scene">
-                Scene
+            <TabsList className="!grid !h-14 !w-full !grid-cols-7 !items-stretch rounded-xl bg-white/5 p-0.5" variant="default">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="scene">
+                <FolderTree />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Scene</span>
               </TabsTrigger>
-              <TabsTrigger className="rounded-lg px-1 text-[10px]" value="world">
-                World
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="world">
+                <Globe2 />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>World</span>
               </TabsTrigger>
-              <TabsTrigger className="rounded-lg px-1 text-[10px]" value="player">
-                Player
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="player">
+                <User />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Player</span>
               </TabsTrigger>
-              <TabsTrigger className="rounded-lg px-1 text-[10px]" value="inspector">
-                Inspect
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="inspector">
+                <SlidersHorizontal />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Inspect</span>
               </TabsTrigger>
-              <TabsTrigger className="rounded-lg px-1 text-[10px]" value="materials">
-                Mats
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="hooks">
+                <Cable />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Hooks</span>
+              </TabsTrigger>
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="events">
+                <BellRing />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Events</span>
+              </TabsTrigger>
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="materials">
+                <SwatchBook />
+                <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Mats</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -663,6 +686,26 @@ export function InspectorSidebar({
                   <div className="pt-1 text-xs text-foreground/48">Select an object to inspect it.</div>
                 )}
               </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent className="min-h-0 flex-1 px-3 pb-3" value="hooks">
+            <ScrollArea className="h-full pr-1">
+              <HooksPanel
+                entities={entities}
+                nodes={nodes}
+                onUpdateEntityHooks={onUpdateEntityHooks}
+                onUpdateNodeHooks={onUpdateNodeHooks}
+                sceneSettings={sceneSettings}
+                selectedEntity={selectedEntity}
+                selectedNode={selectedNode}
+              />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent className="min-h-0 flex-1 px-3 pb-3" value="events">
+            <ScrollArea className="h-full pr-1">
+              <EventsPanel onUpdateSceneSettings={onUpdateSceneSettings} sceneSettings={sceneSettings} />
             </ScrollArea>
           </TabsContent>
 

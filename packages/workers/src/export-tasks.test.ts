@@ -32,6 +32,16 @@ describe("exportEngineBundle", () => {
       assets: [],
       entities: [
         {
+          hooks: [
+            {
+              config: {
+                mode: "slide"
+              },
+              enabled: true,
+              id: "hook:openable:test",
+              type: "openable"
+            }
+          ],
           id: "entity:spawn",
           name: "Spawn",
           parentId: "node:group",
@@ -75,5 +85,34 @@ describe("exportEngineBundle", () => {
     expect(group?.kind).toBe("group");
     expect(cube?.parentId).toBe("node:group");
     expect(bundle.manifest.entities[0]?.parentId).toBe("node:group");
+    expect(bundle.manifest.entities[0]?.hooks?.[0]?.type).toBe("openable");
+  });
+
+  test("preserves custom gameplay events in exported settings", async () => {
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [],
+      settings: {
+        ...settings,
+        events: [
+          {
+            category: "Mission",
+            custom: true,
+            description: "Raised when the mission objective is updated.",
+            id: "event:mission:updated",
+            name: "mission.updated",
+            scope: "mission"
+          }
+        ]
+      },
+      textures: []
+    };
+
+    const bundle = await exportEngineBundle(snapshot);
+
+    expect(bundle.manifest.settings.events?.[0]?.name).toBe("mission.updated");
   });
 });
