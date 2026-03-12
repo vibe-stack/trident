@@ -28,8 +28,8 @@ import {
   BrushEditHandleMarker,
   BrushEditHandleVisual,
   EdgeLengthLabel,
-  EditableEdgeSelectionHitArea,
-  EditableFaceSelectionHitArea,
+  EditableEdgeSelectionHitAreas,
+  EditableFaceSelectionHitAreas,
   MeshEditHandleMarker,
   MeshEditHandleVisual,
   PreviewLine
@@ -172,37 +172,34 @@ export function MeshEditOverlay({
         <BatchedHandleLineSegments color="#94a3b8" handles={unselectedVertexModeEdgeHandles} />
         <BatchedHandleLineSegments color="#7dd3fc" handles={selectedVertexModeEdgeHandles} />
 
-        {meshEditMode === "face"
-          ? handles.map((handle) => (
-              handle.points && handle.points.length >= 3 ? (
-                <EditableFaceSelectionHitArea
-                  key={handle.id}
-                  normal={handle.normal}
-                  onSelect={(event) => {
-                    event.stopPropagation();
-                    resolveHandleSelection(handle, event);
-                  }}
-                  points={handle.points}
-                  selected={selectedHandleIds.includes(handle.id)}
-                />
-              ) : null
-            ))
-          : null}
-        {meshEditMode === "edge"
-          ? handles.map((handle) => (
-              handle.points?.length === 2 ? (
-                <EditableEdgeSelectionHitArea
-                  key={handle.id}
-                  onSelect={(event) => {
-                    event.stopPropagation();
-                    resolveHandleSelection(handle, event);
-                  }}
-                  points={handle.points}
-                  selected={selectedHandleIds.includes(handle.id)}
-                />
-              ) : null
-            ))
-          : null}
+        {meshEditMode === "face" ? (
+          <EditableFaceSelectionHitAreas
+            handles={handles}
+            onSelectHandle={(handleId, event) => {
+              event.stopPropagation();
+              const handle = handlesById.get(handleId);
+
+              if (handle) {
+                resolveHandleSelection(handle, event);
+              }
+            }}
+            selectedHandleIds={selectedHandleIds}
+          />
+        ) : null}
+        {meshEditMode === "edge" ? (
+          <EditableEdgeSelectionHitAreas
+            handles={handles}
+            onSelectHandle={(handleId, event) => {
+              event.stopPropagation();
+              const handle = handlesById.get(handleId);
+
+              if (handle) {
+                resolveHandleSelection(handle, event);
+              }
+            }}
+            selectedHandleIds={selectedHandleIds}
+          />
+        ) : null}
         {meshEditMode !== "vertex" ? (
           <BatchedHandleLineSegments
             closed={meshEditMode === "face"}
@@ -486,37 +483,34 @@ export function BrushEditOverlay({
         <BatchedHandleLineSegments color="#94a3b8" handles={unselectedVertexModeEdgeHandles} />
         <BatchedHandleLineSegments color="#7dd3fc" handles={selectedVertexModeEdgeHandles} />
 
-        {meshEditMode === "face"
-          ? handles.map((handle) => (
-              handle.points && handle.points.length >= 3 ? (
-                <EditableFaceSelectionHitArea
-                  key={handle.id}
-                  normal={handle.normal}
-                  onSelect={(event) => {
-                    event.stopPropagation();
-                    resolveHandleSelection(handle, event);
-                  }}
-                  points={handle.points}
-                  selected={selectedHandleIds.includes(handle.id)}
-                />
-              ) : null
-            ))
-          : null}
-        {meshEditMode === "edge"
-          ? handles.map((handle) => (
-              handle.points?.length === 2 ? (
-                <EditableEdgeSelectionHitArea
-                  key={handle.id}
-                  onSelect={(event) => {
-                    event.stopPropagation();
-                    resolveHandleSelection(handle, event);
-                  }}
-                  points={handle.points}
-                  selected={selectedHandleIds.includes(handle.id)}
-                />
-              ) : null
-            ))
-          : null}
+        {meshEditMode === "face" ? (
+          <EditableFaceSelectionHitAreas
+            handles={handles}
+            onSelectHandle={(handleId, event) => {
+              event.stopPropagation();
+              const handle = handlesById.get(handleId);
+
+              if (handle) {
+                resolveHandleSelection(handle, event);
+              }
+            }}
+            selectedHandleIds={selectedHandleIds}
+          />
+        ) : null}
+        {meshEditMode === "edge" ? (
+          <EditableEdgeSelectionHitAreas
+            handles={handles}
+            onSelectHandle={(handleId, event) => {
+              event.stopPropagation();
+              const handle = handlesById.get(handleId);
+
+              if (handle) {
+                resolveHandleSelection(handle, event);
+              }
+            }}
+            selectedHandleIds={selectedHandleIds}
+          />
+        ) : null}
         {meshEditMode !== "vertex" ? (
           <BatchedHandleLineSegments
             closed={meshEditMode === "face"}

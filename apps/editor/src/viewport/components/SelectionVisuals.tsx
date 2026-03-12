@@ -306,6 +306,51 @@ export function EditableEdgeSelectionHitAreas({
   );
 }
 
+export function EditableFaceSelectionHitAreas({
+  handles,
+  onSelectHandle,
+  selectedHandleIds
+}: {
+  handles: OverlayHandle[];
+  onSelectHandle: (handleId: string, event: any) => void;
+  selectedHandleIds: string[];
+}) {
+  const selectedIdSet = useMemo(() => new Set(selectedHandleIds), [selectedHandleIds]);
+  const unselected = useMemo(
+    () => buildEditableFaceSelectionGeometry(handles, selectedIdSet, false),
+    [handles, selectedIdSet]
+  );
+  const selected = useMemo(
+    () => buildEditableFaceSelectionGeometry(handles, selectedIdSet, true),
+    [handles, selectedIdSet]
+  );
+
+  useEffect(
+    () => () => {
+      unselected.geometry?.dispose();
+      selected.geometry?.dispose();
+    },
+    [selected.geometry, unselected.geometry]
+  );
+
+  return (
+    <>
+      <EditableFaceSelectionMergedMesh
+        geometry={unselected.geometry}
+        onSelectHandle={onSelectHandle}
+        opacity={0.018}
+        triangleHandleIds={unselected.triangleHandleIds}
+      />
+      <EditableFaceSelectionMergedMesh
+        geometry={selected.geometry}
+        onSelectHandle={onSelectHandle}
+        opacity={0.08}
+        triangleHandleIds={selected.triangleHandleIds}
+      />
+    </>
+  );
+}
+
 export function BatchedHandleLineSegments({
   closed = false,
   color,
@@ -691,6 +736,44 @@ function EditableEdgeSelectionInstanceMesh({
   );
 }
 
+function EditableFaceSelectionMergedMesh({
+  geometry,
+  onSelectHandle,
+  opacity,
+  triangleHandleIds
+}: {
+  geometry?: BufferGeometry;
+  onSelectHandle: (handleId: string, event: any) => void;
+  opacity: number;
+  triangleHandleIds: string[];
+}) {
+  if (!geometry || triangleHandleIds.length === 0) {
+    return null;
+  }
+
+  return (
+    <mesh
+      geometry={geometry}
+      onClick={(event) => {
+        if (typeof event.faceIndex !== "number") {
+          return;
+        }
+
+        const handleId = triangleHandleIds[event.faceIndex];
+
+        if (!handleId) {
+          return;
+        }
+
+        onSelectHandle(handleId, event);
+      }}
+      renderOrder={7}
+    >
+      <meshBasicMaterial color="#93c5fd" depthWrite={false} opacity={opacity} side={DoubleSide} transparent />
+    </mesh>
+  );
+}
+
 function HandleMarkerPointCloud({
   color,
   handles,
@@ -817,6 +900,66 @@ function transformNormalToWorld(normal: Vec3, transform: Transform) {
   }
 
   return worldNormal.normalize();
+}
+
+function buildEditableFaceSelectionGeometry(
+  handles: OverlayHandle[],
+  selectedIdSet: ReadonlySet<string>,
+  selected: boolean
+) {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const triangleHandleIds: string[] = [];
+  let vertexOffset = 0;
+
+  handles.forEach((handle) => {
+    if (!handle.points || handle.points.length < 3 || selectedIdSet.has(handle.id) !== selected) {
+      return;
+    }
+
+    const faceNormal = normalizeVec3(handle.normal ?? vec3(0, 0, 1));
+    const faceIndices = triangulatePolygon3D(handle.points, handle.normal ?? faceNormal);
+
+    if (faceIndices.length < 3) {
+      return;
+    }
+
+    handle.points.forEach((point) => {
+      positions.push(
+        point.x + faceNormal.x * 0.01,
+        point.y + faceNormal.y * 0.01,
+        point.z + faceNormal.z * 0.01
+      );
+    });
+
+    for (let index = 0; index < faceIndices.length; index += 3) {
+      indices.push(
+        vertexOffset + faceIndices[index],
+        vertexOffset + faceIndices[index + 1],
+        vertexOffset + faceIndices[index + 2]
+      );
+      triangleHandleIds.push(handle.id);
+    }
+
+    vertexOffset += handle.points.length;
+  });
+
+  if (positions.length === 0 || indices.length === 0) {
+    return {
+      geometry: undefined,
+      triangleHandleIds
+    };
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  return {
+    geometry,
+    triangleHandleIds
+  };
 }
 
 export function ClosedPolyline({

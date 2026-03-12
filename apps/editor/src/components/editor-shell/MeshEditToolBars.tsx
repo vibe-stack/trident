@@ -22,6 +22,7 @@ import {
   VertexModeIcon
 } from "@/components/editor-shell/icons";
 import { Button } from "@/components/ui/button";
+import { DragInput } from "@/components/ui/drag-input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -39,9 +40,14 @@ export function MeshEditToolBars({
   onMerge,
   onRaiseTop,
   onSetMeshEditMode,
+  onSetSculptBrushRadius,
+  onSetSculptBrushStrength,
   onSubdivide,
   onCut,
   onSetTransformMode,
+  sculptMode,
+  sculptBrushRadius,
+  sculptBrushStrength,
   selectedGeometry,
   selectedMesh,
   transformMode
@@ -59,9 +65,14 @@ export function MeshEditToolBars({
   onMerge: () => void;
   onRaiseTop: () => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
+  onSetSculptBrushRadius: (value: number) => void;
+  onSetSculptBrushStrength: (value: number) => void;
   onSubdivide: () => void;
   onCut: () => void;
   onSetTransformMode: (mode: "rotate" | "scale" | "translate") => void;
+  sculptMode?: "deflate" | "inflate" | null;
+  sculptBrushRadius: number;
+  sculptBrushStrength: number;
   selectedGeometry: boolean;
   selectedMesh: boolean;
   transformMode: "rotate" | "scale" | "translate";
@@ -70,33 +81,61 @@ export function MeshEditToolBars({
     meshEditMode === "face" ? "Merge faces" : meshEditMode === "edge" ? "Merge edges" : "Merge vertices";
 
   return (
-    <div className="flex items-stretch gap-2">
-      <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
-        <MeshBarButton active={meshEditMode === "vertex"} icon={VertexModeIcon} onClick={() => onSetMeshEditMode("vertex")} shortcut="V" tooltip="Vertex mode" />
-        <MeshBarButton active={meshEditMode === "edge"} icon={EdgeModeIcon} onClick={() => onSetMeshEditMode("edge")} shortcut="E" tooltip="Edge mode" />
-        <MeshBarButton active={meshEditMode === "face"} icon={FaceModeIcon} onClick={() => onSetMeshEditMode("face")} shortcut="F" tooltip="Face mode" />
-      </FloatingPanel>
-      <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
-        <MeshBarButton active={transformMode === "translate"} disabled={!selectedGeometry} icon={TranslateModeIcon} onClick={() => onSetTransformMode("translate")} shortcut="G" tooltip="Translate" />
-        <MeshBarButton active={transformMode === "rotate"} disabled={!selectedGeometry} icon={RotateModeIcon} onClick={() => onSetTransformMode("rotate")} shortcut="R" tooltip="Rotate" />
-        <MeshBarButton active={transformMode === "scale"} disabled={!selectedGeometry} icon={ScaleModeIcon} onClick={() => onSetTransformMode("scale")} shortcut="S" tooltip="Scale" />
-        <div className="mx-0.5 h-5 w-px bg-white/8" />
-        <MeshBarButton disabled={!selectedMesh} icon={InflateIcon} onClick={onInflate} tooltip="Inflate" />
-        <MeshBarButton disabled={!selectedMesh} icon={DeflateIcon} onClick={onDeflate} tooltip="Deflate" />
-        <MeshBarButton disabled={!selectedMesh} icon={RaiseTopIcon} onClick={onRaiseTop} tooltip="Raise top" />
-        <MeshBarButton disabled={!selectedMesh} icon={LowerTopIcon} onClick={onLowerTop} tooltip="Lower top" />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={ArcEdgeIcon} onClick={onArc} shortcut="A" tooltip="Arc" />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={BevelIcon} onClick={onBevel} shortcut="B" tooltip="Bevel" />
-      </FloatingPanel>
-      <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={ExtrudeIcon} onClick={onExtrude} shortcut="X" tooltip="Extrude" />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={CutMeshIcon} onClick={onCut} shortcut={meshEditMode === "face" ? "Shift+K" : "K"} tooltip={meshEditMode === "face" ? "Face cut" : "Edge cut"} />
-        <MeshBarButton disabled={!selectedGeometry} icon={MergeFacesIcon} onClick={onMerge} shortcut="M" tooltip={mergeTooltip} />
-        <MeshBarButton disabled={!selectedGeometry} icon={FillFaceIcon} onClick={onFillFace} shortcut="Shift+F" tooltip={meshEditMode === "vertex" ? "Fill from vertices" : "Fill from edges"} />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={SubdivideIcon} onClick={onSubdivide} shortcut="D" tooltip="Subdivide face" />
-        <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={DeleteFacesIcon} onClick={onDelete} shortcut="Del" tooltip="Delete faces" />
-        <MeshBarButton disabled={!selectedGeometry} icon={FlipNormalsIcon} onClick={onInvertNormals} shortcut="N" tooltip="Invert normals" />
-      </FloatingPanel>
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex items-stretch gap-2">
+        <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
+          <MeshBarButton active={meshEditMode === "vertex"} icon={VertexModeIcon} onClick={() => onSetMeshEditMode("vertex")} shortcut="V" tooltip="Vertex mode" />
+          <MeshBarButton active={meshEditMode === "edge"} icon={EdgeModeIcon} onClick={() => onSetMeshEditMode("edge")} shortcut="E" tooltip="Edge mode" />
+          <MeshBarButton active={meshEditMode === "face"} icon={FaceModeIcon} onClick={() => onSetMeshEditMode("face")} shortcut="F" tooltip="Face mode" />
+        </FloatingPanel>
+        <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
+          <MeshBarButton active={transformMode === "translate"} disabled={!selectedGeometry} icon={TranslateModeIcon} onClick={() => onSetTransformMode("translate")} shortcut="G" tooltip="Translate" />
+          <MeshBarButton active={transformMode === "rotate"} disabled={!selectedGeometry} icon={RotateModeIcon} onClick={() => onSetTransformMode("rotate")} shortcut="R" tooltip="Rotate" />
+          <MeshBarButton active={transformMode === "scale"} disabled={!selectedGeometry} icon={ScaleModeIcon} onClick={() => onSetTransformMode("scale")} shortcut="S" tooltip="Scale" />
+          <div className="mx-0.5 h-5 w-px bg-white/8" />
+          <MeshBarButton disabled={!selectedMesh} icon={InflateIcon} onClick={onInflate} tooltip="Inflate" />
+          <MeshBarButton disabled={!selectedMesh} icon={DeflateIcon} onClick={onDeflate} tooltip="Deflate" />
+          <MeshBarButton disabled={!selectedMesh} icon={RaiseTopIcon} onClick={onRaiseTop} tooltip="Raise top" />
+          <MeshBarButton disabled={!selectedMesh} icon={LowerTopIcon} onClick={onLowerTop} tooltip="Lower top" />
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={ArcEdgeIcon} onClick={onArc} shortcut="A" tooltip="Arc" />
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={BevelIcon} onClick={onBevel} shortcut="B" tooltip="Bevel" />
+        </FloatingPanel>
+        <FloatingPanel className="flex h-10 items-center gap-1 p-1.5">
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={ExtrudeIcon} onClick={onExtrude} shortcut="X" tooltip="Extrude" />
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode === "vertex"} icon={CutMeshIcon} onClick={onCut} shortcut={meshEditMode === "face" ? "Shift+K" : "K"} tooltip={meshEditMode === "face" ? "Face cut" : "Edge cut"} />
+          <MeshBarButton disabled={!selectedGeometry} icon={MergeFacesIcon} onClick={onMerge} shortcut="M" tooltip={mergeTooltip} />
+          <MeshBarButton disabled={!selectedGeometry} icon={FillFaceIcon} onClick={onFillFace} shortcut="Shift+F" tooltip={meshEditMode === "vertex" ? "Fill from vertices" : "Fill from edges"} />
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={SubdivideIcon} onClick={onSubdivide} shortcut="D" tooltip="Subdivide face" />
+          <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "face"} icon={DeleteFacesIcon} onClick={onDelete} shortcut="Del" tooltip="Delete faces" />
+          <MeshBarButton disabled={!selectedGeometry} icon={FlipNormalsIcon} onClick={onInvertNormals} shortcut="N" tooltip="Invert normals" />
+        </FloatingPanel>
+      </div>
+      {sculptMode ? (
+        <FloatingPanel className="flex min-w-[320px] items-center gap-3 p-2">
+          <DragInput
+            className="w-[150px]"
+            compact
+            disabled={!selectedMesh}
+            label="Size"
+            min={0.25}
+            onChange={onSetSculptBrushRadius}
+            precision={2}
+            step={0.02}
+            value={sculptBrushRadius}
+          />
+          <DragInput
+            className="w-[150px]"
+            compact
+            disabled={!selectedMesh}
+            label="Strength"
+            min={0.01}
+            onChange={onSetSculptBrushStrength}
+            precision={3}
+            step={0.005}
+            value={sculptBrushStrength}
+          />
+        </FloatingPanel>
+      ) : null}
     </div>
   );
 }

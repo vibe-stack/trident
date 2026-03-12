@@ -255,24 +255,14 @@ export function extrudeEditableMeshEdge(
 }
 
 function normalizeExtrudeSourcePolygons(mesh: EditableMesh) {
-  const oriented = orientPolygonLoops(
-    getMeshPolygons(mesh).map((polygon) => ({
-      id: polygon.id,
-      materialId: polygon.materialId,
-      positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
-      uvScale: polygon.uvScale,
-      vertexIds: [...polygon.vertexIds]
-    }))
-  );
-
-  return oriented.map((polygon): MeshPolygonData => ({
+  return getMeshPolygons(mesh).map((polygon): MeshPolygonData => ({
     center: averageVec3(polygon.positions),
     id: polygon.id,
     materialId: polygon.materialId,
-    normal: computePolygonNormal(polygon.positions),
-    positions: polygon.positions,
+    normal: polygon.normal,
+    positions: polygon.positions.map((position) => vec3(position.x, position.y, position.z)),
     uvScale: polygon.uvScale,
-    vertexIds: polygon.vertexIds ?? []
+    vertexIds: [...polygon.vertexIds]
   }));
 }
 

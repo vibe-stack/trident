@@ -6,10 +6,12 @@ import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 
 export function EditableMeshPreviewOverlay({
   mesh,
-  node
+  node,
+  presentation = "overlay"
 }: {
   mesh: EditableMesh;
   node: GeometryNode;
+  presentation?: "overlay" | "solid";
 }) {
   const geometryRef = useRef<BufferGeometry>(new BufferGeometry());
   const wireframeGeometryRef = useRef<BufferGeometry>(new BufferGeometry());
@@ -122,20 +124,32 @@ export function EditableMeshPreviewOverlay({
   return (
     <NodeTransformGroup transform={node.transform}>
       <mesh geometry={geometryRef.current} renderOrder={11}>
-        <meshStandardMaterial
-          color="#8b5cf6"
-          depthWrite={false}
-          emissive="#6d28d9"
-          emissiveIntensity={0.24}
-          opacity={0.48}
-          polygonOffset
-          polygonOffsetFactor={-2}
-          polygonOffsetUnits={-2}
-          side={DoubleSide}
-          transparent
-        />
+        {presentation === "solid" ? (
+          <meshStandardMaterial
+            color="#78c4b7"
+            depthWrite
+            emissive="#1f6f63"
+            emissiveIntensity={0.08}
+            metalness={0.04}
+            roughness={0.82}
+            side={DoubleSide}
+          />
+        ) : (
+          <meshStandardMaterial
+            color="#8b5cf6"
+            depthWrite={false}
+            emissive="#6d28d9"
+            emissiveIntensity={0.24}
+            opacity={0.48}
+            polygonOffset
+            polygonOffsetFactor={-2}
+            polygonOffsetUnits={-2}
+            side={DoubleSide}
+            transparent
+          />
+        )}
       </mesh>
-      {hasWireframeGeometry ? (
+      {hasWireframeGeometry && presentation === "overlay" ? (
         <lineSegments geometry={wireframeGeometryRef.current} renderOrder={12}>
           <lineBasicMaterial color="#f8fafc" depthWrite={false} opacity={0.95} toneMapped={false} transparent />
         </lineSegments>

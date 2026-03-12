@@ -13,7 +13,6 @@ import {
 import { computePolygonNormal } from "../../polygon/polygon-utils";
 import {
   createEditableMeshFromPolygons,
-  getFaceVertexIds,
   getFaceVertices,
   type EditableMeshPolygon
 } from "../editable-mesh";
@@ -24,11 +23,27 @@ import type {
   OrientedEditablePolygon
 } from "./types";
 
+type MeshPolygonCacheEntry = {
+  faces: EditableMesh["faces"];
+  halfEdges: EditableMesh["halfEdges"];
+  polygons: MeshPolygonData[];
+  vertices: EditableMesh["vertices"];
+};
+
+const meshPolygonCache = new WeakMap<EditableMesh, MeshPolygonCacheEntry>();
+
 export function getMeshPolygons(mesh: EditableMesh): MeshPolygonData[] {
+  const cached = meshPolygonCache.get(mesh);
+
+  if (cached && cached.faces === mesh.faces && cached.halfEdges === mesh.halfEdges && cached.vertices === mesh.vertices) {
+    return cached.polygons;
+  }
+
   const polygons: Array<MeshPolygonData | undefined> = mesh.faces
     .map((face) => {
-      const positions = getFaceVertices(mesh, face.id).map((vertex) => vec3(vertex.position.x, vertex.position.y, vertex.position.z));
-      const vertexIds = getFaceVertexIds(mesh, face.id);
+      const vertices = getFaceVertices(mesh, face.id);
+      const positions = vertices.map((vertex) => vec3(vertex.position.x, vertex.position.y, vertex.position.z));
+      const vertexIds = vertices.map((vertex) => vertex.id);
 
       if (positions.length < 3 || vertexIds.length < 3) {
         return undefined;
@@ -47,7 +62,14 @@ export function getMeshPolygons(mesh: EditableMesh): MeshPolygonData[] {
       return polygon;
     })
 
-  return polygons.filter((polygon): polygon is MeshPolygonData => polygon !== undefined);
+  const resolved = polygons.filter((polygon): polygon is MeshPolygonData => polygon !== undefined);
+  meshPolygonCache.set(mesh, {
+    faces: mesh.faces,
+    halfEdges: mesh.halfEdges,
+    polygons: resolved,
+    vertices: mesh.vertices
+  });
+  return resolved;
 }
 
 export function orderBoundaryEdges(

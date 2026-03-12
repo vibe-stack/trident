@@ -23,8 +23,10 @@ export type MeshEditToolbarAction =
   | "delete"
   | "extrude"
   | "fill-face"
+  | "inflate"
   | "invert-normals"
   | "merge"
+  | "deflate"
   | "subdivide";
 
 export type MeshEditToolbarActionRequest = {
@@ -40,6 +42,8 @@ export type ViewportCanvasProps = {
   isActiveViewport: boolean;
   meshEditMode: MeshEditMode;
   meshEditToolbarAction?: MeshEditToolbarActionRequest;
+  sculptBrushRadius: number;
+  sculptBrushStrength: number;
   onActivateViewport: (viewportId: ViewportPaneId) => void;
   onClearSelection: () => void;
   onCommitMeshTopology: (nodeId: string, mesh: EditableMesh) => void;
@@ -53,6 +57,7 @@ export type ViewportCanvasProps = {
   onPreviewEntityTransform: (entityId: string, transform: Transform) => void;
   onPreviewMeshData: (nodeId: string, mesh: EditableMesh) => void;
   onPreviewNodeTransform: (nodeId: string, transform: Transform) => void;
+  onSculptModeChange: (mode: "deflate" | "inflate" | null) => void;
   onSelectMaterialFaces: (faceIds: string[]) => void;
   onSelectNodes: (nodeIds: string[]) => void;
   onSplitBrushAtCoordinate: (nodeId: string, axis: "x" | "y" | "z", coordinate: number) => void;
@@ -219,7 +224,6 @@ export type FaceSubdivisionState = {
   baseMesh: EditableMesh;
   cuts: number;
   faceId: string;
-  previewMesh: EditableMesh;
 };
 
 export type LastMeshEditAction =

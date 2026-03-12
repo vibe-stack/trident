@@ -54,6 +54,9 @@ type EditorShellProps = {
   jobs: WorkerJob[];
   meshEditMode: MeshEditMode;
   meshEditToolbarAction?: MeshEditToolbarActionRequest;
+  sculptMode?: "deflate" | "inflate" | null;
+  sculptBrushRadius: number;
+  sculptBrushStrength: number;
   onActivateViewport: (viewportId: ViewportPaneId) => void;
   onApplyMaterial: (materialId: string, scope: "faces" | "object", faceIds: string[]) => void;
   onClipSelection: (axis: TransformAxis) => void;
@@ -79,7 +82,6 @@ type EditorShellProps = {
   onPlaceBlockoutPlatform: () => void;
   onPlaceBlockoutRoom: () => void;
   onPlaceBlockoutStairs: () => void;
-  onMeshInflate: (factor: number) => void;
   onMirrorSelection: (axis: TransformAxis) => void;
   onGenerateAiModel: () => void;
   onImportGlb: () => void;
@@ -93,6 +95,7 @@ type EditorShellProps = {
   onPreviewBrushData: (nodeId: string, brush: Brush) => void;
   onPreviewEntityTransform: (entityId: string, transform: Transform) => void;
   onPreviewMeshData: (nodeId: string, mesh: EditableMesh) => void;
+  onSculptModeChange: (mode: "deflate" | "inflate" | null) => void;
   onRedo: () => void;
   onSaveWhmap: () => void;
   onSelectAsset: (assetId: string) => void;
@@ -104,6 +107,8 @@ type EditorShellProps = {
   onSelectNodes: (nodeIds: string[]) => void;
   onSetActiveBrushShape: (shape: BrushShape) => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
+  onSetSculptBrushRadius: (value: number) => void;
+  onSetSculptBrushStrength: (value: number) => void;
   onSetRightPanel: (panel: RightPanelId) => void;
   onSetSnapEnabled: (enabled: boolean) => void;
   onSetSnapSize: (snapSize: GridSnapValue) => void;
@@ -160,6 +165,9 @@ export function EditorShell({
   jobs,
   meshEditMode,
   meshEditToolbarAction,
+  sculptMode,
+  sculptBrushRadius,
+  sculptBrushStrength,
   onActivateViewport,
   onApplyMaterial,
   onClipSelection,
@@ -185,7 +193,6 @@ export function EditorShell({
   onPlaceBlockoutPlatform,
   onPlaceBlockoutRoom,
   onPlaceBlockoutStairs,
-  onMeshInflate,
   onMirrorSelection,
   onGenerateAiModel,
   onImportGlb,
@@ -199,6 +206,7 @@ export function EditorShell({
   onPreviewBrushData,
   onPreviewEntityTransform,
   onPreviewMeshData,
+  onSculptModeChange,
   onRedo,
   onSaveWhmap,
   onSelectAsset,
@@ -210,6 +218,8 @@ export function EditorShell({
   onSelectNodes,
   onSetActiveBrushShape,
   onSetMeshEditMode,
+  onSetSculptBrushRadius,
+  onSetSculptBrushStrength,
   onSetRightPanel,
   onSetSnapEnabled,
   onSetSnapSize,
@@ -282,6 +292,8 @@ export function EditorShell({
           isActiveViewport={activeViewportId === viewportId}
           meshEditMode={meshEditMode}
           meshEditToolbarAction={meshEditToolbarAction}
+          sculptBrushRadius={sculptBrushRadius}
+          sculptBrushStrength={sculptBrushStrength}
           onActivateViewport={onActivateViewport}
           onClearSelection={onClearSelection}
           onCommitMeshTopology={onCommitMeshTopology}
@@ -295,6 +307,7 @@ export function EditorShell({
           onPreviewEntityTransform={onPreviewEntityTransform}
           onPreviewMeshData={onPreviewMeshData}
           onPreviewNodeTransform={onPreviewNodeTransform}
+          onSculptModeChange={activeViewportId === viewportId ? onSculptModeChange : () => {}}
           onSelectMaterialFaces={onSelectMaterialFaces}
           onSelectNodes={onSelectNodes}
           onSplitBrushAtCoordinate={onSplitBrushAtCoordinate}
@@ -363,7 +376,6 @@ export function EditorShell({
           onLowerTop={() => onExtrudeSelection("y", -1)}
           onPausePhysics={onPausePhysics}
           onMeshEditToolbarAction={onMeshEditToolbarAction}
-          onMeshInflate={onMeshInflate}
           onImportGlb={onImportGlb}
           onPlaceEntity={onPlaceEntity}
           onPlaceLight={onPlaceLight}
@@ -374,6 +386,8 @@ export function EditorShell({
           onPlaceProp={onPlaceProp}
           onPlayPhysics={onPlayPhysics}
           onRaiseTop={() => onExtrudeSelection("y", 1)}
+          onSetSculptBrushRadius={onSetSculptBrushRadius}
+          onSetSculptBrushStrength={onSetSculptBrushStrength}
           onStartAiModelPlacement={onStartAiModelPlacement}
           onSelectBrushShape={(shape) => {
             onSetActiveBrushShape(shape);
@@ -387,6 +401,9 @@ export function EditorShell({
           onSetToolId={onSetToolId}
           onSetViewMode={onSetViewMode}
           physicsPlayback={physicsPlayback}
+          sculptMode={sculptMode}
+          sculptBrushRadius={sculptBrushRadius}
+          sculptBrushStrength={sculptBrushStrength}
           selectedGeometry={selectedIsGeometry}
           selectedMesh={selectedIsMesh}
           snapEnabled={activeViewport.grid.enabled}
@@ -423,7 +440,7 @@ export function EditorShell({
           onDeleteTexture={onDeleteTexture}
           onExtrudeSelection={onExtrudeSelection}
           onFocusNode={onFocusNode}
-          onMeshInflate={onMeshInflate}
+          onMeshEditToolbarAction={onMeshEditToolbarAction}
           onMirrorSelection={onMirrorSelection}
           onPlaceAsset={onPlaceAsset}
           onSelectAsset={onSelectAsset}

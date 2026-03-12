@@ -22,7 +22,6 @@ import {
   createSetMeshDataCommand,
   createSetNodeTransformCommand,
   createPlaceEntityCommand,
-  createMeshInflateCommand,
   createMeshRaiseTopCommand,
   createMirrorNodesCommand,
   createPlaceBrushNodeCommand,
@@ -140,6 +139,9 @@ export function App() {
   const [workerJobs, setWorkerJobs] = useState<WorkerJob[]>([]);
   const [sceneRevision, setSceneRevision] = useState(0);
   const [selectionRevision, setSelectionRevision] = useState(0);
+  const [sculptMode, setSculptMode] = useState<"deflate" | "inflate" | null>(null);
+  const [sculptBrushRadius, setSculptBrushRadius] = useState(3);
+  const [sculptBrushStrength, setSculptBrushStrength] = useState(0.2);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const glbImportInputRef = useRef<HTMLInputElement | null>(null);
   const renderSceneCacheRef = useRef(createDerivedRenderSceneCache());
@@ -192,6 +194,7 @@ export function App() {
 
   useEffect(() => {
     if (activeToolId !== "mesh-edit") {
+      setSculptMode(null);
       return;
     }
 
@@ -571,15 +574,6 @@ export function App() {
       );
       enqueueWorkerJob("Mesh triangulation", { task: "triangulation", worker: "meshWorker" }, 850);
     }
-  };
-
-  const handleMeshInflate = (factor: number) => {
-    if (editor.selection.ids.length === 0) {
-      return;
-    }
-
-    editor.execute(createMeshInflateCommand(editor.scene, editor.selection.ids, factor));
-    enqueueWorkerJob("Mesh edit", { task: "bevel", worker: "meshWorker" }, 850);
   };
 
   const handlePlaceAsset = (position: Vec3) => {
@@ -1304,7 +1298,6 @@ export function App() {
         onLoadWhmap={handleLoadWhmap}
         onPausePhysics={handlePausePhysics}
         onMeshEditToolbarAction={handleMeshEditToolbarAction}
-        onMeshInflate={handleMeshInflate}
         onMirrorSelection={handleMirrorSelection}
         onCancelAiModelPlacement={handleCancelAiModelPlacement}
         onPlaceAsset={handlePlaceAsset}
@@ -1324,6 +1317,7 @@ export function App() {
         onPreviewEntityTransform={handlePreviewEntityTransform}
         onPreviewMeshData={handlePreviewMeshData}
         onPreviewNodeTransform={handlePreviewNodeTransform}
+        onSculptModeChange={setSculptMode}
         onRedo={handleRedo}
         onSaveWhmap={handleSaveWhmap}
         onSelectAsset={handleSelectAsset}
@@ -1334,6 +1328,8 @@ export function App() {
         onSetUvScale={handleSetMaterialUvScale}
         onSelectNodes={handleSelectNodes}
         onSetMeshEditMode={setMeshEditMode}
+        onSetSculptBrushRadius={setSculptBrushRadius}
+        onSetSculptBrushStrength={setSculptBrushStrength}
         onSetRightPanel={handleSetRightPanel}
         onSetActiveBrushShape={setActiveBrushShape}
         onSetSnapEnabled={handleSetSnapEnabled}
@@ -1359,6 +1355,9 @@ export function App() {
         onUpdateMeshData={handleUpdateMeshData}
         onUpdateNodeTransform={handleUpdateNodeTransform}
         meshEditMode={meshEditMode}
+        sculptMode={sculptMode}
+        sculptBrushRadius={sculptBrushRadius}
+        sculptBrushStrength={sculptBrushStrength}
         physicsPlayback={physicsPlayback}
         physicsRevision={physicsRevision}
         renderScene={renderScene}

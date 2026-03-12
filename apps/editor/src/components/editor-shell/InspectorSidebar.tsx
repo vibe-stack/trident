@@ -29,6 +29,7 @@ import { SceneHierarchyPanel } from "@/components/editor-shell/SceneHierarchyPan
 import { rebaseTransformPivot } from "@/viewport/utils/geometry";
 import { cn } from "@/lib/utils";
 import type { MeshEditMode } from "@/viewport/editing";
+import type { MeshEditToolbarActionRequest } from "@/viewport/types";
 import type { RightPanelId } from "@/state/ui-store";
 
 type InspectorSidebarProps = {
@@ -46,7 +47,7 @@ type InspectorSidebarProps = {
   onDeleteTexture: (textureId: string) => void;
   onExtrudeSelection: (axis: "x" | "y" | "z", direction: -1 | 1) => void;
   onFocusNode: (nodeId: string) => void;
-  onMeshInflate: (factor: number) => void;
+  onMeshEditToolbarAction: (action: MeshEditToolbarActionRequest["kind"]) => void;
   onMirrorSelection: (axis: "x" | "y" | "z") => void;
   onPlaceAsset: (position: Vec3) => void;
   onSelectAsset: (assetId: string) => void;
@@ -92,7 +93,7 @@ export function InspectorSidebar({
   onDeleteTexture,
   onExtrudeSelection,
   onFocusNode,
-  onMeshInflate,
+  onMeshEditToolbarAction,
   onMirrorSelection,
   onPlaceAsset,
   onSelectAsset,
@@ -642,10 +643,10 @@ export function InspectorSidebar({
                     {activeToolId === "mesh-edit" ? (
                       <ToolSection title="Mesh Edit">
                         <div className="flex flex-wrap gap-1.5">
-                          <Button disabled={!selectedIsMesh} onClick={() => onMeshInflate(1.1)} size="xs" variant="ghost">
+                          <Button disabled={!selectedIsMesh} onClick={() => onMeshEditToolbarAction("inflate")} size="xs" variant="ghost">
                             Inflate
                           </Button>
-                          <Button disabled={!selectedIsMesh} onClick={() => onMeshInflate(0.9)} size="xs" variant="ghost">
+                          <Button disabled={!selectedIsMesh} onClick={() => onMeshEditToolbarAction("deflate")} size="xs" variant="ghost">
                             Deflate
                           </Button>
                           <Button disabled={!selectedIsMesh} onClick={() => onExtrudeSelection("y", 1)} size="xs" variant="ghost">

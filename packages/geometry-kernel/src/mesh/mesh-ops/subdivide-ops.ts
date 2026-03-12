@@ -7,6 +7,11 @@ import {
 } from "./shared";
 import type { MeshPolygonData, OrientedEditablePolygon } from "./types";
 
+export type MeshSubdivisionPreviewSegment = {
+  end: Vec3;
+  start: Vec3;
+};
+
 export function subdivideEditableMeshFace(
   mesh: EditableMesh,
   faceId: FaceID,
@@ -42,6 +47,24 @@ export function subdivideEditableMeshFace(
   }
 
   return createEditableMeshFromPolygons(orientPolygonLoops([...nextPolygons, ...subdividedPolygons]));
+}
+
+export function buildEditableMeshFaceSubdivisionPreview(
+  mesh: EditableMesh,
+  faceId: FaceID,
+  cuts: number
+): MeshSubdivisionPreviewSegment[] {
+  const targetCuts = Math.max(1, Math.round(cuts));
+  const polygons = getMeshPolygons(mesh);
+  const target = polygons.find((polygon) => polygon.id === faceId);
+
+  if (!target || target.positions.length < 3) {
+    return [];
+  }
+
+  return target.positions.length === 4
+    ? buildQuadSubdivisionPreviewSegments(target, targetCuts + 1)
+    : buildRadialSubdivisionPreviewSegments(target, createSubdivisionBoundarySamples(target, targetCuts + 1), targetCuts + 1);
 }
 
 function createSubdivisionBoundarySamples(polygon: MeshPolygonData, segments: number) {
@@ -232,4 +255,69 @@ function buildSubdivisionBoundaryLoop(
 
     return [vertex, ...boundarySamples[edgeIndex].points];
   });
+}
+
+function buildQuadSubdivisionPreviewSegments(
+  target: MeshPolygonData,
+  segments: number
+): MeshSubdivisionPreviewSegment[] {
+  const [corner0, corner1, corner2, corner3] = target.positions;
+  const gridPointAt = (column: number, row: number) => {
+    const u = column / segments;
+    const v = row / segments;
+    const bottom = lerpVec3(corner0, corner1, u);
+    const top = lerpVec3(corner3, corner2, u);
+
+    return lerpVec3(bottom, top, v);
+  };
+  const previewSegments: MeshSubdivisionPreviewSegment[] = [];
+
+  for (let index = 1; index < segments; index += 1) {
+    previewSegments.push({
+      end: gridPointAt(index, segments),
+      start: gridPointAt(index, 0)
+    });
+    previewSegments.push({
+      end: gridPointAt(segments, index),
+      start: gridPointAt(0, index)
+    });
+  }
+
+  return previewSegments;
+}
+
+function buildRadialSubdivisionPreviewSegments(
+  target: MeshPolygonData,
+  boundarySamples: Array<{
+    edge: [VertexID, VertexID];
+    edgeIndex: number;
+    points: Array<{ id: VertexID; position: Vec3 }>;
+  }>,
+  segments: number
+) {
+  const boundaryLoop = buildSubdivisionBoundaryLoop(target, boundarySamples);
+  const previewSegments: MeshSubdivisionPreviewSegment[] = [];
+
+  boundaryLoop.forEach((sample, index) => {
+    previewSegments.push({
+      end: target.center,
+      start: sample.position
+    });
+  });
+
+  for (let ringIndex = 1; ringIndex < segments; ringIndex += 1) {
+    const t = 1 - ringIndex / segments;
+    const ringPoints = boundaryLoop.map((sample) => lerpVec3(target.center, sample.position, t));
+
+    ringPoints.forEach((point, index) => {
+      const nextPoint = ringPoints[(index + 1) % ringPoints.length];
+
+      previewSegments.push({
+        end: nextPoint,
+        start: point
+      });
+    });
+  }
+
+  return previewSegments;
 }

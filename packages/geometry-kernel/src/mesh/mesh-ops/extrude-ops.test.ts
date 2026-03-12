@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { vec3 } from "@web-hammer/shared";
-import { createEditableMeshFromPolygons, getFaceVertexIds, validateEditableMesh } from "../editable-mesh";
+import { computePolygonNormal } from "../../polygon/polygon-utils";
+import { createEditableMeshFromPolygons, getFaceVertexIds, getFaceVertices, validateEditableMesh } from "../editable-mesh";
 import { extrudeEditableMeshEdge, extrudeEditableMeshFaces } from "./extrude-ops";
 
 describe("extrudeEditableMeshFaces", () => {
@@ -96,6 +97,46 @@ describe("extrudeEditableMeshFaces", () => {
 
     expect(sharedVertexIds).toHaveLength(0);
   });
+
+  test("preserves unrelated face winding instead of normalizing the whole mesh", () => {
+    const mesh = createEditableMeshFromPolygons([
+      {
+        id: "back",
+        positions: [vec3(1, 0, 0), vec3(1, 1, 0), vec3(0, 1, 0), vec3(0, 0, 0)],
+        vertexIds: ["b", "c", "d", "a"]
+      },
+      {
+        id: "front",
+        positions: [vec3(0, 0, 1), vec3(1, 0, 1), vec3(1, 1, 1), vec3(0, 1, 1)],
+        vertexIds: ["e", "f", "g", "h"]
+      },
+      {
+        id: "left",
+        positions: [vec3(0, 0, 0), vec3(0, 0, 1), vec3(0, 1, 1), vec3(0, 1, 0)],
+        vertexIds: ["a", "e", "h", "d"]
+      },
+      {
+        id: "right",
+        positions: [vec3(1, 0, 0), vec3(1, 1, 0), vec3(1, 1, 1), vec3(1, 0, 1)],
+        vertexIds: ["b", "c", "g", "f"]
+      },
+      {
+        id: "bottom",
+        positions: [vec3(0, 0, 0), vec3(1, 0, 0), vec3(1, 0, 1), vec3(0, 0, 1)],
+        vertexIds: ["a", "b", "f", "e"]
+      },
+      {
+        id: "top",
+        positions: [vec3(0, 1, 0), vec3(0, 1, 1), vec3(1, 1, 1), vec3(1, 1, 0)],
+        vertexIds: ["d", "h", "g", "c"]
+      }
+    ]);
+    const backNormalBefore = computeFaceNormal(mesh, "back");
+    const result = extrudeEditableMeshFaces(mesh, ["front"], 1);
+
+    expect(result).toBeDefined();
+    expect(computeFaceNormal(result!, "back")).toEqual(backNormalBefore);
+  });
 });
 
 describe("extrudeEditableMeshEdge", () => {
@@ -143,6 +184,10 @@ function countFacesUsingEdge(mesh: Parameters<typeof validateEditableMesh>[0], e
       return makeEdgeKey(vertexId, nextVertexId) === edgeKey;
     });
   }).length;
+}
+
+function computeFaceNormal(mesh: Parameters<typeof validateEditableMesh>[0], faceId: string) {
+  return computePolygonNormal(getFaceVertices(mesh, faceId).map((vertex) => vertex.position));
 }
 
 function makeEdgeKey(startId: string, endId: string) {

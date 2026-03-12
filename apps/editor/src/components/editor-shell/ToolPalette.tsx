@@ -9,6 +9,7 @@ import { PrimaryToolBar } from "@/components/editor-shell/PrimaryToolBar";
 import { SnapControl } from "@/components/editor-shell/SnapControl";
 import { ViewModeControl } from "@/components/editor-shell/ViewModeControl";
 import type { MeshEditMode } from "@/viewport/editing";
+import type { MeshEditToolbarActionRequest } from "@/viewport/types";
 import type { ViewModeId } from "@/viewport/viewports";
 
 type ToolPaletteProps = {
@@ -18,11 +19,10 @@ type ToolPaletteProps = {
   currentSnapSize: GridSnapValue;
   gridSnapValues: readonly GridSnapValue[];
   meshEditMode: MeshEditMode;
-  onMeshEditToolbarAction: (action: "arc" | "bevel" | "cut" | "delete" | "extrude" | "fill-face" | "invert-normals" | "merge" | "subdivide") => void;
+  onMeshEditToolbarAction: (action: MeshEditToolbarActionRequest["kind"]) => void;
   onInvertSelectionNormals: () => void;
   onLowerTop: () => void;
   onPausePhysics: () => void;
-  onMeshInflate: (factor: number) => void;
   onImportGlb: () => void;
   onPlaceEntity: (type: EntityType) => void;
   onPlaceLight: (type: LightType) => void;
@@ -33,6 +33,8 @@ type ToolPaletteProps = {
   onPlaceProp: (shape: PrimitiveShape) => void;
   onPlayPhysics: () => void;
   onRaiseTop: () => void;
+  onSetSculptBrushRadius: (value: number) => void;
+  onSetSculptBrushStrength: (value: number) => void;
   onStartAiModelPlacement: () => void;
   onSelectBrushShape: (shape: BrushShape) => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
@@ -43,6 +45,9 @@ type ToolPaletteProps = {
   onSetTransformMode: (mode: "rotate" | "scale" | "translate") => void;
   onSetViewMode: (viewMode: ViewModeId) => void;
   physicsPlayback: "paused" | "running" | "stopped";
+  sculptMode?: "deflate" | "inflate" | null;
+  sculptBrushRadius: number;
+  sculptBrushStrength: number;
   selectedGeometry: boolean;
   selectedMesh: boolean;
   snapEnabled: boolean;
@@ -62,7 +67,6 @@ export function ToolPalette({
   onInvertSelectionNormals,
   onLowerTop,
   onPausePhysics,
-  onMeshInflate,
   onImportGlb,
   onPlaceEntity,
   onPlaceLight,
@@ -73,6 +77,8 @@ export function ToolPalette({
   onPlaceProp,
   onPlayPhysics,
   onRaiseTop,
+  onSetSculptBrushRadius,
+  onSetSculptBrushStrength,
   onStartAiModelPlacement,
   onSelectBrushShape,
   onSetMeshEditMode,
@@ -83,6 +89,9 @@ export function ToolPalette({
   onSetTransformMode,
   onSetViewMode,
   physicsPlayback,
+  sculptMode,
+  sculptBrushRadius,
+  sculptBrushStrength,
   selectedGeometry,
   selectedMesh,
   snapEnabled,
@@ -141,15 +150,20 @@ export function ToolPalette({
               onExtrude={() => onMeshEditToolbarAction("extrude")}
               meshEditMode={meshEditMode}
               onFillFace={() => onMeshEditToolbarAction("fill-face")}
-              onDeflate={() => onMeshInflate(0.9)}
-              onInflate={() => onMeshInflate(1.1)}
+              onDeflate={() => onMeshEditToolbarAction("deflate")}
+              onInflate={() => onMeshEditToolbarAction("inflate")}
               onInvertNormals={() => onMeshEditToolbarAction("invert-normals")}
               onLowerTop={onLowerTop}
               onMerge={() => onMeshEditToolbarAction("merge")}
               onRaiseTop={onRaiseTop}
+              onSetSculptBrushRadius={onSetSculptBrushRadius}
+              onSetSculptBrushStrength={onSetSculptBrushStrength}
               onSetMeshEditMode={onSetMeshEditMode}
               onSubdivide={() => onMeshEditToolbarAction("subdivide")}
               onSetTransformMode={onSetTransformMode}
+              sculptMode={sculptMode}
+              sculptBrushRadius={sculptBrushRadius}
+              sculptBrushStrength={sculptBrushStrength}
               selectedGeometry={selectedGeometry}
               selectedMesh={selectedMesh}
               transformMode={transformMode}

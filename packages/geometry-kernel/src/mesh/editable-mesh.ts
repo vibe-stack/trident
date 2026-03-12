@@ -65,6 +65,7 @@ export function createEditableMeshFromPolygons(
   const faces: EditableMeshFace[] = [];
   const vertexRegistry = new Map<string, EditableMeshVertex>();
   const directedEdges = new Map<string, HalfEdgeID>();
+  const halfEdgesById = new Map<HalfEdgeID, EditableMeshHalfEdge>();
 
   polygons.forEach((polygon, polygonIndex) => {
     const orderedPositions = normalizePolygonLoop(polygon.positions);
@@ -110,7 +111,7 @@ export function createEditableMeshFromPolygons(
 
       if (reverseHalfEdgeId) {
         halfEdge.twin = reverseHalfEdgeId;
-        const reverseHalfEdge = halfEdges.find((candidate) => candidate.id === reverseHalfEdgeId);
+        const reverseHalfEdge = halfEdgesById.get(reverseHalfEdgeId);
 
         if (reverseHalfEdge) {
           reverseHalfEdge.twin = halfEdge.id;
@@ -120,6 +121,7 @@ export function createEditableMeshFromPolygons(
       directedEdges.set(`${currentVertex.id}:${nextVertex.id}`, halfEdge.id);
       faceHalfEdges.push(halfEdge);
       halfEdges.push(halfEdge);
+      halfEdgesById.set(halfEdge.id, halfEdge);
     });
 
     faceHalfEdges.forEach((halfEdge, edgeIndex) => {

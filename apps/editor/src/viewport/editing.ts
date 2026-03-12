@@ -67,6 +67,15 @@ const meshEditHandleCache = new WeakMap<
     vertices: EditableMesh["vertices"];
   }
 >();
+const meshExtrudeHandleCache = new WeakMap<
+  EditableMesh,
+  {
+    faces: EditableMesh["faces"];
+    halfEdges: EditableMesh["halfEdges"];
+    handles: MeshExtrudeHandle[];
+    vertices: EditableMesh["vertices"];
+  }
+>();
 
 export function resolveBrushFaceAxis(face: ReconstructedBrushFace): BrushFaceAxis | undefined {
   const normalAxis = getDominantAxis(face.normal);
@@ -475,6 +484,12 @@ export function createBrushExtrudeHandles(brush: Brush): BrushExtrudeHandle[] {
 }
 
 export function createMeshExtrudeHandles(mesh: EditableMesh): MeshExtrudeHandle[] {
+  const cached = meshExtrudeHandleCache.get(mesh);
+
+  if (cached && cached.faces === mesh.faces && cached.halfEdges === mesh.halfEdges && cached.vertices === mesh.vertices) {
+    return cached.handles;
+  }
+
   const faceHandles = createMeshEditHandles(mesh, "face").filter(
     (handle): handle is MeshEditHandle & { normal: Vec3 } => Boolean(handle.normal)
   );
@@ -514,7 +529,14 @@ export function createMeshExtrudeHandles(mesh: EditableMesh): MeshExtrudeHandle[
     ];
   });
 
-  return [...faceExtrudeHandles, ...edgeHandles];
+  const handles = [...faceExtrudeHandles, ...edgeHandles];
+  meshExtrudeHandleCache.set(mesh, {
+    faces: mesh.faces,
+    halfEdges: mesh.halfEdges,
+    handles,
+    vertices: mesh.vertices
+  });
+  return handles;
 }
 
 export function collectMeshEdgeLoop(mesh: EditableMesh, edge: [string, string], clickPoint?: Vec3) {
