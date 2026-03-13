@@ -1,88 +1,105 @@
-import { type GameplayEvent, type GameplayEventFilter, type GameplayEventInput, type GameplayRuntimeEventBus } from "./types";
+import { type GameplayEvent, type GameplayEventFilter, type GameplayRuntimeEventBus } from "./types";
 
-type GameplayEventBusOptions = {
+export type GameplayEventBusOptions = {
   historyLimit?: number;
   maxMicroPhases?: number;
   onEvent?: (event: GameplayEvent) => void;
 };
 
-export function createGameplayEventBus({
-  historyLimit = 128,
-  maxMicroPhases = 24,
-  onEvent
-}: GameplayEventBusOptions = {}): GameplayRuntimeEventBus {
-  const queue: GameplayEvent[] = [];
-  const history: GameplayEvent[] = [];
-  const listeners = new Set<(event: GameplayEvent) => void>();
-  let sequence = 0;
+export class GameplayEventBus implements GameplayRuntimeEventBus {
+  private readonly historyLimit: number;
+  private readonly maxMicroPhases: number;
+  private readonly onEvent?: (event: GameplayEvent) => void;
+  private readonly queue: GameplayEvent[] = [];
+  private readonly history: GameplayEvent[] = [];
+  private readonly listeners = new Set<(event: GameplayEvent) => void>();
+  private sequence = 0;
 
-  return {
-    emit(input) {
-      const event: GameplayEvent = {
-        ...input,
-        id: `event:${sequence += 1}`,
-        time: performance.now()
-      };
+  constructor({
+    historyLimit = 128,
+    maxMicroPhases = 24,
+    onEvent
+  }: GameplayEventBusOptions = {}) {
+    this.historyLimit = historyLimit;
+    this.maxMicroPhases = maxMicroPhases;
+    this.onEvent = onEvent;
+  }
 
-      queue.push(event);
-      return event;
-    },
-    flush() {
-      const dispatched: GameplayEvent[] = [];
-      let phase = 0;
+  emit(input: Omit<GameplayEvent, "id" | "time">) {
+    const event: GameplayEvent = {
+      ...input,
+      id: `event:${this.sequence += 1}`,
+      time: performance.now()
+    };
 
-      while (queue.length > 0) {
-        phase += 1;
+    this.queue.push(event);
+    return event;
+  }
 
-        if (phase > maxMicroPhases) {
-          throw new Error("Gameplay event bus exceeded the allowed micro-phase depth.");
+  flush() {
+    const dispatched: GameplayEvent[] = [];
+    let phase = 0;
+
+    while (this.queue.length > 0) {
+      phase += 1;
+
+      if (phase > this.maxMicroPhases) {
+        throw new Error("Gameplay event bus exceeded the allowed micro-phase depth.");
+      }
+
+      const batch = this.queue.splice(0, this.queue.length);
+
+      batch.forEach((event) => {
+        dispatched.push(event);
+        this.history.push(event);
+
+        if (this.history.length > this.historyLimit) {
+          this.history.splice(0, this.history.length - this.historyLimit);
         }
 
-        const batch = queue.splice(0, queue.length);
-
-        batch.forEach((event) => {
-          dispatched.push(event);
-          history.push(event);
-
-          if (history.length > historyLimit) {
-            history.splice(0, history.length - historyLimit);
-          }
-
-          listeners.forEach((listener) => {
-            listener(event);
-          });
-          onEvent?.(event);
+        this.listeners.forEach((listener) => {
+          listener(event);
         });
-      }
-
-      return dispatched;
-    },
-    getHistory() {
-      return history;
-    },
-    subscribe(filter, listener) {
-      const resolvedListener = typeof filter === "function" ? filter : listener;
-
-      if (!resolvedListener) {
-        return () => undefined;
-      }
-
-      const wrapped =
-        typeof filter === "function"
-          ? resolvedListener
-          : (event: GameplayEvent) => {
-              if (matchesEventFilter(event, filter)) {
-                resolvedListener(event);
-              }
-            };
-
-      listeners.add(wrapped);
-
-      return () => {
-        listeners.delete(wrapped);
-      };
+        this.onEvent?.(event);
+      });
     }
-  };
+
+    return dispatched;
+  }
+
+  getHistory() {
+    return this.history;
+  }
+
+  subscribe(
+    filter: GameplayEventFilter | ((event: GameplayEvent) => void),
+    listener?: (event: GameplayEvent) => void
+  ) {
+    const resolvedListener = typeof filter === "function" ? filter : listener;
+
+    if (!resolvedListener) {
+      return () => undefined;
+    }
+
+    const wrapped =
+      typeof filter === "function"
+        ? resolvedListener
+        : (event: GameplayEvent) => {
+            if (matchesEventFilter(event, filter)) {
+              resolvedListener(event);
+            }
+          };
+
+    this.listeners.add(wrapped);
+
+    return () => {
+      this.listeners.delete(wrapped);
+    };
+  }
+}
+
+export function createGameplayEventBus(options: GameplayEventBusOptions = {}): GameplayRuntimeEventBus {
+  return new GameplayEventBus(options);
 }
 
 function matchesEventFilter(event: GameplayEvent, filter: GameplayEventFilter) {

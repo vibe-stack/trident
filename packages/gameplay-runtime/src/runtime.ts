@@ -1,118 +1,227 @@
-import { createGameplayEventBus } from "./event-bus";
-import { createGameplaySceneStore } from "./scene-store";
-import { type GameplayActor, type GameplayEventInput, type GameplayHookTarget, type GameplayRuntime, type GameplayRuntimeApi, type GameplayRuntimeHost, type GameplayRuntimeScene, type GameplayRuntimeSystemContext, type GameplayRuntimeSystemDefinition } from "./types";
+import { type GameplayValue, type Transform, type Vec3 } from "@web-hammer/shared";
+import { GameplayEventBus, type GameplayEventBusOptions } from "./event-bus";
+import { GameplayWorld } from "./scene-store";
+import {
+  createGameplaySystemDefinition,
+  isGameplaySystemClass,
+  type GameplayRuntimeSystemRegistration
+} from "./system";
+import {
+  type GameplayActor,
+  type GameplayEvent,
+  type GameplayEventFilter,
+  type GameplayEventInput,
+  type GameplayHookTarget,
+  type GameplayRuntime as GameplayRuntimeShape,
+  type GameplayRuntimeHost,
+  type GameplayRuntimeScene,
+  type GameplayRuntimeSystem,
+  type GameplayRuntimeSystemContext
+} from "./types";
 
-type GameplayRuntimeOptions = {
+export type GameplayGameOptions = {
+  eventBus?: GameplayEventBus;
+  eventBusOptions?: GameplayEventBusOptions;
   host?: GameplayRuntimeHost;
   scene: GameplayRuntimeScene;
-  systems?: GameplayRuntimeSystemDefinition[];
+  systems?: GameplayRuntimeSystemRegistration[];
+  world?: GameplayWorld;
 };
 
-export function createGameplayRuntime({
-  host,
-  scene,
-  systems = []
-}: GameplayRuntimeOptions): GameplayRuntime {
-  const sceneStore = createGameplaySceneStore({ host, scene });
-  const eventBus = createGameplayEventBus({
-    onEvent: host?.onEvent
-  });
-  const api: GameplayRuntimeApi = {
-    emitEvent(input: GameplayEventInput) {
-      return eventBus.emit(input);
-    },
-    emitFromHookTarget(target: GameplayHookTarget, eventName, payload, targetId = target.targetId) {
-      return eventBus.emit({
-        event: eventName,
-        payload,
-        sourceHookType: target.hook.type,
-        sourceId: target.targetId,
-        sourceKind: target.targetKind,
-        targetId
-      });
-    },
-    getActor: sceneStore.getActor,
-    getActors: sceneStore.getActors,
-    getEntity: sceneStore.getEntity,
-    getEntityWorldTransform: sceneStore.getEntityWorldTransform,
-    getHookTarget: sceneStore.getHookTarget,
-    getHookTargets: sceneStore.getHookTargets,
-    getHookTargetsByType: sceneStore.getHookTargetsByType,
-    getLocalState: sceneStore.getLocalState,
-    getNode: sceneStore.getNode,
-    getNodeWorldTransform: sceneStore.getNodeWorldTransform,
-    getPlayerState: sceneStore.getPlayerState,
-    getTargetInitialLocalTransform: sceneStore.getTargetInitialLocalTransform,
-    getTargetLocalTransform: sceneStore.getTargetLocalTransform,
-    getTargetWorldTransform: sceneStore.getTargetWorldTransform,
-    getWorldState: sceneStore.getWorldState,
-    onEvent: eventBus.subscribe,
-    removeActor(actorId: string) {
-      sceneStore.removeActor(actorId);
-    },
-    resetTargetLocalTransform: sceneStore.resetTargetLocalTransform,
-    setLocalState: sceneStore.setLocalState,
-    setPlayerState: sceneStore.setPlayerState,
-    setTargetLocalTransform: sceneStore.setTargetLocalTransform,
-    setWorldState: sceneStore.setWorldState,
-    translateTarget: sceneStore.translateTarget,
-    updateActor(actor: GameplayActor) {
-      sceneStore.upsertActor(actor);
-    }
-  };
-  const context: GameplayRuntimeSystemContext = {
-    ...api,
+export class GameplayGame implements GameplayRuntimeShape {
+  readonly eventBus: GameplayEventBus;
+  readonly scene: GameplayWorld;
+  readonly world: GameplayWorld;
+
+  private readonly systemInstances: Array<{
+    instance: GameplayRuntimeSystem;
+  }> = [];
+  private started = false;
+
+  constructor({
     eventBus,
-    scene: sceneStore
-  };
-  const systemInstances = systems.map((systemDefinition) => ({
-    definition: systemDefinition,
-    instance: systemDefinition.create(context)
-  }));
-  let started = false;
+    eventBusOptions,
+    host,
+    scene,
+    systems = [],
+    world
+  }: GameplayGameOptions) {
+    this.scene = world ?? new GameplayWorld({ host, scene });
+    this.world = this.scene;
+    this.eventBus = eventBus ?? new GameplayEventBus({ ...eventBusOptions, onEvent: host?.onEvent });
 
-  return {
-    ...api,
-    dispose() {
-      systemInstances.forEach((system) => {
-        system.instance.stop?.();
-      });
-      eventBus.flush();
-    },
-    eventBus,
-    scene: sceneStore,
-    start() {
-      if (started) {
-        return;
-      }
+    const context = this as GameplayRuntimeSystemContext;
+    this.systemInstances = systems
+      .map((registration) => (isGameplaySystemClass(registration) ? createGameplaySystemDefinition(registration) : registration))
+      .map((definition) => ({
+        definition,
+        instance: definition.create(context)
+      }));
+  }
 
-      sceneStore.syncWorldTransforms();
-      systemInstances.forEach((system) => {
-        system.instance.start?.();
-      });
-      eventBus.flush();
-      started = true;
-    },
-    stop() {
-      if (!started) {
-        return;
-      }
+  emitEvent(input: GameplayEventInput) {
+    return this.eventBus.emit(input);
+  }
 
-      systemInstances.forEach((system) => {
-        system.instance.stop?.();
-      });
-      started = false;
-    },
-    update(deltaSeconds) {
-      if (!started) {
-        return;
-      }
+  emitFromHookTarget(
+    target: GameplayHookTarget,
+    eventName: string,
+    payload?: GameplayEvent["payload"],
+    targetId = target.targetId
+  ) {
+    return this.eventBus.emit({
+      event: eventName,
+      payload,
+      sourceHookType: target.hook.type,
+      sourceId: target.targetId,
+      sourceKind: target.targetKind,
+      targetId
+    });
+  }
 
-      eventBus.flush();
-      systemInstances.forEach((system) => {
-        system.instance.update?.(deltaSeconds);
-      });
-      eventBus.flush();
+  getActor(actorId: string) {
+    return this.scene.getActor(actorId);
+  }
+
+  getActors() {
+    return this.scene.getActors();
+  }
+
+  getEntity(entityId: string) {
+    return this.scene.getEntity(entityId);
+  }
+
+  getEntityWorldTransform(entityId: string) {
+    return this.scene.getEntityWorldTransform(entityId);
+  }
+
+  getHookTarget(targetId: string, hookId: string) {
+    return this.scene.getHookTarget(targetId, hookId);
+  }
+
+  getHookTargets() {
+    return this.scene.getHookTargets();
+  }
+
+  getHookTargetsByType(type: string) {
+    return this.scene.getHookTargetsByType(type);
+  }
+
+  getLocalState(targetId: string, key: string) {
+    return this.scene.getLocalState(targetId, key);
+  }
+
+  getNode(nodeId: string) {
+    return this.scene.getNode(nodeId);
+  }
+
+  getNodeWorldTransform(nodeId: string) {
+    return this.scene.getNodeWorldTransform(nodeId);
+  }
+
+  getPlayerState(key: string) {
+    return this.scene.getPlayerState(key);
+  }
+
+  getTargetInitialLocalTransform(targetId: string) {
+    return this.scene.getTargetInitialLocalTransform(targetId);
+  }
+
+  getTargetLocalTransform(targetId: string) {
+    return this.scene.getTargetLocalTransform(targetId);
+  }
+
+  getTargetWorldTransform(targetId: string) {
+    return this.scene.getTargetWorldTransform(targetId);
+  }
+
+  getWorldState(key: string) {
+    return this.scene.getWorldState(key);
+  }
+
+  onEvent(
+    filter: GameplayEventFilter | ((event: GameplayEvent) => void),
+    listener?: (event: GameplayEvent) => void
+  ) {
+    return this.eventBus.subscribe(filter, listener);
+  }
+
+  removeActor(actorId: string) {
+    this.scene.removeActor(actorId);
+  }
+
+  resetTargetLocalTransform(targetId: string) {
+    this.scene.resetTargetLocalTransform(targetId);
+  }
+
+  setLocalState(targetId: string, key: string, value: GameplayValue) {
+    this.scene.setLocalState(targetId, key, value);
+  }
+
+  setPlayerState(key: string, value: GameplayValue) {
+    this.scene.setPlayerState(key, value);
+  }
+
+  setTargetLocalTransform(targetId: string, transform: Transform) {
+    this.scene.setTargetLocalTransform(targetId, transform);
+  }
+
+  setWorldState(key: string, value: GameplayValue) {
+    this.scene.setWorldState(key, value);
+  }
+
+  translateTarget(targetId: string, offset: Vec3) {
+    this.scene.translateTarget(targetId, offset);
+  }
+
+  updateActor(actor: GameplayActor) {
+    this.scene.upsertActor(actor);
+  }
+
+  dispose() {
+    this.systemInstances.forEach((system) => {
+      system.instance.stop?.();
+    });
+    this.eventBus.flush();
+  }
+
+  start() {
+    if (this.started) {
+      return;
     }
-  };
+
+    this.scene.syncWorldTransforms();
+    this.systemInstances.forEach((system) => {
+      system.instance.start?.();
+    });
+    this.eventBus.flush();
+    this.started = true;
+  }
+
+  stop() {
+    if (!this.started) {
+      return;
+    }
+
+    this.systemInstances.forEach((system) => {
+      system.instance.stop?.();
+    });
+    this.started = false;
+  }
+
+  update(deltaSeconds: number) {
+    if (!this.started) {
+      return;
+    }
+
+    this.eventBus.flush();
+    this.systemInstances.forEach((system) => {
+      system.instance.update?.(deltaSeconds);
+    });
+    this.eventBus.flush();
+  }
+}
+
+export function createGameplayRuntime(options: GameplayGameOptions): GameplayRuntimeShape {
+  return new GameplayGame(options);
 }

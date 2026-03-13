@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeTransform, vec3, type Entity, type GeometryNode } from "@web-hammer/shared";
-import { createGameplayRuntime } from "./runtime";
+import { GameplayGame, createGameplayRuntime } from "./runtime";
+import { GameplaySystem } from "./system";
 import {
   createMoverSystemDefinition,
   createOpenableSystemDefinition,
@@ -11,6 +12,39 @@ import {
 } from "./systems";
 
 describe("gameplay runtime", () => {
+  test("supports class-based game and system composition", () => {
+    class FlagBootstrapSystem extends GameplaySystem {
+      static readonly id = "flag-bootstrap";
+      static readonly label = "FlagBootstrapSystem";
+
+      start() {
+        this.context.setWorldState("booted", true);
+        this.context.emitEvent({
+          event: "boot.completed",
+          sourceId: FlagBootstrapSystem.id,
+          sourceKind: "system"
+        });
+      }
+    }
+
+    const game = new GameplayGame({
+      scene: {
+        entities: [],
+        nodes: []
+      },
+      systems: [FlagBootstrapSystem]
+    });
+    const events: string[] = [];
+
+    game.onEvent((event) => {
+      events.push(event.event);
+    });
+    game.start();
+
+    expect(game.getWorldState("booted")).toBe(true);
+    expect(events).toContain("boot.completed");
+  });
+
   test("routes openable events through mover transforms", () => {
     const node: GeometryNode = {
       data: {},
