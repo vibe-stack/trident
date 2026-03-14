@@ -317,8 +317,8 @@ export function createDefaultSceneSettings(): SceneSettings {
       ambientColor: "#ffffff",
       ambientIntensity: 0.4,
       fogColor: "#0b1118",
-      fogFar: 180,
-      fogNear: 45,
+      fogFar: 2000,
+      fogNear: 500,
       gravity: vec3(0, -9.81, 0),
       physicsEnabled: true
     }

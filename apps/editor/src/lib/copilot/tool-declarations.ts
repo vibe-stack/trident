@@ -1,0 +1,430 @@
+import type { CopilotToolDeclaration } from "./types";
+
+export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
+  // ── Placement ───────────────────────────────────────────────
+  {
+    name: "place_blockout_room",
+    description:
+      "Places a blockout room (enclosed box with walls, floor, ceiling). Open sides can be specified to create doorways or windows. Position is the center-bottom of the room.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position of room center" },
+        y: { type: "number", description: "World Y position of room bottom (usually 0 for ground level)" },
+        z: { type: "number", description: "World Z position of room center" },
+        sizeX: { type: "number", description: "Room width in meters (X axis)" },
+        sizeY: { type: "number", description: "Room height in meters (Y axis)" },
+        sizeZ: { type: "number", description: "Room depth in meters (Z axis)" },
+        openSides: {
+          type: "array",
+          items: { type: "string", enum: ["north", "south", "east", "west", "top", "bottom"] },
+          description: "Sides to leave open (for doorways, windows, connections)"
+        },
+        materialId: { type: "string", description: "Material ID to apply. Use list_materials to see available IDs." },
+        name: { type: "string", description: "Display name for the room node" }
+      },
+      required: ["x", "y", "z", "sizeX", "sizeY", "sizeZ"]
+    }
+  },
+  {
+    name: "place_blockout_platform",
+    description:
+      "Places a flat blockout platform (floor slab, roof, shelf). Position is the center of the platform volume.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position (center of slab thickness)" },
+        z: { type: "number", description: "World Z position" },
+        sizeX: { type: "number", description: "Platform width (X)" },
+        sizeY: { type: "number", description: "Platform thickness (Y), typically 0.25-0.5" },
+        sizeZ: { type: "number", description: "Platform depth (Z)" },
+        materialId: { type: "string", description: "Material ID" },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z", "sizeX", "sizeY", "sizeZ"]
+    }
+  },
+  {
+    name: "place_blockout_stairs",
+    description:
+      "Places a parametric staircase with optional landings. Position is the center-bottom of the bottom landing. Returns topLandingCenter for chaining connections.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position of stair base" },
+        y: { type: "number", description: "World Y position of stair base (bottom)" },
+        z: { type: "number", description: "World Z position of stair base" },
+        stepCount: { type: "number", description: "Number of steps" },
+        stepHeight: { type: "number", description: "Height of each step in meters (typical: 0.2)" },
+        treadDepth: { type: "number", description: "Depth of each step tread in meters (typical: 0.3)" },
+        width: { type: "number", description: "Stair width in meters" },
+        direction: {
+          type: "string",
+          enum: ["north", "south", "east", "west"],
+          description: "Direction the stairs ascend toward (default: north)"
+        },
+        materialId: { type: "string", description: "Material ID" },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z", "stepCount", "stepHeight", "treadDepth", "width"]
+    }
+  },
+  {
+    name: "place_primitive",
+    description:
+      "Places a parametric primitive shape (cube, sphere, cylinder, cone). Can be a blockout brush or a physics prop.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position" },
+        z: { type: "number", description: "World Z position" },
+        role: { type: "string", enum: ["brush", "prop"], description: "brush = static blockout, prop = physics object" },
+        shape: { type: "string", enum: ["cube", "sphere", "cylinder", "cone"], description: "Primitive shape" },
+        sizeX: { type: "number", description: "Size X (default: 2)" },
+        sizeY: { type: "number", description: "Size Y (default: 2, or 3 for cylinder/cone)" },
+        sizeZ: { type: "number", description: "Size Z (default: 2)" },
+        materialId: { type: "string", description: "Material ID to apply directly. Avoids needing a separate assign_material call." },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z", "role", "shape"]
+    }
+  },
+  {
+    name: "place_brush",
+    description:
+      "Places a simple axis-aligned brush (CSG convex solid). Default is a 4x3x4 box. Use place_blockout_room or place_blockout_platform for level design; use this for custom-sized brushes.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position" },
+        z: { type: "number", description: "World Z position" },
+        sizeX: { type: "number", description: "Brush width (default: 4)" },
+        sizeY: { type: "number", description: "Brush height (default: 3)" },
+        sizeZ: { type: "number", description: "Brush depth (default: 4)" },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z"]
+    }
+  },
+  {
+    name: "place_light",
+    description: "Places a light in the scene. Types: point (local area), directional (sun), spot (focused cone), ambient (global fill), hemisphere (sky/ground).",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position" },
+        z: { type: "number", description: "World Z position" },
+        type: {
+          type: "string",
+          enum: ["point", "directional", "spot", "ambient", "hemisphere"],
+          description: "Light type"
+        },
+        color: { type: "string", description: "Hex color (e.g. '#ffffff')" },
+        intensity: { type: "number", description: "Light intensity" }
+      },
+      required: ["x", "y", "z", "type"]
+    }
+  },
+  {
+    name: "place_entity",
+    description: "Places a gameplay entity (spawn point, NPC, or interactive object).",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position" },
+        z: { type: "number", description: "World Z position" },
+        type: {
+          type: "string",
+          enum: ["player-spawn", "npc-spawn", "smart-object"],
+          description: "Entity type"
+        },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z", "type"]
+    }
+  },
+
+  // ── Transform ───────────────────────────────────────────────
+  {
+    name: "translate_nodes",
+    description: "Moves nodes by a relative offset (delta). Does not set absolute position — adds delta to current position.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Node IDs to move" },
+        dx: { type: "number", description: "X offset" },
+        dy: { type: "number", description: "Y offset" },
+        dz: { type: "number", description: "Z offset" }
+      },
+      required: ["nodeIds", "dx", "dy", "dz"]
+    }
+  },
+  {
+    name: "set_node_transform",
+    description: "Sets a node's absolute position, rotation, and scale.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Node ID" },
+        x: { type: "number", description: "Absolute X position" },
+        y: { type: "number", description: "Absolute Y position" },
+        z: { type: "number", description: "Absolute Z position" },
+        rotationX: { type: "number", description: "Rotation X in radians" },
+        rotationY: { type: "number", description: "Rotation Y in radians" },
+        rotationZ: { type: "number", description: "Rotation Z in radians" },
+        scaleX: { type: "number", description: "Scale X" },
+        scaleY: { type: "number", description: "Scale Y" },
+        scaleZ: { type: "number", description: "Scale Z" }
+      },
+      required: ["nodeId", "x", "y", "z"]
+    }
+  },
+  {
+    name: "duplicate_nodes",
+    description: "Duplicates nodes with a position offset. Returns the new node IDs.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Node IDs to duplicate" },
+        offsetX: { type: "number", description: "X offset for duplicates" },
+        offsetY: { type: "number", description: "Y offset for duplicates" },
+        offsetZ: { type: "number", description: "Z offset for duplicates" }
+      },
+      required: ["nodeIds", "offsetX", "offsetY", "offsetZ"]
+    }
+  },
+  {
+    name: "mirror_nodes",
+    description: "Mirrors (flips) nodes across the specified axis.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Node IDs to mirror" },
+        axis: { type: "string", enum: ["x", "y", "z"], description: "Axis to mirror across" }
+      },
+      required: ["nodeIds", "axis"]
+    }
+  },
+  {
+    name: "delete_nodes",
+    description: "Deletes nodes and/or entities by their IDs. Also removes all children.",
+    parameters: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "Node or entity IDs to delete" }
+      },
+      required: ["ids"]
+    }
+  },
+
+  // ── Brush ───────────────────────────────────────────────────
+  {
+    name: "split_brush",
+    description: "Splits brush nodes at their midpoint along the specified axis. Returns the new node IDs.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Brush node IDs to split" },
+        axis: { type: "string", enum: ["x", "y", "z"], description: "Axis to split along" }
+      },
+      required: ["nodeIds", "axis"]
+    }
+  },
+  {
+    name: "extrude_brush",
+    description: "Extrudes (grows) brush nodes along an axis by a given amount.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Brush node IDs" },
+        axis: { type: "string", enum: ["x", "y", "z"], description: "Extrusion axis" },
+        amount: { type: "number", description: "Extrusion distance in meters" },
+        direction: { type: "string", enum: ["-1", "1"], description: "Extrusion direction: '-1' (negative) or '1' (positive)" }
+      },
+      required: ["nodeIds", "axis", "amount", "direction"]
+    }
+  },
+  {
+    name: "offset_brush_face",
+    description: "Moves a single face of a brush inward or outward.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Brush node ID" },
+        axis: { type: "string", enum: ["x", "y", "z"], description: "Face axis" },
+        side: { type: "string", enum: ["min", "max"], description: "Which face (min or max)" },
+        amount: { type: "number", description: "Offset amount (positive = outward)" }
+      },
+      required: ["nodeId", "axis", "side", "amount"]
+    }
+  },
+  {
+    name: "assign_material_to_brushes",
+    description: "Assigns a material to all faces of the specified brush nodes.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Brush node IDs" },
+        materialId: { type: "string", description: "Material ID to assign" }
+      },
+      required: ["nodeIds", "materialId"]
+    }
+  },
+
+  // ── Materials ───────────────────────────────────────────────
+  {
+    name: "create_material",
+    description: "Creates or updates a material in the scene library. The ID is auto-generated as 'material:custom:<slug>' from the name (e.g. name 'Dark Wood' → id 'material:custom:dark-wood'). You can use this predictable ID immediately in assign_material calls.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Material display name" },
+        color: { type: "string", description: "Hex color (e.g. '#ff6633')" },
+        category: { type: "string", enum: ["flat", "blockout", "custom"], description: "Material category (default: custom)" },
+        metalness: { type: "number", description: "Metalness 0-1 (default: 0)" },
+        roughness: { type: "number", description: "Roughness 0-1 (default: 0.8)" }
+      },
+      required: ["name", "color"]
+    }
+  },
+  {
+    name: "assign_material",
+    description: "Assigns a material to nodes (all faces) or specific faces on nodes.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string", description: "Node ID" },
+              faceIds: { type: "array", items: { type: "string" }, description: "Optional face IDs (omit for all faces)" }
+            },
+            required: ["nodeId"]
+          },
+          description: "Nodes (and optional faces) to assign material to"
+        },
+        materialId: { type: "string", description: "Material ID to assign" }
+      },
+      required: ["targets", "materialId"]
+    }
+  },
+  {
+    name: "set_uv_scale",
+    description: "Sets UV texture tiling scale on nodes or specific faces.",
+    parameters: {
+      type: "object",
+      properties: {
+        targets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+              faceIds: { type: "array", items: { type: "string" } }
+            },
+            required: ["nodeId"]
+          }
+        },
+        scaleX: { type: "number", description: "UV scale X" },
+        scaleY: { type: "number", description: "UV scale Y" }
+      },
+      required: ["targets", "scaleX", "scaleY"]
+    }
+  },
+
+  // ── Scene management ────────────────────────────────────────
+  {
+    name: "group_nodes",
+    description: "Groups nodes/entities under a new group node. Returns the group ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "Node/entity IDs to group" }
+      },
+      required: ["ids"]
+    }
+  },
+  {
+    name: "select_nodes",
+    description: "Sets the editor selection to the given node/entity IDs.",
+    parameters: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "IDs to select" }
+      },
+      required: ["ids"]
+    }
+  },
+  {
+    name: "clear_selection",
+    description: "Clears the current editor selection.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "undo",
+    description: "Undoes the last editor command.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "set_scene_settings",
+    description: "Updates scene settings (world physics, fog, ambient light, player config).",
+    parameters: {
+      type: "object",
+      properties: {
+        gravityX: { type: "number", description: "Gravity X (default: 0)" },
+        gravityY: { type: "number", description: "Gravity Y (default: -9.81)" },
+        gravityZ: { type: "number", description: "Gravity Z (default: 0)" },
+        physicsEnabled: { type: "boolean", description: "Enable physics simulation" },
+        ambientColor: { type: "string", description: "Ambient light hex color" },
+        ambientIntensity: { type: "number", description: "Ambient light intensity" },
+        fogColor: { type: "string", description: "Fog hex color" },
+        fogNear: { type: "number", description: "Fog near distance" },
+        fogFar: { type: "number", description: "Fog far distance" },
+        cameraMode: { type: "string", enum: ["fps", "third-person", "top-down"], description: "Player camera mode" },
+        playerHeight: { type: "number", description: "Player height in meters" },
+        movementSpeed: { type: "number", description: "Player movement speed" },
+        jumpHeight: { type: "number", description: "Player jump height" }
+      }
+    }
+  },
+
+  // ── Read-only queries ───────────────────────────────────────
+  {
+    name: "list_nodes",
+    description: "Lists all nodes in the scene with their ID, name, kind, and position.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "list_entities",
+    description: "Lists all entities in the scene with their ID, name, type, and position.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "list_materials",
+    description: "Lists all materials in the scene with their ID, name, color, and category.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "get_node_details",
+    description: "Gets full details of a specific node including its transform, kind, and data.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Node ID to inspect" }
+      },
+      required: ["nodeId"]
+    }
+  },
+  {
+    name: "get_scene_settings",
+    description: "Gets current scene settings (world physics, fog, ambient, player config).",
+    parameters: { type: "object", properties: {} }
+  }
+];

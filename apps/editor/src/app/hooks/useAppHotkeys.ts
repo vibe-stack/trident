@@ -12,6 +12,7 @@ type UseAppHotkeysOptions = {
   handleGroupSelection: () => void;
   handleInvertSelectionNormals: () => void;
   handleRedo: () => void;
+  handleToggleCopilot: () => void;
   handleTranslateSelection: (axis: TransformAxis, direction: -1 | 1) => void;
   handleUndo: () => void;
   setActiveToolId: (toolId: ToolId) => void;
@@ -28,6 +29,7 @@ export function useAppHotkeys({
   handleGroupSelection,
   handleInvertSelectionNormals,
   handleRedo,
+  handleToggleCopilot,
   handleTranslateSelection,
   handleUndo,
   setActiveToolId,
@@ -62,6 +64,12 @@ export function useAppHotkeys({
         } else {
           handleUndo();
         }
+        return;
+      }
+
+      if (modifier && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        handleToggleCopilot();
         return;
       }
 
@@ -210,6 +218,7 @@ export function useAppHotkeys({
     handleGroupSelection,
     handleInvertSelectionNormals,
     handleRedo,
+    handleToggleCopilot,
     handleTranslateSelection,
     handleUndo,
     setActiveToolId,

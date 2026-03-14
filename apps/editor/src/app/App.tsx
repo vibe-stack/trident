@@ -89,6 +89,7 @@ import { uiStore, type RightPanelId } from "@/state/ui-store";
 import type { Transform } from "@web-hammer/shared";
 import type { MeshEditMode } from "@/viewport/editing";
 import { useAppHotkeys } from "@/app/hooks/useAppHotkeys";
+import { useCopilot } from "@/app/hooks/useCopilot";
 import { useEditorSubscriptions } from "@/app/hooks/useEditorSubscriptions";
 import { useExportWorker } from "@/app/hooks/useExportWorker";
 import { clampSnapSize, resolveViewportSnapSize } from "@/viewport/utils/snap";
@@ -229,7 +230,7 @@ export function App() {
     );
   }, [activeToolId, editor, sceneRevision, selectionRevision]);
 
-  const handleSetRightPanel = (panel: RightPanelId) => {
+  const handleSetRightPanel = (panel: RightPanelId | null) => {
     uiStore.rightPanel = panel;
   };
 
@@ -1346,6 +1347,12 @@ export function App() {
     editor.redo();
   };
 
+  const copilot = useCopilot(editor);
+
+  const handleToggleCopilot = () => {
+    uiStore.copilotPanelOpen = !uiStore.copilotPanelOpen;
+  };
+
   useAppHotkeys({
     activeToolId,
     editor,
@@ -1355,6 +1362,7 @@ export function App() {
     handleGroupSelection,
     handleInvertSelectionNormals,
     handleRedo,
+    handleToggleCopilot,
     handleTranslateSelection,
     handleUndo,
     setActiveToolId: handleSetToolId,
@@ -1369,6 +1377,9 @@ export function App() {
         activeRightPanel={ui.rightPanel}
         activeToolId={toolSession.toolId}
         activeBrushShape={activeBrushShape}
+        copilot={copilot}
+        copilotPanelOpen={ui.copilotPanelOpen}
+        onToggleCopilot={handleToggleCopilot}
         aiModelPlacementActive={Boolean(aiModelDraft)}
         aiModelPlacementArmed={aiModelPlacementArmed}
         aiModelPrompt={aiModelDraft?.prompt ?? ""}

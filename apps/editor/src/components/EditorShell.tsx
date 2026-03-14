@@ -19,7 +19,9 @@ import type { PrimitiveNodeData, PrimitiveShape } from "@web-hammer/shared";
 import type { ToolId } from "@web-hammer/tool-system";
 import type { WorkerJob } from "@web-hammer/workers";
 import type { ReactNode } from "react";
+import type { CopilotSession } from "@/lib/copilot/types";
 import { AiModelPromptBar } from "@/components/editor-shell/AiModelPromptBar";
+import { CopilotPanel } from "@/components/editor-shell/CopilotPanel";
 import { EditorMenuBar } from "@/components/editor-shell/EditorMenuBar";
 import { InspectorSidebar } from "@/components/editor-shell/InspectorSidebar";
 import { SpatialAnalysisPanel } from "@/components/editor-shell/SpatialAnalysisPanel";
@@ -41,11 +43,20 @@ import { cn } from "@/lib/utils";
 type EditorShellProps = {
   activeBrushShape: BrushShape;
   aiModelPlacementActive: boolean;
+  copilot: {
+    session: CopilotSession;
+    sendMessage: (prompt: string) => void;
+    abort: () => void;
+    clearHistory: () => void;
+    isConfigured: boolean;
+    refreshConfigured: () => void;
+  };
+  copilotPanelOpen: boolean;
   aiModelPlacementArmed: boolean;
   aiModelPrompt: string;
   aiModelPromptBusy: boolean;
   aiModelPromptError?: string;
-  activeRightPanel: RightPanelId;
+  activeRightPanel: RightPanelId | null;
   activeToolId: ToolId;
   activeViewportId: ViewportPaneId;
   analysis: SceneSpatialAnalysis;
@@ -113,12 +124,13 @@ type EditorShellProps = {
   onSetMeshEditMode: (mode: MeshEditMode) => void;
   onSetSculptBrushRadius: (value: number) => void;
   onSetSculptBrushStrength: (value: number) => void;
-  onSetRightPanel: (panel: RightPanelId) => void;
+  onSetRightPanel: (panel: RightPanelId | null) => void;
   onSetSnapEnabled: (enabled: boolean) => void;
   onSetSnapSize: (snapSize: GridSnapValue) => void;
   onStopPhysics: () => void;
   onSetTransformMode: (mode: "rotate" | "scale" | "translate") => void;
   onSetToolId: (toolId: ToolId) => void;
+  onToggleCopilot: () => void;
   onToggleViewportQuality: () => void;
   onSetViewMode: (viewMode: ViewModeId) => void;
   onSplitBrushAtCoordinate: (nodeId: string, axis: TransformAxis, coordinate: number) => void;
@@ -158,6 +170,8 @@ export function EditorShell({
   activeBrushShape,
   aiModelPlacementActive,
   aiModelPlacementArmed,
+  copilot,
+  copilotPanelOpen,
   aiModelPrompt,
   aiModelPromptBusy,
   aiModelPromptError,
@@ -235,6 +249,7 @@ export function EditorShell({
   onStopPhysics,
   onSetTransformMode,
   onSetToolId,
+  onToggleCopilot,
   onToggleViewportQuality,
   onSetViewMode,
   onSplitBrushAtCoordinate,
@@ -356,6 +371,7 @@ export function EditorShell({
         <EditorMenuBar
           canRedo={canRedo}
           canUndo={canUndo}
+          copilotOpen={copilotPanelOpen}
           onClearSelection={onClearSelection}
           onCreateBrush={onCreateBrush}
           onDeleteSelection={onDeleteSelection}
@@ -371,16 +387,18 @@ export function EditorShell({
           onLoadWhmap={onLoadWhmap}
           onRedo={onRedo}
           onSaveWhmap={onSaveWhmap}
+          onToggleCopilot={onToggleCopilot}
           onToggleViewportQuality={onToggleViewportQuality}
           onUndo={onUndo}
           viewportQuality={viewportQuality}
         />
       </header>
 
-      <main className="relative min-h-0 flex-1">
-        <div className="absolute inset-0">
-          <ViewportLayout renderViewportPane={renderViewportPane} viewMode={viewMode} />
-        </div>
+      <main className="relative min-h-0 flex-1 flex">
+        <div className="relative min-w-0 flex-1">
+          <div className="absolute inset-0">
+            <ViewportLayout renderViewportPane={renderViewportPane} viewMode={viewMode} />
+          </div>
 
         <ToolPalette
           activeBrushShape={activeBrushShape}
@@ -502,6 +520,21 @@ export function EditorShell({
           viewModeLabel={getViewModePreset(viewMode).shortLabel}
           viewport={activeViewport}
         />
+        </div>
+
+        {copilotPanelOpen && (
+          <div className="w-80 shrink-0">
+            <CopilotPanel
+              isConfigured={copilot.isConfigured}
+              onAbort={copilot.abort}
+              onClearHistory={copilot.clearHistory}
+              onClose={onToggleCopilot}
+              onSendMessage={copilot.sendMessage}
+              onSettingsChanged={copilot.refreshConfigured}
+              session={copilot.session}
+            />
+          </div>
+        )}
       </main>
     </div>
   );
