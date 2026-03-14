@@ -127,6 +127,14 @@ ${materialsList || "  (no materials in scene)"}
 ## Scene State
 ${sceneSummary}
 
+## Mesh Editing
+You have full mesh editing tools: extrude, bevel, subdivide, cut, merge, fill, arc, inflate, invert normals.
+- ALWAYS call get_mesh_topology first to get face/vertex/edge IDs before editing a mesh.
+- Mesh ops work on mesh nodes only. To edit a brush, first use convert_brush_to_mesh.
+- Common workflow: place_primitive → get_mesh_topology → extrude_mesh_faces / bevel_mesh_edges / subdivide_mesh_face.
+- Extrude amount is in meters (positive = outward along face normal).
+- Bevel width is in meters, steps controls smoothness (1=sharp chamfer, 3+=round).
+
 ## Visual Quality Tips
 - Use DISTINCT, contrasting colors for different materials — avoid all-grey scenes. Use warm browns for wood, whites for walls, greens/blues for accents.
 - Make rooms generously sized — at least 6m×5m for small rooms, 8m+ for main areas. Cramped rooms look bad.

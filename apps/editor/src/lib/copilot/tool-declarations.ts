@@ -426,5 +426,199 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
     name: "get_scene_settings",
     description: "Gets current scene settings (world physics, fog, ambient, player config).",
     parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "get_mesh_topology",
+    description: "Returns the face IDs, vertex IDs with positions, and edges for a mesh node. Use this before mesh editing operations to discover which faces/vertices/edges to target.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID to inspect" }
+      },
+      required: ["nodeId"]
+    }
+  },
+
+  // ── Mesh editing ────────────────────────────────────────────
+  {
+    name: "extrude_mesh_faces",
+    description: "Extrude one or more faces of a mesh node along their normal by an amount. Use get_mesh_topology first to find face IDs.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceIds: { type: "array", items: { type: "string" }, description: "Face IDs to extrude" },
+        amount: { type: "number", description: "Extrusion distance in meters (positive = outward)" }
+      },
+      required: ["nodeId", "faceIds", "amount"]
+    }
+  },
+  {
+    name: "extrude_mesh_edge",
+    description: "Extrude a boundary edge of a mesh outward, creating a new quad face.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        vertexId1: { type: "string", description: "First vertex ID of the edge" },
+        vertexId2: { type: "string", description: "Second vertex ID of the edge" },
+        amount: { type: "number", description: "Extrusion distance" }
+      },
+      required: ["nodeId", "vertexId1", "vertexId2", "amount"]
+    }
+  },
+  {
+    name: "bevel_mesh_edges",
+    description: "Bevel (chamfer/round) edges of a mesh. Creates smooth transitions at sharp edges.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        edges: { type: "array", items: { type: "array", items: { type: "string" } }, description: "Edges as [[vertexId1, vertexId2], ...] pairs" },
+        width: { type: "number", description: "Bevel width in meters" },
+        steps: { type: "number", description: "Number of bevel segments (1=flat chamfer, 3+=smooth round)" },
+        profile: { type: "string", enum: ["flat", "round"], description: "Bevel profile shape (default: flat)" }
+      },
+      required: ["nodeId", "edges", "width", "steps"]
+    }
+  },
+  {
+    name: "subdivide_mesh_face",
+    description: "Subdivide a mesh face into smaller faces. Quad faces get a grid pattern, others get radial.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceId: { type: "string", description: "Face ID to subdivide" },
+        cuts: { type: "number", description: "Number of cuts (1=2x2 for quads, 2=3x3, etc.)" }
+      },
+      required: ["nodeId", "faceId", "cuts"]
+    }
+  },
+  {
+    name: "cut_mesh_face",
+    description: "Cut a mesh face with a line passing through a point, splitting it into two faces.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceId: { type: "string", description: "Face ID to cut" },
+        pointX: { type: "number", description: "X coordinate of cut point on the face" },
+        pointY: { type: "number", description: "Y coordinate" },
+        pointZ: { type: "number", description: "Z coordinate" },
+        snapSize: { type: "number", description: "Snap resolution (default: 1)" }
+      },
+      required: ["nodeId", "faceId", "pointX", "pointY", "pointZ"]
+    }
+  },
+  {
+    name: "delete_mesh_faces",
+    description: "Delete faces from a mesh, leaving holes.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceIds: { type: "array", items: { type: "string" }, description: "Face IDs to delete" }
+      },
+      required: ["nodeId", "faceIds"]
+    }
+  },
+  {
+    name: "merge_mesh_faces",
+    description: "Merge adjacent coplanar faces into a single face.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceIds: { type: "array", items: { type: "string" }, description: "Face IDs to merge (must be coplanar and adjacent)" }
+      },
+      required: ["nodeId", "faceIds"]
+    }
+  },
+  {
+    name: "merge_mesh_vertices",
+    description: "Merge multiple vertices to their average position.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        vertexIds: { type: "array", items: { type: "string" }, description: "Vertex IDs to merge" }
+      },
+      required: ["nodeId", "vertexIds"]
+    }
+  },
+  {
+    name: "fill_mesh_face",
+    description: "Create a new face from a loop of boundary vertices, filling a hole in the mesh.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        vertexIds: { type: "array", items: { type: "string" }, description: "Vertex IDs forming the boundary loop (>=3, must be boundary vertices)" }
+      },
+      required: ["nodeId", "vertexIds"]
+    }
+  },
+  {
+    name: "invert_mesh_normals",
+    description: "Flip face normals (winding order) on selected or all faces of a mesh.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        faceIds: { type: "array", items: { type: "string" }, description: "Face IDs to invert (omit for all faces)" }
+      },
+      required: ["nodeId"]
+    }
+  },
+  {
+    name: "arc_mesh_edges",
+    description: "Curve straight edges into arcs by inserting interpolated vertices.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Mesh node ID" },
+        edges: { type: "array", items: { type: "array", items: { type: "string" } }, description: "Edges as [[vertexId1, vertexId2], ...] pairs" },
+        offset: { type: "number", description: "Arc height/offset in meters" },
+        segments: { type: "number", description: "Number of arc segments (minimum 2)" }
+      },
+      required: ["nodeId", "edges", "offset", "segments"]
+    }
+  },
+  {
+    name: "inflate_mesh",
+    description: "Move all vertices of mesh nodes along their averaged normals (inflate/deflate).",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeIds: { type: "array", items: { type: "string" }, description: "Mesh node IDs" },
+        factor: { type: "number", description: "Inflate factor (positive = outward, negative = inward)" }
+      },
+      required: ["nodeIds", "factor"]
+    }
+  },
+  {
+    name: "convert_brush_to_mesh",
+    description: "Convert a brush (CSG solid) node into an editable mesh node, enabling face/edge/vertex editing.",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Brush node ID to convert" }
+      },
+      required: ["nodeId"]
+    }
+  },
+  {
+    name: "split_brush_at_coordinate",
+    description: "Split a brush node at an exact world coordinate along an axis (more precise than split_brush which only splits at the midpoint).",
+    parameters: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "Brush node ID" },
+        axis: { type: "string", enum: ["x", "y", "z"], description: "Axis to split along" },
+        coordinate: { type: "number", description: "World coordinate to split at" }
+      },
+      required: ["nodeId", "axis", "coordinate"]
+    }
   }
 ];

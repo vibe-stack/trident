@@ -6,6 +6,7 @@ import {
   createDuplicateNodesCommand,
   createExtrudeBrushNodesCommand,
   createGroupSelectionCommand,
+  createMeshInflateCommand,
   createMirrorNodesCommand,
   createOffsetBrushFaceCommand,
   createPlaceBlockoutPlatformCommand,
@@ -15,16 +16,33 @@ import {
   createPlaceEntityCommand,
   createPlaceLightNodeCommand,
   createPlacePrimitiveNodeCommand,
+  createReplaceNodesCommand,
+  createSetMeshDataCommand,
   createSetNodeTransformCommand,
   createSetSceneSettingsCommand,
   createSetUvScaleCommand,
+  createSplitBrushNodeAtCoordinateCommand,
   createSplitBrushNodesCommand,
   createTranslateNodesCommand,
   createUpsertMaterialCommand
 } from "@web-hammer/editor-core";
-import { createAxisAlignedBrushFromBounds } from "@web-hammer/geometry-kernel";
-import { makeTransform, vec3 } from "@web-hammer/shared";
-import type { Material, SceneSettings } from "@web-hammer/shared";
+import {
+  arcEditableMeshEdges,
+  bevelEditableMeshEdges,
+  convertBrushToEditableMesh,
+  createAxisAlignedBrushFromBounds,
+  cutEditableMeshFace,
+  deleteEditableMeshFaces,
+  extrudeEditableMeshEdge,
+  extrudeEditableMeshFaces,
+  fillEditableMeshFaceFromVertices,
+  invertEditableMeshNormals,
+  mergeEditableMeshFaces,
+  mergeEditableMeshVertices,
+  subdivideEditableMeshFace
+} from "@web-hammer/geometry-kernel";
+import { isBrushNode, isMeshNode, makeTransform, vec3 } from "@web-hammer/shared";
+import type { EditableMesh, Material, SceneSettings } from "@web-hammer/shared";
 import {
   createDefaultEntity,
   createDefaultLightData,
@@ -413,7 +431,197 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
       return JSON.stringify(scene.settings);
     }
 
+    // ── Mesh topology query ─────────────────────────────────
+    case "get_mesh_topology": {
+      const node = scene.getNode(str(args, "nodeId"));
+
+      if (!node || !isMeshNode(node)) {
+        return fail("Node is not a mesh");
+      }
+
+      const mesh = node.data;
+      const faces = mesh.faces.map((f) => {
+        const vIds: string[] = [];
+        let he = mesh.halfEdges.find((h) => h.id === f.halfEdge);
+
+        if (he) {
+          const startId = he.id;
+          do {
+            vIds.push(he!.vertex);
+            he = mesh.halfEdges.find((h) => h.id === he!.next);
+          } while (he && he.id !== startId);
+        }
+
+        return { id: f.id, vertexIds: vIds, materialId: f.materialId };
+      });
+
+      const vertices = mesh.vertices.map((v) => ({
+        id: v.id,
+        position: v.position
+      }));
+
+      const edgeSet = new Set<string>();
+      const edges: [string, string][] = [];
+
+      for (const he of mesh.halfEdges) {
+        const twin = he.twin ? mesh.halfEdges.find((h) => h.id === he.twin) : undefined;
+
+        if (twin) {
+          const key = [he.vertex, twin.vertex].sort().join(":");
+
+          if (!edgeSet.has(key)) {
+            edgeSet.add(key);
+            edges.push([he.vertex, twin.vertex]);
+          }
+        }
+      }
+
+      return JSON.stringify({ faces, vertices, edges });
+    }
+
+    // ── Mesh editing ──────────────────────────────────────────
+    case "extrude_mesh_faces":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        extrudeEditableMeshFaces(mesh, strArray(args, "faceIds"), num(args, "amount")),
+        "Extrude faces"
+      );
+
+    case "extrude_mesh_edge":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        extrudeEditableMeshEdge(mesh, [str(args, "vertexId1"), str(args, "vertexId2")], num(args, "amount")),
+        "Extrude edge"
+      );
+
+    case "bevel_mesh_edges": {
+      const edges = (args.edges as string[][] ?? []).map((e) => [e[0], e[1]] as [string, string]);
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        bevelEditableMeshEdges(mesh, edges, num(args, "width"), num(args, "steps", 1),
+          (str(args, "profile") || "flat") as "flat" | "round"),
+        "Bevel edges"
+      );
+    }
+
+    case "subdivide_mesh_face":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        subdivideEditableMeshFace(mesh, str(args, "faceId"), num(args, "cuts", 1)),
+        "Subdivide face"
+      );
+
+    case "cut_mesh_face":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        cutEditableMeshFace(mesh, str(args, "faceId"),
+          vec3(num(args, "pointX"), num(args, "pointY"), num(args, "pointZ")),
+          num(args, "snapSize", 1)),
+        "Cut face"
+      );
+
+    case "delete_mesh_faces":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        deleteEditableMeshFaces(mesh, strArray(args, "faceIds")),
+        "Delete faces"
+      );
+
+    case "merge_mesh_faces":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        mergeEditableMeshFaces(mesh, strArray(args, "faceIds")),
+        "Merge faces"
+      );
+
+    case "merge_mesh_vertices":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        mergeEditableMeshVertices(mesh, strArray(args, "vertexIds")),
+        "Merge vertices"
+      );
+
+    case "fill_mesh_face":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        fillEditableMeshFaceFromVertices(mesh, strArray(args, "vertexIds")),
+        "Fill face"
+      );
+
+    case "invert_mesh_normals":
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        invertEditableMeshNormals(mesh, strArray(args, "faceIds").length > 0 ? strArray(args, "faceIds") : undefined),
+        "Invert normals"
+      );
+
+    case "arc_mesh_edges": {
+      const arcEdges = (args.edges as string[][] ?? []).map((e) => [e[0], e[1]] as [string, string]);
+      return executeMeshOp(editor, str(args, "nodeId"), (mesh) =>
+        arcEditableMeshEdges(mesh, arcEdges, num(args, "offset"), num(args, "segments", 2)),
+        "Arc edges"
+      );
+    }
+
+    case "inflate_mesh": {
+      const command = createMeshInflateCommand(scene, strArray(args, "nodeIds"), num(args, "factor"));
+      editor.execute(command);
+      return ok({});
+    }
+
+    case "convert_brush_to_mesh": {
+      const nodeId = str(args, "nodeId");
+      const node = scene.getNode(nodeId);
+
+      if (!node || !isBrushNode(node)) {
+        return fail("Node is not a brush");
+      }
+
+      const meshData = convertBrushToEditableMesh(node.data);
+
+      if (!meshData) {
+        return fail("Failed to convert brush to mesh");
+      }
+
+      const meshNode = {
+        ...structuredClone(node),
+        kind: "mesh" as const,
+        data: meshData
+      };
+
+      const command = createReplaceNodesCommand(scene, [meshNode], "convert brush to mesh");
+      editor.execute(command);
+      return ok({ nodeId });
+    }
+
+    case "split_brush_at_coordinate": {
+      const { command, splitIds } = createSplitBrushNodeAtCoordinateCommand(
+        scene,
+        str(args, "nodeId"),
+        str(args, "axis", "x") as "x" | "y" | "z",
+        num(args, "coordinate")
+      );
+      editor.execute(command);
+      return ok({ splitIds });
+    }
+
     default:
       return fail(`Unknown tool: ${name}`);
   }
+}
+
+function executeMeshOp(
+  editor: EditorCore,
+  nodeId: string,
+  op: (mesh: EditableMesh) => EditableMesh | undefined,
+  label: string
+): string {
+  const node = editor.scene.getNode(nodeId);
+
+  if (!node || !isMeshNode(node)) {
+    return fail("Node is not a mesh");
+  }
+
+  const result = op(node.data);
+
+  if (!result) {
+    return fail(`${label} failed`);
+  }
+
+  // Preserve physics and role metadata from the original mesh
+  result.physics = node.data.physics;
+  result.role = node.data.role;
+
+  editor.execute(createSetMeshDataCommand(editor.scene, nodeId, result, node.data));
+  return ok({});
 }
