@@ -1,6 +1,6 @@
-import { computePolygonNormal, createAxisAlignedBrushFromBounds, createEditableMeshFromPolygons } from "@web-hammer/geometry-kernel";
+import { computePolygonNormal, createEditableMeshFromPolygons } from "@web-hammer/geometry-kernel";
 import type { EditableMeshPolygon } from "@web-hammer/geometry-kernel";
-import type { BrushNode, GeometryNode, MeshNode, MetadataValue, Vec3 } from "@web-hammer/shared";
+import type { GeometryNode, MeshNode, MetadataValue, Vec3 } from "@web-hammer/shared";
 import { dotVec3, makeTransform, vec3 } from "@web-hammer/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
@@ -54,13 +54,14 @@ export function createPlaceBlockoutPlatformCommand(
   const materialId = spec.materialId ?? "material:blockout:concrete";
   const tags = dedupeTags(["blockout", "platform", ...(spec.tags ?? [])]);
   const metadata = { ...(spec.metadata ?? {}), blockoutKind: "platform" };
-  const node = createBlockoutBrushNode({
+  const node = createBlockoutMeshNode({
     id: nodeId,
     materialId,
     metadata,
+    mesh: createBoxMesh(spec.size, `${nodeId}:mesh`, materialId),
     name: spec.name ?? "Blockout Platform",
     position: spec.position,
-    size: spec.size,
+    rotationY: 0,
     tags
   });
 
@@ -167,40 +168,6 @@ export function createPlaceBlockoutStairCommand(
   };
 }
 
-function createBlockoutBrushNode(input: {
-  id: string;
-  materialId: string;
-  metadata: Record<string, MetadataValue>;
-  name: string;
-  position: Vec3;
-  size: Vec3;
-  tags: string[];
-}): BrushNode {
-  const halfSize = vec3(input.size.x * 0.5, input.size.y * 0.5, input.size.z * 0.5);
-  const data = createAxisAlignedBrushFromBounds({
-    x: { min: -halfSize.x, max: halfSize.x },
-    y: { min: -halfSize.y, max: halfSize.y },
-    z: { min: -halfSize.z, max: halfSize.z }
-  });
-
-  data.faces = data.planes.map((plane, index) => ({
-    id: `${input.id}:face:${index}`,
-    materialId: input.materialId,
-    plane,
-    vertexIds: []
-  }));
-
-  return {
-    data,
-    id: input.id,
-    kind: "brush",
-    metadata: structuredClone(input.metadata),
-    name: input.name,
-    tags: [...input.tags],
-    transform: makeTransform(structuredClone(input.position))
-  };
-}
-
 function createBlockoutMeshNode(input: {
   id: string;
   materialId: string;
@@ -223,6 +190,76 @@ function createBlockoutMeshNode(input: {
     tags: [...input.tags],
     transform
   };
+}
+
+function createBoxMesh(size: Vec3, idPrefix: string, materialId: string) {
+  const halfX = Math.max(0.05, Math.abs(size.x) * 0.5);
+  const halfY = Math.max(0.05, Math.abs(size.y) * 0.5);
+  const halfZ = Math.max(0.05, Math.abs(size.z) * 0.5);
+  const polygons: EditableMeshPolygon[] = [
+    createOrientedPolygon(
+      `${idPrefix}:bottom`,
+      [
+        vec3(-halfX, -halfY, -halfZ),
+        vec3(halfX, -halfY, -halfZ),
+        vec3(halfX, -halfY, halfZ),
+        vec3(-halfX, -halfY, halfZ)
+      ],
+      vec3(0, -1, 0)
+    ),
+    createOrientedPolygon(
+      `${idPrefix}:top`,
+      [
+        vec3(-halfX, halfY, -halfZ),
+        vec3(-halfX, halfY, halfZ),
+        vec3(halfX, halfY, halfZ),
+        vec3(halfX, halfY, -halfZ)
+      ],
+      vec3(0, 1, 0)
+    ),
+    createOrientedPolygon(
+      `${idPrefix}:west`,
+      [
+        vec3(-halfX, -halfY, -halfZ),
+        vec3(-halfX, -halfY, halfZ),
+        vec3(-halfX, halfY, halfZ),
+        vec3(-halfX, halfY, -halfZ)
+      ],
+      vec3(-1, 0, 0)
+    ),
+    createOrientedPolygon(
+      `${idPrefix}:east`,
+      [
+        vec3(halfX, -halfY, -halfZ),
+        vec3(halfX, halfY, -halfZ),
+        vec3(halfX, halfY, halfZ),
+        vec3(halfX, -halfY, halfZ)
+      ],
+      vec3(1, 0, 0)
+    ),
+    createOrientedPolygon(
+      `${idPrefix}:north`,
+      [
+        vec3(-halfX, -halfY, -halfZ),
+        vec3(-halfX, halfY, -halfZ),
+        vec3(halfX, halfY, -halfZ),
+        vec3(halfX, -halfY, -halfZ)
+      ],
+      vec3(0, 0, -1)
+    ),
+    createOrientedPolygon(
+      `${idPrefix}:south`,
+      [
+        vec3(-halfX, -halfY, halfZ),
+        vec3(halfX, -halfY, halfZ),
+        vec3(halfX, halfY, halfZ),
+        vec3(-halfX, halfY, halfZ)
+      ],
+      vec3(0, 0, 1)
+    )
+  ];
+
+  return applyMaterialToMesh(createEditableMeshFromPolygons(polygons), polygons, materialId);
 }
 
 function createRoomShellMesh(size: Vec3, openSides: Set<BlockoutOpenSide>, idPrefix: string, materialId: string) {

@@ -12,9 +12,9 @@ import {
   createPlaceBlockoutPlatformCommand,
   createPlaceBlockoutRoomCommand,
   createPlaceBlockoutStairCommand,
-  createPlaceBrushNodeCommand,
   createPlaceEntityCommand,
   createPlaceLightNodeCommand,
+  createPlaceMeshNodeCommand,
   createPlacePrimitiveNodeCommand,
   createReplaceNodesCommand,
   createSetMeshDataCommand,
@@ -41,7 +41,7 @@ import {
   mergeEditableMeshVertices,
   subdivideEditableMeshFace
 } from "@web-hammer/geometry-kernel";
-import { isBrushNode, isMeshNode, makeTransform, vec3 } from "@web-hammer/shared";
+import { isBrushNode, isMeshNode, makeTransform, resolveSceneGraph, vec3 } from "@web-hammer/shared";
 import type { EditableMesh, Material, SceneSettings } from "@web-hammer/shared";
 import {
   createDefaultEntity,
@@ -75,6 +75,51 @@ function ok(data: Record<string, unknown>): string {
 
 function fail(error: string): string {
   return JSON.stringify({ success: false, error });
+}
+
+function buildSceneOutline(editor: EditorCore) {
+  const scene = editor.scene;
+  const graph = resolveSceneGraph(scene.nodes.values(), scene.entities.values());
+
+  const buildEntityOutline = (entityId: string) => {
+    const entity = scene.getEntity(entityId);
+
+    if (!entity) {
+      return { id: entityId, missing: true };
+    }
+
+    return {
+      id: entity.id,
+      name: entity.name,
+      type: entity.type
+    };
+  };
+
+  const buildNodeOutline = (nodeId: string): Record<string, unknown> => {
+    const node = scene.getNode(nodeId);
+
+    if (!node) {
+      return { id: nodeId, missing: true };
+    }
+
+    return {
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      children: (graph.nodeChildrenByParentId.get(nodeId) ?? []).map(buildNodeOutline),
+      entities: (graph.entityChildrenByParentId.get(nodeId) ?? []).map(buildEntityOutline)
+    };
+  };
+
+  return {
+    graph,
+    outline: {
+      totalNodes: scene.nodes.size,
+      totalEntities: scene.entities.size,
+      rootNodes: graph.rootNodeIds.map(buildNodeOutline),
+      rootEntities: graph.rootEntityIds.map(buildEntityOutline)
+    }
+  };
 }
 
 export function executeTool(editor: EditorCore, toolCall: CopilotToolCall): CopilotToolResult {
@@ -161,9 +206,15 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
         y: { min: -halfY, max: halfY },
         z: { min: -halfZ, max: halfZ }
       });
-      const { command, nodeId } = createPlaceBrushNodeCommand(scene, transform, {
-        data: brushData,
-        name: str(args, "name") || "Brush"
+      const meshData = convertBrushToEditableMesh(brushData);
+
+      if (!meshData) {
+        return fail("Failed to create mesh box");
+      }
+
+      const { command, nodeId } = createPlaceMeshNodeCommand(scene, transform, {
+        data: meshData,
+        name: str(args, "name") || "Mesh Box"
       });
       editor.execute(command);
       return ok({ nodeId });
@@ -380,14 +431,7 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
 
     // ── Read-only queries ─────────────────────────────────────
     case "list_nodes": {
-      const nodes = Array.from(scene.nodes.values()).map((n) => ({
-        id: n.id,
-        name: n.name,
-        kind: n.kind,
-        position: n.transform.position,
-        tags: n.tags
-      }));
-      return JSON.stringify({ nodes });
+      return JSON.stringify(buildSceneOutline(editor).outline);
     }
 
     case "list_entities": {
@@ -395,7 +439,7 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
         id: e.id,
         name: e.name,
         type: e.type,
-        position: e.transform.position
+        parentId: e.parentId ?? null
       }));
       return JSON.stringify({ entities });
     }
@@ -417,13 +461,42 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
         return fail("Node not found");
       }
 
+      const { graph } = buildSceneOutline(editor);
+
       return JSON.stringify({
         id: node.id,
         name: node.name,
         kind: node.kind,
+        parentId: node.parentId ?? null,
+        childIds: graph.nodeChildrenByParentId.get(node.id) ?? [],
+        attachedEntityIds: graph.entityChildrenByParentId.get(node.id) ?? [],
         transform: node.transform,
+        worldTransform: graph.nodeWorldTransforms.get(node.id) ?? node.transform,
         tags: node.tags,
-        metadata: node.metadata
+        metadata: node.metadata,
+        hooks: node.hooks,
+        data: node.data
+      });
+    }
+
+    case "get_entity_details": {
+      const entity = scene.getEntity(str(args, "entityId"));
+
+      if (!entity) {
+        return fail("Entity not found");
+      }
+
+      const { graph } = buildSceneOutline(editor);
+
+      return JSON.stringify({
+        id: entity.id,
+        name: entity.name,
+        type: entity.type,
+        parentId: entity.parentId ?? null,
+        transform: entity.transform,
+        worldTransform: graph.entityWorldTransforms.get(entity.id) ?? entity.transform,
+        properties: entity.properties,
+        hooks: entity.hooks
       });
     }
 

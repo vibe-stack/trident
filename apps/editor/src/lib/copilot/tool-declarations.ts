@@ -29,7 +29,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   {
     name: "place_blockout_platform",
     description:
-      "Places a flat blockout platform (floor slab, roof, shelf). Position is the center of the platform volume.",
+      "Places a flat blockout mesh platform (floor slab, roof, shelf). Position is the center of the platform volume.",
     parameters: {
       type: "object",
       properties: {
@@ -73,14 +73,14 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   {
     name: "place_primitive",
     description:
-      "Places a parametric primitive shape (cube, sphere, cylinder, cone). Can be a blockout brush or a physics prop.",
+      "Places a parametric primitive shape (cube, sphere, cylinder, cone). Use it for static blockout primitives or physics props.",
     parameters: {
       type: "object",
       properties: {
         x: { type: "number", description: "World X position" },
         y: { type: "number", description: "World Y position" },
         z: { type: "number", description: "World Z position" },
-        role: { type: "string", enum: ["brush", "prop"], description: "brush = static blockout, prop = physics object" },
+        role: { type: "string", enum: ["brush", "prop"], description: "brush = static blockout primitive, prop = physics object" },
         shape: { type: "string", enum: ["cube", "sphere", "cylinder", "cone"], description: "Primitive shape" },
         sizeX: { type: "number", description: "Size X (default: 2)" },
         sizeY: { type: "number", description: "Size Y (default: 2, or 3 for cylinder/cone)" },
@@ -94,7 +94,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   {
     name: "place_brush",
     description:
-      "Places a simple axis-aligned brush (CSG convex solid). Default is a 4x3x4 box. Use place_blockout_room or place_blockout_platform for level design; use this for custom-sized brushes.",
+      "Legacy-named compatibility tool that places a simple axis-aligned mesh box. Default is a 4x3x4 box. Prefer mesh editing workflows after placement.",
     parameters: {
       type: "object",
       properties: {
@@ -225,7 +225,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   // ── Brush ───────────────────────────────────────────────────
   {
     name: "split_brush",
-    description: "Splits brush nodes at their midpoint along the specified axis. Returns the new node IDs.",
+    description: "Legacy brush-only tool. Splits brush nodes at their midpoint along the specified axis. Returns the new node IDs.",
     parameters: {
       type: "object",
       properties: {
@@ -237,7 +237,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "extrude_brush",
-    description: "Extrudes (grows) brush nodes along an axis by a given amount.",
+    description: "Legacy brush-only tool. Extrudes (grows) brush nodes along an axis by a given amount.",
     parameters: {
       type: "object",
       properties: {
@@ -251,7 +251,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "offset_brush_face",
-    description: "Moves a single face of a brush inward or outward.",
+    description: "Legacy brush-only tool. Moves a single face of a brush inward or outward.",
     parameters: {
       type: "object",
       properties: {
@@ -265,7 +265,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "assign_material_to_brushes",
-    description: "Assigns a material to all faces of the specified brush nodes.",
+    description: "Legacy brush-only tool. Assigns a material to all faces of the specified brush nodes.",
     parameters: {
       type: "object",
       properties: {
@@ -398,12 +398,12 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   // ── Read-only queries ───────────────────────────────────────
   {
     name: "list_nodes",
-    description: "Lists all nodes in the scene with their ID, name, kind, and position.",
+    description: "Lists the scene node outline as a lightweight hierarchy. Returns IDs, names, kinds, child nodes, and attached entities, but not full node data.",
     parameters: { type: "object", properties: {} }
   },
   {
     name: "list_entities",
-    description: "Lists all entities in the scene with their ID, name, type, and position.",
+    description: "Lists entities in a lightweight form with ID, name, type, and parentId. Use get_entity_details for full data.",
     parameters: { type: "object", properties: {} }
   },
   {
@@ -413,7 +413,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "get_node_details",
-    description: "Gets full details of a specific node including its transform, kind, and data.",
+    description: "Gets full details of a specific node, including transform, worldTransform, hierarchy links, hooks, metadata, and node data.",
     parameters: {
       type: "object",
       properties: {
@@ -423,8 +423,19 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
     }
   },
   {
+    name: "get_entity_details",
+    description: "Gets full details of a specific entity, including transform, worldTransform, parentId, properties, and hooks.",
+    parameters: {
+      type: "object",
+      properties: {
+        entityId: { type: "string", description: "Entity ID to inspect" }
+      },
+      required: ["entityId"]
+    }
+  },
+  {
     name: "get_scene_settings",
-    description: "Gets current scene settings (world physics, fog, ambient, player config).",
+    description: "Gets current scene settings. This is the canonical source for player scale, jump height, movement, camera mode, physics, fog, and ambient lighting.",
     parameters: { type: "object", properties: {} }
   },
   {
@@ -599,7 +610,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "convert_brush_to_mesh",
-    description: "Convert a brush (CSG solid) node into an editable mesh node, enabling face/edge/vertex editing.",
+    description: "Convert a legacy brush node into an editable mesh node, enabling the preferred face/edge/vertex editing workflow.",
     parameters: {
       type: "object",
       properties: {
