@@ -1702,7 +1702,7 @@ function resolvePreviewMaterialSide(side?: MaterialRenderSide): Side {
     case "double":
       return DoubleSide;
     default:
-      return FrontSide;
+      return DoubleSide;
   }
 }
 

@@ -1,4 +1,4 @@
-import { Gauge } from "lucide-react";
+import { Bot, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Menubar,
@@ -14,6 +14,7 @@ import type { ViewportQuality } from "@/state/ui-store";
 type EditorMenuBarProps = {
   canRedo: boolean;
   canUndo: boolean;
+  copilotOpen: boolean;
   onClearSelection: () => void;
   onCreateBrush: () => void;
   onDeleteSelection: () => void;
@@ -25,6 +26,7 @@ type EditorMenuBarProps = {
   onLoadWhmap: () => void;
   onRedo: () => void;
   onSaveWhmap: () => void;
+  onToggleCopilot: () => void;
   onToggleViewportQuality: () => void;
   onUndo: () => void;
   viewportQuality: ViewportQuality;
@@ -33,6 +35,7 @@ type EditorMenuBarProps = {
 export function EditorMenuBar({
   canRedo,
   canUndo,
+  copilotOpen,
   onClearSelection,
   onCreateBrush,
   onDeleteSelection,
@@ -44,6 +47,7 @@ export function EditorMenuBar({
   onLoadWhmap,
   onRedo,
   onSaveWhmap,
+  onToggleCopilot,
   onToggleViewportQuality,
   viewportQuality,
   onUndo
@@ -145,7 +149,7 @@ export function EditorMenuBar({
         </Menubar>
       </div>
 
-      <div className="flex items-center gap-1 px-2">
+      <div className="flex shrink-0 items-center gap-3 px-2">
         <Button
           aria-label={`Canvas DPR ${viewportQuality.toFixed(2)}x`}
           className="text-[11px] text-foreground/65 hover:text-foreground flex flex-row gap-1 px-2"
@@ -156,6 +160,16 @@ export function EditorMenuBar({
         >
           <Gauge className="size-3.5" />
           {viewportQuality.toFixed(2)}
+        </Button>
+        <Button
+          aria-label="AI Vibe"
+          className={`size-7 rounded-lg ${copilotOpen ? "text-emerald-400 hover:text-emerald-300" : "text-foreground/65 hover:text-foreground"}`}
+          onClick={onToggleCopilot}
+          title="AI Vibe (Cmd+L)"
+          size="icon-sm"
+          variant="ghost"
+        >
+          <Bot className="size-3.5" />
         </Button>
       </div>
     </div>

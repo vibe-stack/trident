@@ -1,7 +1,6 @@
 import type {
   Asset,
   AssetID,
-  BrushNode,
   Entity,
   EntityID,
   GeometryNode,
@@ -253,34 +252,6 @@ export function loadSceneDocumentSnapshot(scene: SceneDocument, snapshot: SceneD
 
 export function createSeedSceneDocument(): SceneDocument {
   const document = createSceneDocument();
-
-  const blockoutBrush: BrushNode = {
-    id: "node:brush:blockout-room",
-    kind: "brush",
-    name: "Blockout Room",
-    transform: makeTransform(vec3(0, 1.5, 0)),
-    data: {
-      previewSize: vec3(8, 3, 8),
-      planes: [
-        { normal: vec3(1, 0, 0), distance: 4 },
-        { normal: vec3(-1, 0, 0), distance: 4 },
-        { normal: vec3(0, 1, 0), distance: 1.5 },
-        { normal: vec3(0, -1, 0), distance: 1.5 },
-        { normal: vec3(0, 0, 1), distance: 4 },
-        { normal: vec3(0, 0, -1), distance: 4 }
-      ],
-      faces: [
-        { id: "face:brush:blockout-room:0", materialId: "material:blockout:concrete", plane: { normal: vec3(1, 0, 0), distance: 4 }, vertexIds: [] },
-        { id: "face:brush:blockout-room:1", materialId: "material:blockout:concrete", plane: { normal: vec3(-1, 0, 0), distance: 4 }, vertexIds: [] },
-        { id: "face:brush:blockout-room:2", materialId: "material:blockout:concrete", plane: { normal: vec3(0, 1, 0), distance: 1.5 }, vertexIds: [] },
-        { id: "face:brush:blockout-room:3", materialId: "material:blockout:concrete", plane: { normal: vec3(0, -1, 0), distance: 1.5 }, vertexIds: [] },
-        { id: "face:brush:blockout-room:4", materialId: "material:blockout:concrete", plane: { normal: vec3(0, 0, 1), distance: 4 }, vertexIds: [] },
-        { id: "face:brush:blockout-room:5", materialId: "material:blockout:concrete", plane: { normal: vec3(0, 0, -1), distance: 4 }, vertexIds: [] }
-      ]
-    }
-  };
-
-  document.nodes.set(blockoutBrush.id, blockoutBrush);
 
   document.layers.set("layer:default", {
     id: "layer:default",

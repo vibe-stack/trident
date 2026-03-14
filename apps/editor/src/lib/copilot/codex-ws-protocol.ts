@@ -1,0 +1,31 @@
+// Shared WebSocket message types for browser ↔ Vite server communication
+// The Vite server bridges these to/from the codex app-server JSON-RPC protocol
+
+// Browser → Server
+export type CodexWsClientMessage =
+  | {
+      type: "start";
+      model: string;
+      systemPrompt: string;
+      tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+      userMessage: string;
+    }
+  | {
+      type: "tool_result";
+      id: string;
+      result: string;
+      success: boolean;
+    }
+  | {
+      type: "abort";
+    };
+
+// Server → Browser
+export type CodexWsServerMessage =
+  | { type: "status"; status: "connecting" | "thinking" | "executing" }
+  | { type: "delta"; text: string }
+  | { type: "tool_call"; id: string; name: string; args: Record<string, unknown> }
+  | { type: "tool_status"; id: string; name: string; status: "completed" | "failed" }
+  | { type: "turn_complete"; text: string }
+  | { type: "auth_required"; message: string }
+  | { type: "error"; message: string; fatal: boolean };

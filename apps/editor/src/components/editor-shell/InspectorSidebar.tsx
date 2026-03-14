@@ -35,7 +35,7 @@ import type { MeshEditToolbarActionRequest } from "@/viewport/types";
 import type { RightPanelId } from "@/state/ui-store";
 
 type InspectorSidebarProps = {
-  activeRightPanel: RightPanelId;
+  activeRightPanel: RightPanelId | null;
   activeToolId: ToolId;
   assets: Array<{ id: string; path: string; type: string }>;
   entities: Entity[];
@@ -43,7 +43,7 @@ type InspectorSidebarProps = {
   meshEditMode: MeshEditMode;
   nodes: GeometryNode[];
   onApplyMaterial: (materialId: string, scope: "faces" | "object", faceIds: string[]) => void;
-  onChangeRightPanel: (panel: RightPanelId) => void;
+  onChangeRightPanel: (panel: RightPanelId | null) => void;
   onClipSelection: (axis: "x" | "y" | "z") => void;
   onDeleteMaterial: (materialId: string) => void;
   onDeleteTexture: (textureId: string) => void;
@@ -238,41 +238,54 @@ export function InspectorSidebar({
     );
   };
 
+  const handleTabClick = (panel: RightPanelId) => {
+    if (activeRightPanel === panel) {
+      onChangeRightPanel(null);
+    } else {
+      onChangeRightPanel(panel);
+    }
+  };
+
+  const collapsed = activeRightPanel === null;
+
   return (
-    <div className="pointer-events-none absolute right-4 top-4 z-20 flex h-[clamp(26rem,58vh,42rem)] w-88 max-h-[calc(100%-7rem)]">
+    <div className={cn(
+      "pointer-events-none absolute right-4 top-4 z-20 flex w-88 max-h-[calc(100%-7rem)]",
+      collapsed ? "h-auto" : "h-[clamp(26rem,58vh,42rem)]"
+    )}>
       <FloatingPanel className="flex min-h-0 w-full flex-col overflow-hidden">
         <Tabs
           className="flex min-h-0 flex-1 flex-col gap-0"
           onValueChange={(value) => onChangeRightPanel(value as RightPanelId)}
-          value={activeRightPanel}
+          value={activeRightPanel ?? ""}
         >
-          <div className="px-3 pt-3 pb-2">
+          <div className={cn("px-3 pt-3", collapsed ? "pb-3" : "pb-2")}>
             <TabsList className="!grid !h-14 !w-full !grid-cols-7 !items-stretch rounded-xl bg-white/5 p-0.5" variant="default">
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="scene">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="scene" onClick={() => handleTabClick("scene")}>
                 <FolderTree />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Scene</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="world">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="world" onClick={() => handleTabClick("world")}>
                 <Globe2 />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>World</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="player">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="player" onClick={() => handleTabClick("player")}>
                 <User />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Player</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="inspector">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="inspector" onClick={() => handleTabClick("inspector")}>
                 <SlidersHorizontal />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Inspect</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="hooks">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="hooks" onClick={() => handleTabClick("hooks")}>
                 <Cable />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Hooks</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="events">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="events" onClick={() => handleTabClick("events")}>
                 <BellRing />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Events</span>
               </TabsTrigger>
-              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="materials">
+              <TabsTrigger className={cn(RIGHT_PANEL_TAB_TRIGGER_CLASS, "!flex-col")} value="materials" onClick={() => handleTabClick("materials")}>
                 <SwatchBook />
                 <span className={RIGHT_PANEL_TAB_LABEL_CLASS}>Mats</span>
               </TabsTrigger>
