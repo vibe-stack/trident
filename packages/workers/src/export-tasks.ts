@@ -6,10 +6,12 @@ import {
   dotVec3,
   isBrushNode,
   isGroupNode,
+  isInstancingNode,
   isMeshNode,
   isModelNode,
   isPrimitiveNode,
   normalizeVec3,
+  resolveInstancingSourceNode,
   subVec3,
   vec3,
   type Asset,
@@ -320,6 +322,29 @@ async function buildEngineScene(snapshot: SceneDocumentSnapshot): Promise<WebHam
       continue;
     }
 
+    if (isInstancingNode(node)) {
+      const sourceNode = resolveInstancingSourceNode(snapshot.nodes, node);
+
+      if (!sourceNode || !(isBrushNode(sourceNode) || isMeshNode(sourceNode) || isPrimitiveNode(sourceNode) || isModelNode(sourceNode))) {
+        continue;
+      }
+
+      exportedNodes.push({
+        data: {
+          sourceNodeId: sourceNode.id
+        },
+        hooks: node.hooks,
+        id: node.id,
+        kind: "instancing",
+        metadata: node.metadata,
+        name: node.name,
+        parentId: node.parentId,
+        tags: node.tags,
+        transform: sanitizeInstanceTransform(node.transform)
+      } satisfies Extract<WebHammerEngineScene["nodes"][number], { kind: "instancing" }>);
+      continue;
+    }
+
     exportedNodes.push({
       data: node.data,
       id: node.id,
@@ -340,7 +365,7 @@ async function buildEngineScene(snapshot: SceneDocumentSnapshot): Promise<WebHam
     metadata: {
       exportedAt,
       format: "web-hammer-engine",
-      version: 5
+      version: 6
     },
     settings: exportedSettings,
     nodes: exportedNodes
@@ -364,6 +389,7 @@ export async function serializeGltfScene(snapshot: SceneDocumentSnapshot): Promi
         uvs: number[];
       }>;
     };
+    meshKey?: string;
     name: string;
     parentId?: string;
     rotation?: [number, number, number, number];
@@ -397,11 +423,76 @@ export async function serializeGltfScene(snapshot: SceneDocumentSnapshot): Promi
           name: node.name,
           primitives: geometry.primitives
         },
+        meshKey: node.id,
         name: node.name,
         parentId: node.parentId,
         rotation: toQuaternion(node.transform.rotation),
         scale: [node.transform.scale.x, node.transform.scale.y, node.transform.scale.z],
         translation: [node.transform.position.x, node.transform.position.y, node.transform.position.z]
+      });
+      continue;
+    }
+
+    if (isInstancingNode(node)) {
+      const sourceNode = resolveInstancingSourceNode(snapshot.nodes, node);
+
+      if (!sourceNode || !(isBrushNode(sourceNode) || isMeshNode(sourceNode) || isPrimitiveNode(sourceNode) || isModelNode(sourceNode))) {
+        continue;
+      }
+
+      const instanceTransform = sanitizeInstanceTransform(node.transform);
+
+      if (isModelNode(sourceNode)) {
+        const previewColor = assetsById.get(sourceNode.data.assetId)?.metadata.previewColor;
+        const primitive = createCylinderPrimitive();
+        exportedNodes.push({
+          id: node.id,
+          mesh: {
+            name: sourceNode.name,
+            primitives: [
+              {
+                indices: primitive.indices,
+                material: await resolveExportMaterial({
+                  color: typeof previewColor === "string" ? previewColor : "#7f8ea3",
+                  id: `material:model:${sourceNode.id}`,
+                  metalness: 0.1,
+                  name: `${sourceNode.name} Material`,
+                  roughness: 0.55
+                }),
+                normals: computePrimitiveNormals(primitive.positions, primitive.indices),
+                positions: primitive.positions,
+                uvs: computeCylinderUvs(primitive.positions)
+              }
+            ]
+          },
+          meshKey: sourceNode.id,
+          name: node.name,
+          parentId: node.parentId,
+          rotation: toQuaternion(instanceTransform.rotation),
+          scale: [instanceTransform.scale.x, instanceTransform.scale.y, instanceTransform.scale.z],
+          translation: [instanceTransform.position.x, instanceTransform.position.y, instanceTransform.position.z]
+        });
+        continue;
+      }
+
+      const geometry = await buildExportGeometry(sourceNode, materialsById);
+
+      if (geometry.primitives.length === 0) {
+        continue;
+      }
+
+      exportedNodes.push({
+        id: node.id,
+        mesh: {
+          name: sourceNode.name,
+          primitives: geometry.primitives
+        },
+        meshKey: sourceNode.id,
+        name: node.name,
+        parentId: node.parentId,
+        rotation: toQuaternion(instanceTransform.rotation),
+        scale: [instanceTransform.scale.x, instanceTransform.scale.y, instanceTransform.scale.z],
+        translation: [instanceTransform.position.x, instanceTransform.position.y, instanceTransform.position.z]
       });
       continue;
     }
@@ -429,6 +520,7 @@ export async function serializeGltfScene(snapshot: SceneDocumentSnapshot): Promi
             }
           ]
         },
+        meshKey: node.id,
         name: node.name,
         parentId: node.parentId,
         rotation: toQuaternion(node.transform.rotation),
@@ -454,6 +546,7 @@ async function buildGltfDocument(
         uvs: number[];
       }>;
     };
+    meshKey?: string;
     name: string;
     parentId?: string;
     rotation?: [number, number, number, number];
@@ -480,6 +573,7 @@ async function buildGltfDocument(
   const imageIndexByUri = new Map<string, number>();
   const textureIndexByUri = new Map<string, number>();
   const materialIndexById = new Map<string, number>();
+  const meshIndexByKey = new Map<string, number>();
 
   const pushBuffer = (bytes: Uint8Array, target?: number) => {
     const padding = (4 - (bytes.byteLength % 4)) % 4;
@@ -499,83 +593,94 @@ async function buildGltfDocument(
   const nodeIndexById = new Map<string, number>();
 
   for (const exportedNode of exportedNodes) {
+    let meshIndex: number | undefined;
+
     if (exportedNode.mesh) {
-      const gltfPrimitives: Array<Record<string, unknown>> = [];
+      const meshKey = exportedNode.meshKey ?? exportedNode.id;
+      const cachedMeshIndex = meshIndexByKey.get(meshKey);
 
-      for (const primitive of exportedNode.mesh.primitives) {
-        const positions = new Float32Array(primitive.positions);
-        const normals = new Float32Array(primitive.normals);
-        const uvs = new Float32Array(primitive.uvs);
-        const indices = new Uint32Array(primitive.indices);
-        const positionView = pushBuffer(new Uint8Array(positions.buffer.slice(0)), 34962);
-        const normalView = pushBuffer(new Uint8Array(normals.buffer.slice(0)), 34962);
-        const uvView = pushBuffer(new Uint8Array(uvs.buffer.slice(0)), 34962);
-        const indexView = pushBuffer(new Uint8Array(indices.buffer.slice(0)), 34963);
+      if (cachedMeshIndex !== undefined) {
+        meshIndex = cachedMeshIndex;
+      } else {
+        const gltfPrimitives: Array<Record<string, unknown>> = [];
 
-        const bounds = computePositionBounds(primitive.positions);
-        accessors.push({
-          bufferView: positionView,
-          componentType: 5126,
-          count: positions.length / 3,
-          max: bounds.max,
-          min: bounds.min,
-          type: "VEC3"
+        for (const primitive of exportedNode.mesh.primitives) {
+          const positions = new Float32Array(primitive.positions);
+          const normals = new Float32Array(primitive.normals);
+          const uvs = new Float32Array(primitive.uvs);
+          const indices = new Uint32Array(primitive.indices);
+          const positionView = pushBuffer(new Uint8Array(positions.buffer.slice(0)), 34962);
+          const normalView = pushBuffer(new Uint8Array(normals.buffer.slice(0)), 34962);
+          const uvView = pushBuffer(new Uint8Array(uvs.buffer.slice(0)), 34962);
+          const indexView = pushBuffer(new Uint8Array(indices.buffer.slice(0)), 34963);
+
+          const bounds = computePositionBounds(primitive.positions);
+          accessors.push({
+            bufferView: positionView,
+            componentType: 5126,
+            count: positions.length / 3,
+            max: bounds.max,
+            min: bounds.min,
+            type: "VEC3"
+          });
+          const positionAccessor = accessors.length - 1;
+
+          accessors.push({
+            bufferView: normalView,
+            componentType: 5126,
+            count: normals.length / 3,
+            type: "VEC3"
+          });
+          const normalAccessor = accessors.length - 1;
+
+          accessors.push({
+            bufferView: uvView,
+            componentType: 5126,
+            count: uvs.length / 2,
+            type: "VEC2"
+          });
+          const uvAccessor = accessors.length - 1;
+
+          accessors.push({
+            bufferView: indexView,
+            componentType: 5125,
+            count: indices.length,
+            type: "SCALAR"
+          });
+          const indexAccessor = accessors.length - 1;
+
+          const materialIndex = await ensureGltfMaterial(
+            primitive.material,
+            materials,
+            textures,
+            images,
+            imageIndexByUri,
+            textureIndexByUri,
+            materialIndexById
+          );
+
+          gltfPrimitives.push({
+            attributes: {
+              NORMAL: normalAccessor,
+              POSITION: positionAccessor,
+              TEXCOORD_0: uvAccessor
+            },
+            indices: indexAccessor,
+            material: materialIndex
+          });
+        }
+
+        gltfMeshes.push({
+          name: exportedNode.mesh.name,
+          primitives: gltfPrimitives
         });
-        const positionAccessor = accessors.length - 1;
-
-        accessors.push({
-          bufferView: normalView,
-          componentType: 5126,
-          count: normals.length / 3,
-          type: "VEC3"
-        });
-        const normalAccessor = accessors.length - 1;
-
-        accessors.push({
-          bufferView: uvView,
-          componentType: 5126,
-          count: uvs.length / 2,
-          type: "VEC2"
-        });
-        const uvAccessor = accessors.length - 1;
-
-        accessors.push({
-          bufferView: indexView,
-          componentType: 5125,
-          count: indices.length,
-          type: "SCALAR"
-        });
-        const indexAccessor = accessors.length - 1;
-
-        const materialIndex = await ensureGltfMaterial(
-          primitive.material,
-          materials,
-          textures,
-          images,
-          imageIndexByUri,
-          textureIndexByUri,
-          materialIndexById
-        );
-
-        gltfPrimitives.push({
-          attributes: {
-            NORMAL: normalAccessor,
-            POSITION: positionAccessor,
-            TEXCOORD_0: uvAccessor
-          },
-          indices: indexAccessor,
-          material: materialIndex
-        });
+        meshIndex = gltfMeshes.length - 1;
+        meshIndexByKey.set(meshKey, meshIndex);
       }
-
-      gltfMeshes.push({
-        name: exportedNode.mesh.name,
-        primitives: gltfPrimitives
-      });
     }
 
     nodes.push({
-      ...(exportedNode.mesh ? { mesh: gltfMeshes.length - 1 } : {}),
+      ...(meshIndex !== undefined ? { mesh: meshIndex } : {}),
       name: exportedNode.name,
       ...(exportedNode.rotation ? { rotation: exportedNode.rotation } : {}),
       scale: exportedNode.scale,
@@ -1119,6 +1224,14 @@ function createBinaryDataUrl(bytes: Uint8Array, mimeType: string) {
   }
 
   return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function sanitizeInstanceTransform(transform: SceneDocumentSnapshot["nodes"][number]["transform"]) {
+  return {
+    position: structuredClone(transform.position),
+    rotation: structuredClone(transform.rotation),
+    scale: structuredClone(transform.scale)
+  };
 }
 
 function resolveModelAssetFormat(asset: Asset) {

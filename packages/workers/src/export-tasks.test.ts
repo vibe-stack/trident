@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { exportEngineBundle } from "./export-tasks";
+import { exportEngineBundle, serializeGltfScene } from "./export-tasks";
 import { makeTransform, vec3, type SceneSettings } from "@web-hammer/shared";
 import type { SceneDocumentSnapshot } from "@web-hammer/editor-core";
 
@@ -97,7 +97,7 @@ describe("exportEngineBundle", () => {
     const group = bundle.manifest.nodes.find((node) => node.id === "node:group");
     const cube = bundle.manifest.nodes.find((node) => node.id === "node:cube");
 
-    expect(bundle.manifest.metadata.version).toBe(5);
+    expect(bundle.manifest.metadata.version).toBe(6);
     expect(group?.kind).toBe("group");
     expect(cube?.parentId).toBe("node:group");
     expect(bundle.manifest.entities[0]?.parentId).toBe("node:group");
@@ -264,5 +264,160 @@ describe("exportEngineBundle", () => {
     expect(sphere && "lods" in sphere ? sphere.lods?.map((lod) => lod.level) : []).toEqual(["mid", "low"]);
     expect(sphere && "lods" in sphere ? sphere.lods?.[0]?.geometry.primitives[0]?.indices.length : 0).toBeGreaterThan(0);
     expect(bundle.manifest.settings.world.lod.bakedAt).toBe(bundle.manifest.metadata.exportedAt);
+  });
+
+  test("preserves instancing references in runtime manifests", async () => {
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [
+        {
+          data: {
+            role: "prop",
+            shape: "cube",
+            size: vec3(1, 1, 1)
+          },
+          id: "node:source",
+          kind: "primitive",
+          name: "Source Cube",
+          transform: makeTransform(vec3(0, 0, 0))
+        },
+        {
+          data: {
+            sourceNodeId: "node:source"
+          },
+          id: "node:instance",
+          kind: "instancing",
+          name: "Instance Cube",
+          transform: {
+            position: vec3(3, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        }
+      ],
+      settings,
+      textures: []
+    };
+
+    const bundle = await exportEngineBundle(snapshot);
+    const instanceNode = bundle.manifest.nodes.find((node) => node.id === "node:instance");
+
+    expect(instanceNode?.kind).toBe("instancing");
+    expect(instanceNode && "data" in instanceNode ? instanceNode.data.sourceNodeId : undefined).toBe("node:source");
+  });
+
+  test("reuses source meshes for gltf instancing exports", async () => {
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [
+        {
+          data: {
+            role: "prop",
+            shape: "cube",
+            size: vec3(1, 1, 1)
+          },
+          id: "node:source",
+          kind: "primitive",
+          name: "Source Cube",
+          transform: makeTransform(vec3(0, 0, 0))
+        },
+        {
+          data: {
+            sourceNodeId: "node:source"
+          },
+          id: "node:instance",
+          kind: "instancing",
+          name: "Instance Cube",
+          transform: {
+            position: vec3(2, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        }
+      ],
+      settings,
+      textures: []
+    };
+
+    const gltf = JSON.parse(await serializeGltfScene(snapshot)) as {
+      meshes: Array<unknown>;
+      nodes: Array<{ mesh?: number }>;
+    };
+
+    expect(gltf.meshes).toHaveLength(1);
+    expect(gltf.nodes.filter((node) => typeof node.mesh === "number")).toHaveLength(2);
+    expect(gltf.nodes[0]?.mesh).toBe(gltf.nodes[1]?.mesh);
+  });
+
+  test("preserves imported model instancing in runtime and gltf exports", async () => {
+    const modelDataUrl = "data:model/gltf-binary;base64,AAAA";
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [
+        {
+          id: "asset:model:source",
+          metadata: {
+            modelFormat: "glb",
+            nativeCenterX: 0,
+            nativeCenterY: 0.5,
+            nativeCenterZ: 0,
+            nativeSizeX: 2,
+            nativeSizeY: 2,
+            nativeSizeZ: 2,
+            previewColor: "#6b7280"
+          },
+          path: modelDataUrl,
+          type: "model"
+        }
+      ],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [
+        {
+          data: {
+            assetId: "asset:model:source",
+            path: modelDataUrl
+          },
+          id: "node:model-source",
+          kind: "model",
+          name: "Model Source",
+          transform: makeTransform(vec3(0, 0, 0))
+        },
+        {
+          data: {
+            sourceNodeId: "node:model-source"
+          },
+          id: "node:model-instance",
+          kind: "instancing",
+          name: "Model Source Instance",
+          transform: {
+            position: vec3(4, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        }
+      ],
+      settings,
+      textures: []
+    };
+
+    const bundle = await exportEngineBundle(snapshot);
+    const instanceNode = bundle.manifest.nodes.find((node) => node.id === "node:model-instance");
+    const gltf = JSON.parse(await serializeGltfScene(snapshot)) as {
+      meshes: Array<unknown>;
+      nodes: Array<{ mesh?: number }>;
+    };
+
+    expect(instanceNode?.kind).toBe("instancing");
+    expect(instanceNode && "data" in instanceNode ? instanceNode.data.sourceNodeId : undefined).toBe("node:model-source");
+    expect(gltf.meshes).toHaveLength(1);
+    expect(gltf.nodes.filter((node) => typeof node.mesh === "number")).toHaveLength(2);
+    expect(gltf.nodes[0]?.mesh).toBe(gltf.nodes[1]?.mesh);
   });
 });

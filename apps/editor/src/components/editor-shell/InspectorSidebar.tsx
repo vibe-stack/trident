@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { BellRing, Cable, FolderTree, Globe2, SlidersHorizontal, SwatchBook, User } from "lucide-react";
 import {
   type EditableMesh,
+  isInstancingNode,
   isLightNode,
   isPrimitiveNode,
   vec3,
@@ -79,7 +80,7 @@ type InspectorSidebarProps = {
   selectedFaceIds: string[];
   selectedMaterialId: string;
   selectedNode?: GeometryNode;
-  selectedNodeId?: string;
+  selectedNodeIds: string[];
   textures: TextureRecord[];
   viewportTarget: Vec3;
 };
@@ -138,7 +139,7 @@ export function InspectorSidebar({
   selectedFaceIds,
   selectedMaterialId,
   selectedNode,
-  selectedNodeId,
+  selectedNodeIds,
   textures,
   viewportTarget
 }: InspectorSidebarProps) {
@@ -174,8 +175,10 @@ export function InspectorSidebar({
   }, [sceneSettings]);
 
   const selectedIsBrush = selectedNode?.kind === "brush";
+  const selectedIsInstancing = selectedNode ? isInstancingNode(selectedNode) : false;
   const selectedIsMesh = selectedNode?.kind === "mesh";
   const selectedMeshNode = selectedNode?.kind === "mesh" ? selectedNode : undefined;
+  const selectedInstancingNode = selectedNode && isInstancingNode(selectedNode) ? selectedNode : undefined;
   const selectedPrimitive = selectedNode && isPrimitiveNode(selectedNode) ? selectedNode : undefined;
   const selectedLight = selectedNode && isLightNode(selectedNode) ? selectedNode : undefined;
 
@@ -214,7 +217,16 @@ export function InspectorSidebar({
     }
 
     if (selectedNode) {
-      onUpdateNodeTransform(selectedNode.id, draftTransform);
+      onUpdateNodeTransform(
+        selectedNode.id,
+        selectedIsInstancing
+          ? {
+              position: structuredClone(draftTransform.position),
+              rotation: structuredClone(draftTransform.rotation),
+              scale: structuredClone(draftTransform.scale)
+            }
+          : draftTransform
+      );
       return;
     }
 
@@ -371,7 +383,7 @@ export function InspectorSidebar({
                     nodes={nodes}
                     onFocusNode={onFocusNode}
                     onSelectNodes={onSelectNodes}
-                    selectedNodeId={selectedNodeId}
+                    selectedNodeIds={selectedNodeIds}
                   />
                 </div>
               ) : (
@@ -838,14 +850,16 @@ export function InspectorSidebar({
                               step={0.05}
                               values={draftTransform.scale}
                             />
-                            <TransformGroup
-                              label="Pivot"
-                              onCommit={commitDraftTransform}
-                              onUpdate={(axis, value) => updateDraftAxis("pivot", axis, value)}
-                              precision={2}
-                              step={0.05}
-                              values={draftTransform.pivot ?? vec3(0, 0, 0)}
-                            />
+                            {!selectedIsInstancing ? (
+                              <TransformGroup
+                                label="Pivot"
+                                onCommit={commitDraftTransform}
+                                onUpdate={(axis, value) => updateDraftAxis("pivot", axis, value)}
+                                precision={2}
+                                step={0.05}
+                                values={draftTransform.pivot ?? vec3(0, 0, 0)}
+                              />
+                            ) : null}
                           </>
                         ) : null}
                       </div>
@@ -896,6 +910,7 @@ export function InspectorSidebar({
                         onUpdateMeshData={onUpdateMeshData}
                       />
                     ) : null}
+                    {selectedInstancingNode ? <InstancingInspector node={selectedInstancingNode} /> : null}
                     {selectedLight ? <LightInspector node={selectedLight} onUpdateNodeData={onUpdateNodeData} /> : null}
                     {selectedEntity ? (
                       <EntityInspector entity={selectedEntity} onUpdateEntityProperties={onUpdateEntityProperties} />
@@ -1119,6 +1134,21 @@ function MeshPhysicsInspector({
           Enable physics to simulate this mesh at runtime.
         </div>
       )}
+    </ToolSection>
+  );
+}
+
+function InstancingInspector({
+  node
+}: {
+  node: Extract<GeometryNode, { kind: "instancing" }>;
+}) {
+  return (
+    <ToolSection title="Instancing">
+      <div className="rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-[11px] text-foreground/56">
+        This node instances <span className="font-mono text-foreground/72">{node.data.sourceNodeId}</span>. Only transform
+        values are editable here.
+      </div>
     </ToolSection>
   );
 }

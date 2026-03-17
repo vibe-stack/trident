@@ -10,6 +10,7 @@ import {
   createDeleteSelectionCommand,
   createExtrudeBrushNodesCommand,
   createDuplicateNodesCommand,
+  createInstanceNodesCommand,
   createEditorCore,
   createGroupSelectionCommand,
   createPlaceLightNodeCommand,
@@ -51,6 +52,7 @@ import {
   type BrushShape,
   type GeometryNode,
   isBrushNode,
+  isInstancingNode,
   isLightNode,
   isMeshNode,
   isModelNode,
@@ -443,7 +445,13 @@ export function App() {
       return;
     }
 
-    node.transform = structuredClone(transform);
+    node.transform = isInstancingNode(node)
+      ? {
+          position: structuredClone(transform.position),
+          rotation: structuredClone(transform.rotation),
+          scale: structuredClone(transform.scale)
+        }
+      : structuredClone(transform);
     editor.scene.touch();
     setSceneRevision((revision) => revision + 1);
   };
@@ -601,6 +609,25 @@ export function App() {
     editor.execute(command);
     editor.select(duplicateIds, "object");
     enqueueWorkerJob("Duplicate selection", { task: "triangulation", worker: "geometryWorker" }, 700);
+  };
+
+  const handleInstanceSelection = () => {
+    if (editor.selection.ids.length === 0) {
+      return;
+    }
+
+    const { command, instanceIds } = createInstanceNodesCommand(
+      editor.scene,
+      editor.selection.ids,
+      axisDelta("x", resolveViewportSnapSize(resolveActiveViewportState()))
+    );
+
+    if (instanceIds.length === 0) {
+      return;
+    }
+
+    editor.execute(command);
+    editor.select(instanceIds, "object");
   };
 
   const handleGroupSelection = () => {
@@ -1359,6 +1386,7 @@ export function App() {
     enabled: physicsPlayback === "stopped",
     handleDeleteSelection,
     handleDuplicateSelection,
+    handleInstanceSelection,
     handleGroupSelection,
     handleInvertSelectionNormals,
     handleRedo,

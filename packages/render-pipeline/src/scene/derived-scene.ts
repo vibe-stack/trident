@@ -10,7 +10,7 @@ import type {
   Transform,
   Vec3
 } from "@web-hammer/shared";
-import { isGroupNode, isLightNode, resolveSceneGraph, vec3 } from "@web-hammer/shared";
+import { isGroupNode, isInstancingNode, isLightNode, resolveInstancingSourceNode, resolveSceneGraph, vec3 } from "@web-hammer/shared";
 import { createDerivedRenderMesh, type DerivedRenderMesh } from "../meshes/render-mesh";
 
 export type DerivedEntityMarker = {
@@ -39,7 +39,23 @@ export type DerivedGroupMarker = {
   scale: Transform["scale"];
 };
 
+export type DerivedRenderInstance = {
+  label: string;
+  nodeId: NodeID;
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
+};
+
+export type DerivedInstancedMesh = {
+  batchId: string;
+  instances: DerivedRenderInstance[];
+  mesh: DerivedRenderMesh;
+  sourceNodeId: NodeID;
+};
+
 export type DerivedRenderScene = {
+  instancedMeshes: DerivedInstancedMesh[];
   lights: DerivedLight[];
   meshes: DerivedRenderMesh[];
   groups: DerivedGroupMarker[];
@@ -107,6 +123,7 @@ export function deriveRenderSceneCached(
   const assetsChanged = haveReferencedValuesChanged(assetList, cache.assetRefs);
   const shouldRebuildAllMeshes = materialsChanged || assetsChanged;
   const meshes: DerivedRenderMesh[] = [];
+  const instancedMeshes: DerivedInstancedMesh[] = [];
   const lights: DerivedLight[] = [];
   const groups: DerivedGroupMarker[] = [];
   const activeMeshIds = new Set<NodeID>();
@@ -137,6 +154,10 @@ export function deriveRenderSceneCached(
       return;
     }
 
+    if (isInstancingNode(node)) {
+      return;
+    }
+
     activeMeshIds.add(node.id);
 
     const cached = cache.meshEntries.get(node.id);
@@ -154,6 +175,57 @@ export function deriveRenderSceneCached(
       cache.meshEntries.delete(nodeId);
     }
   });
+
+  const instancedMeshBatches = new Map<NodeID, DerivedInstancedMesh>();
+
+  sourceNodes.forEach((node) => {
+    if (!isInstancingNode(node)) {
+      return;
+    }
+
+    const worldTransform = sceneGraph.nodeWorldTransforms.get(node.id) ?? node.transform;
+    const sourceNode = resolveInstancingSourceNode(sourceNodes, node);
+
+    if (!sourceNode) {
+      return;
+    }
+
+    const sourceMesh = cache.meshEntries.get(sourceNode.id)?.mesh;
+
+    if (!sourceMesh || (!sourceMesh.surface && !sourceMesh.primitive && !sourceMesh.modelPath)) {
+      return;
+    }
+
+    const existingBatch = instancedMeshBatches.get(sourceNode.id);
+
+    if (existingBatch) {
+      existingBatch.instances.push({
+        label: node.name,
+        nodeId: node.id,
+        position: worldTransform.position,
+        rotation: worldTransform.rotation,
+        scale: worldTransform.scale
+      });
+      return;
+    }
+
+    instancedMeshBatches.set(sourceNode.id, {
+      batchId: `instancing:${sourceNode.id}`,
+      instances: [
+        {
+          label: node.name,
+          nodeId: node.id,
+          position: worldTransform.position,
+          rotation: worldTransform.rotation,
+          scale: worldTransform.scale
+        }
+      ],
+      mesh: sourceMesh,
+      sourceNodeId: sourceNode.id
+    });
+  });
+
+  instancedMeshes.push(...instancedMeshBatches.values());
 
   replaceReferenceMap(cache.materialRefs, materialList);
   replaceReferenceMap(cache.assetRefs, assetList);
@@ -173,9 +245,10 @@ export function deriveRenderSceneCached(
           : "#c084fc"
   }));
 
-  if (meshes.length === 0) {
+  if (meshes.length === 0 && instancedMeshes.length === 0) {
     return {
       entityTransforms: sceneGraph.entityWorldTransforms,
+      instancedMeshes,
       lights,
       meshes,
       groups,
@@ -193,14 +266,35 @@ export function deriveRenderSceneCached(
     }),
     vec3(0, 0, 0)
   );
+  const instanceCenter = instancedMeshes.reduce(
+    (accumulator, batch) =>
+      batch.instances.reduce(
+        (batchAccumulator, instance) => ({
+          x: batchAccumulator.x + instance.position.x,
+          y: batchAccumulator.y + instance.position.y,
+          z: batchAccumulator.z + instance.position.z
+        }),
+        accumulator
+      ),
+    center
+  );
+  const totalRenderableCount = meshes.length + instancedMeshes.reduce((sum, batch) => sum + batch.instances.length, 0);
 
   return {
     entityTransforms: sceneGraph.entityWorldTransforms,
+    instancedMeshes,
     lights,
     meshes,
     groups,
     entityMarkers,
-    boundsCenter: vec3(center.x / meshes.length, center.y / meshes.length, center.z / meshes.length),
+    boundsCenter:
+      totalRenderableCount > 0
+        ? vec3(
+            instanceCenter.x / totalRenderableCount,
+            instanceCenter.y / totalRenderableCount,
+            instanceCenter.z / totalRenderableCount
+          )
+        : vec3(0, 0, 0),
     nodeTransforms: sceneGraph.nodeWorldTransforms
   };
 }

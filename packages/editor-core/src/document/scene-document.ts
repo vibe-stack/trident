@@ -12,7 +12,7 @@ import type {
   SceneSettings,
   TextureRecord
 } from "@web-hammer/shared";
-import { createDefaultSceneSettings, makeTransform, normalizeSceneSettings, vec3 } from "@web-hammer/shared";
+import { createDefaultSceneSettings, isInstancingNode, makeTransform, normalizeSceneSettings, vec3 } from "@web-hammer/shared";
 
 export type SceneDocument = {
   nodes: Map<NodeID, GeometryNode>;
@@ -90,12 +90,27 @@ export function createSceneDocument(): SceneDocument {
       }
 
       const descendantNodeIds = collectDescendantNodeIds(nodes, id);
+      const removedNodeIds = new Set<NodeID>([id, ...descendantNodeIds]);
+      const dependentInstanceIds = Array.from(nodes.values())
+        .filter((candidate) => isInstancingNode(candidate) && removedNodeIds.has(candidate.data.sourceNodeId))
+        .map((candidate) => candidate.id);
+      const dependentDescendantIds = dependentInstanceIds.flatMap((instanceNodeId) => collectDescendantNodeIds(nodes, instanceNodeId));
       const descendantEntityIds = collectDescendantEntityIds(nodes, entities, id);
+      const dependentEntityIds = dependentInstanceIds.flatMap((instanceNodeId) => collectDescendantEntityIds(nodes, entities, instanceNodeId));
 
       descendantNodeIds.forEach((nodeId) => {
         nodes.delete(nodeId);
       });
+      dependentDescendantIds.forEach((nodeId) => {
+        nodes.delete(nodeId);
+      });
+      dependentInstanceIds.forEach((nodeId) => {
+        nodes.delete(nodeId);
+      });
       descendantEntityIds.forEach((entityId) => {
+        entities.delete(entityId);
+      });
+      dependentEntityIds.forEach((entityId) => {
         entities.delete(entityId);
       });
       nodes.delete(id);

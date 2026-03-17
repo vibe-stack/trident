@@ -3,6 +3,7 @@ import type {
   BrushNode,
   Entity,
   GroupNode,
+  InstancingNode,
   Layer,
   LightNode,
   MaterialRenderSide,
@@ -57,7 +58,9 @@ export type WebHammerEngineModelNode = ModelNode & {
   lods?: WebHammerExportModelLod[];
 };
 
-export type WebHammerEngineNode = GroupNode | WebHammerEngineGeometryNode | WebHammerEngineModelNode | LightNode;
+export type WebHammerEngineInstancingNode = InstancingNode;
+
+export type WebHammerEngineNode = GroupNode | WebHammerEngineGeometryNode | WebHammerEngineModelNode | WebHammerEngineInstancingNode | LightNode;
 
 export type WebHammerEngineSceneMetadata = {
   exportedAt: string;

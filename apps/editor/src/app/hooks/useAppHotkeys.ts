@@ -9,6 +9,7 @@ type UseAppHotkeysOptions = {
   enabled?: boolean;
   handleDeleteSelection: () => void;
   handleDuplicateSelection: () => void;
+  handleInstanceSelection: () => void;
   handleGroupSelection: () => void;
   handleInvertSelectionNormals: () => void;
   handleRedo: () => void;
@@ -26,6 +27,7 @@ export function useAppHotkeys({
   enabled = true,
   handleDeleteSelection,
   handleDuplicateSelection,
+  handleInstanceSelection,
   handleGroupSelection,
   handleInvertSelectionNormals,
   handleRedo,
@@ -76,6 +78,12 @@ export function useAppHotkeys({
       if (modifier && event.key.toLowerCase() === "d" && !blocksSceneSelectionEdits) {
         event.preventDefault();
         handleDuplicateSelection();
+        return;
+      }
+
+      if (modifier && event.key.toLowerCase() === "i" && !blocksSceneSelectionEdits) {
+        event.preventDefault();
+        handleInstanceSelection();
         return;
       }
 
@@ -215,6 +223,7 @@ export function useAppHotkeys({
     enabled,
     handleDeleteSelection,
     handleDuplicateSelection,
+    handleInstanceSelection,
     handleGroupSelection,
     handleInvertSelectionNormals,
     handleRedo,

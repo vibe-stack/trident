@@ -123,6 +123,10 @@ export type PrimitiveNodeData = {
   uvScale?: Vec2;
 };
 
+export type InstancingNodeData = {
+  sourceNodeId: NodeID;
+};
+
 export type LightNodeData = {
   angle?: number;
   castShadow: boolean;
@@ -172,12 +176,17 @@ export type PrimitiveNode = GeometryNodeBase & {
   data: PrimitiveNodeData;
 };
 
+export type InstancingNode = GeometryNodeBase & {
+  kind: "instancing";
+  data: InstancingNodeData;
+};
+
 export type LightNode = GeometryNodeBase & {
   kind: "light";
   data: LightNodeData;
 };
 
-export type GeometryNode = BrushNode | GroupNode | MeshNode | ModelNode | PrimitiveNode | LightNode;
+export type GeometryNode = BrushNode | GroupNode | MeshNode | ModelNode | PrimitiveNode | InstancingNode | LightNode;
 
 export type Asset = {
   id: AssetID;

@@ -44,13 +44,14 @@ import {
 import {
   applyWebHammerWorldSettings,
   clearWebHammerWorldSettings,
+  createWebHammerSceneObjectFactory,
   type WebHammerEngineModelNode,
   type WebHammerEngineGeometryNode,
   type WebHammerEngineNode,
   type WebHammerExportGeometry,
   type WebHammerExportMaterial
 } from "@web-hammer/three-runtime";
-import { createBlockoutTextureDataUri, resolveTransformPivot, vec3, type Asset, type MaterialRenderSide } from "@web-hammer/shared";
+import { createBlockoutTextureDataUri, resolveSceneGraph, resolveTransformPivot, vec3, type Asset, type MaterialRenderSide } from "@web-hammer/shared";
 import type { DerivedLight, DerivedRenderMesh } from "@web-hammer/render-pipeline";
 import type { PlaybackGameplayHost } from "../gameplay-host";
 import type { AssetPathResolver, PlayerActor, SceneRuntimeConfig } from "../types";
@@ -222,62 +223,89 @@ export class PlaybackSceneController {
     }
 
     const physicsActive = config.physicsPlayback !== "stopped" && config.sceneSettings.world.physicsEnabled;
-    const assetsById = new Map(config.scene.assets.map((asset) => [asset.id, asset]));
-    const runtimeNodeById = new Map(config.scene.nodes.map((node) => [node.id, node]));
+    const sceneGraph = resolveSceneGraph(config.scene.nodes, config.scene.entities);
+    const objectFactory = createWebHammerSceneObjectFactory(config.scene, {
+      lod: {
+        lowDistance: PLAYGROUND_LOW_LOD_DISTANCE,
+        midDistance: PLAYGROUND_MID_LOD_DISTANCE
+      },
+      resolveAssetUrl: ({ path }) => config.resolveAssetPath(path)
+    });
     const physicsMeshes = physicsActive ? config.renderScene.meshes.filter((mesh) => mesh.physics?.enabled) : [];
+    const physicsMeshIds = new Set(physicsMeshes.map((mesh) => mesh.nodeId));
     const staticMeshes = physicsActive
       ? config.renderScene.meshes.filter((mesh) => !physicsMeshes.some((candidate) => candidate.nodeId === mesh.nodeId))
       : config.renderScene.meshes;
+    const staticNodeEntries = config.scene.nodes.filter(
+      (node) =>
+        node.kind !== "group" &&
+        node.kind !== "instancing" &&
+        node.kind !== "light" &&
+        !physicsMeshIds.has(node.id)
+    );
 
     const staticObjects = await Promise.all(
-      staticMeshes.map((mesh) =>
-        createMeshObject(
-          mesh,
-          config.resolveAssetPath,
-          assetsById,
-          runtimeNodeById.get(mesh.nodeId),
-          true
-        )
-      )
+      staticNodeEntries.map(async (node) => ({
+        nodeId: node.id,
+        object: await objectFactory.createNodeObject(node, {
+          transform: sceneGraph.nodeWorldTransforms.get(node.id) ?? node.transform
+        })
+      }))
     );
 
     if (version !== this.loadVersion) {
-      staticObjects.forEach(disposeCreatedObject);
       return;
     }
 
-    staticObjects.forEach((created, index) => {
-      if (!created) {
-        return;
-      }
-
-      const mesh = staticMeshes[index];
+    staticObjects.forEach((created) => {
       this.staticMeshRoot.add(created.object);
-      this.options.host.bindNodeObject(mesh.nodeId, created.object);
+      this.options.host.bindNodeObject(created.nodeId, created.object);
       this.staticObjects.push({
-        cleanup: created.cleanup,
-        nodeId: mesh.nodeId,
+        nodeId: created.nodeId,
         object: created.object
       });
     });
 
+    const instancingObjects = await objectFactory.createInstancingObjects();
+
+    if (version !== this.loadVersion) {
+      return;
+    }
+
+    instancingObjects.forEach((object, index) => {
+      this.staticMeshRoot.add(object);
+      this.staticObjects.push({
+        nodeId: `instancing:${index}`,
+        object
+      });
+    });
+
     if (physicsActive) {
-      await this.createPhysicsScene(config, staticMeshes, physicsMeshes, version);
+      await this.createPhysicsScene(config, sceneGraph, objectFactory, staticMeshes, physicsMeshes, version);
     }
 
     if (version !== this.loadVersion) {
       return;
     }
 
-    config.renderScene.lights.forEach((light) => {
-      const created = createLightObject(light);
+    const lightObjects = await Promise.all(
+      config.scene.nodes
+        .filter((node): node is Extract<WebHammerEngineNode, { kind: "light" }> => node.kind === "light")
+        .map(async (node) => ({
+          nodeId: node.id,
+          object: await objectFactory.createNodeObject(node, {
+            transform: sceneGraph.nodeWorldTransforms.get(node.id) ?? node.transform
+          })
+        }))
+    );
 
-      if (!created) {
-        return;
-      }
+    if (version !== this.loadVersion) {
+      return;
+    }
 
+    lightObjects.forEach((created) => {
       this.lightRoot.add(created.object);
-      this.options.host.bindNodeObject(light.nodeId, created.object);
+      this.options.host.bindNodeObject(created.nodeId, created.object);
       this.lightObjects.push(created);
     });
   }
@@ -340,6 +368,8 @@ export class PlaybackSceneController {
 
   private async createPhysicsScene(
     config: SceneRuntimeConfig,
+    sceneGraph: ReturnType<typeof resolveSceneGraph>,
+    objectFactory: ReturnType<typeof createWebHammerSceneObjectFactory>,
     staticMeshes: DerivedRenderMesh[],
     physicsMeshes: DerivedRenderMesh[],
     version: number
@@ -351,9 +381,6 @@ export class PlaybackSceneController {
     }
 
     this.world = new RAPIER.World(config.sceneSettings.world.gravity);
-    const assetsById = new Map(config.scene.assets.map((asset) => [asset.id, asset]));
-    const runtimeNodeById = new Map(config.scene.nodes.map((node) => [node.id, node]));
-
     staticMeshes.forEach((mesh) => {
       const body = createStaticRigidBody(this.world!, mesh);
       this.staticBodies.push({ body, nodeId: mesh.nodeId });
@@ -361,19 +388,23 @@ export class PlaybackSceneController {
     });
 
     const dynamicObjects = await Promise.all(
-      physicsMeshes.map((mesh) =>
-        createMeshObject(
-          mesh,
-          config.resolveAssetPath,
-          assetsById,
-          runtimeNodeById.get(mesh.nodeId),
-          true
-        )
-      )
+      physicsMeshes.map(async (mesh) => {
+        const node = config.scene.nodes.find((candidate) => candidate.id === mesh.nodeId);
+
+        if (!node) {
+          return undefined;
+        }
+
+        return {
+          nodeId: mesh.nodeId,
+          object: await objectFactory.createNodeObject(node, {
+            transform: sceneGraph.nodeWorldTransforms.get(node.id) ?? node.transform
+          })
+        };
+      })
     );
 
     if (version !== this.loadVersion || !this.world) {
-      dynamicObjects.forEach(disposeCreatedObject);
       return;
     }
 
@@ -388,10 +419,10 @@ export class PlaybackSceneController {
       this.dynamicMeshRoot.add(created.object);
       this.dynamicBodies.push({
         body,
-        nodeId: mesh.nodeId,
+        nodeId: created.nodeId,
         object: created.object
       });
-      this.options.host.bindNodePhysicsBody(mesh.nodeId, body);
+      this.options.host.bindNodePhysicsBody(created.nodeId, body);
       created.object.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
       created.object.rotation.set(mesh.rotation.x, mesh.rotation.y, mesh.rotation.z);
       created.object.scale.set(mesh.scale.x, mesh.scale.y, mesh.scale.z);

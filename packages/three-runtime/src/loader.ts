@@ -1,5 +1,5 @@
 import type { Asset, MaterialRenderSide, PropPhysics, SceneSkyboxSettings, Transform, Vec3 } from "@web-hammer/shared";
-import { resolveSceneGraph } from "@web-hammer/shared";
+import { resolveInstancingSourceNode, resolveSceneGraph, vec3 } from "@web-hammer/shared";
 import {
   AmbientLight,
   BackSide,
@@ -10,16 +10,20 @@ import {
   DirectionalLight,
   DoubleSide,
   EquirectangularReflectionMapping,
+  Euler,
   Fog,
   Float32BufferAttribute,
   FrontSide,
   Group,
+  InstancedMesh,
   HemisphereLight,
   LOD,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   Object3D,
   PointLight,
+  Quaternion,
   SRGBColorSpace,
   Scene,
   SpotLight,
@@ -32,6 +36,11 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import {
+  createWebHammerSceneObjectFactory,
+  extractPhysics as extractNodePhysics,
+  findPrimaryLight as findNodePrimaryLight
+} from "./object-factory";
 import type {
   WebHammerEngineBundle,
   WebHammerEngineModelNode,
@@ -147,15 +156,14 @@ export async function loadWebHammerEngineScene(
 ): Promise<WebHammerLoadedScene> {
   const engineScene = typeof input === "string" ? parseWebHammerEngineScene(input) : input;
   const root = new Group();
-  const assetsById = new Map(engineScene.assets.map((asset) => [asset.id, asset]));
   const nodes = new Map<string, Object3D>();
   const lights: Object3D[] = [];
   const physicsNodes: WebHammerLoadedScene["physicsNodes"] = [];
-  const materialCache = new Map<string, MeshStandardMaterial>();
-  const textureCache = new Map<string, Promise<Texture>>();
   const nodesById = new Map(engineScene.nodes.map((node) => [node.id, node]));
+  const sceneGraph = resolveSceneGraph(engineScene.nodes, engineScene.entities);
+  const objectFactory = createWebHammerSceneObjectFactory(engineScene, options);
   const createdObjects = await Promise.all(
-    engineScene.nodes.map(async (node) => [node.id, await createObjectForNode(node, assetsById, materialCache, textureCache, options)] as const)
+    engineScene.nodes.map(async (node) => [node.id, await objectFactory.createNodeObject(node)] as const)
   );
   const attachedNodeIds = new Set<string>();
   const attachStack = new Set<string>();
@@ -221,6 +229,12 @@ export async function loadWebHammerEngineScene(
     attachNode(node.id);
   }
 
+  const instancingObjects = await objectFactory.createInstancingObjects();
+
+  instancingObjects.forEach((object) => {
+    root.add(object);
+  });
+
   for (const node of engineScene.nodes) {
     const object = nodes.get(node.id);
 
@@ -228,13 +242,13 @@ export async function loadWebHammerEngineScene(
       continue;
     }
 
-    const light = findPrimaryLight(object);
+    const light = findNodePrimaryLight(object);
 
     if (light) {
       lights.push(light);
     }
 
-    const physics = extractPhysics(node);
+    const physics = extractNodePhysics(node);
 
     if (physics?.enabled) {
       physicsNodes.push({
@@ -244,8 +258,6 @@ export async function loadWebHammerEngineScene(
       });
     }
   }
-
-  const sceneGraph = resolveSceneGraph(engineScene.nodes, engineScene.entities);
 
   return {
     entities: engineScene.entities.map((entity) => ({
@@ -439,6 +451,11 @@ async function createObjectForNode(
     return anchor;
   }
 
+  if (node.kind === "instancing") {
+    anchor.visible = false;
+    return anchor;
+  }
+
   if (node.kind === "group") {
     return anchor;
   }
@@ -450,6 +467,153 @@ async function createObjectForNode(
   }
 
   return anchor;
+}
+
+async function createInstancingObjects(
+  engineScene: WebHammerEngineScene,
+  sceneGraph: ReturnType<typeof resolveSceneGraph>,
+  materialCache: Map<string, MeshStandardMaterial>,
+  textureCache: Map<string, Promise<Texture>>,
+  options: WebHammerSceneLoaderOptions
+) {
+  const batches = new Map<string, Array<Extract<WebHammerEngineNode, { kind: "instancing" }>>>();
+
+  engineScene.nodes.forEach((node) => {
+    if (node.kind !== "instancing") {
+      return;
+    }
+
+    const sourceNode = resolveInstancingSourceNode(engineScene.nodes, node.data.sourceNodeId);
+
+    if (!sourceNode || !(sourceNode.kind === "brush" || sourceNode.kind === "mesh" || sourceNode.kind === "primitive")) {
+      return;
+    }
+
+    const instances = batches.get(sourceNode.id);
+
+    if (instances) {
+      instances.push(node);
+      return;
+    }
+
+    batches.set(sourceNode.id, [node]);
+  });
+
+  const objects: Object3D[] = [];
+
+  for (const [sourceNodeId, instances] of batches) {
+    const sourceNode = engineScene.nodes.find((node) => node.id === sourceNodeId);
+
+    if (!sourceNode || !(sourceNode.kind === "brush" || sourceNode.kind === "mesh" || sourceNode.kind === "primitive")) {
+      continue;
+    }
+
+    const object = await createInstancedObjectForGeometryNode(sourceNode, instances, sceneGraph, materialCache, textureCache, options);
+
+    if (object) {
+      objects.push(object);
+    }
+  }
+
+  return objects;
+}
+
+async function createInstancedObjectForGeometryNode(
+  sourceNode: WebHammerEngineGeometryNode,
+  instances: Array<Extract<WebHammerEngineNode, { kind: "instancing" }>>,
+  sceneGraph: ReturnType<typeof resolveSceneGraph>,
+  materialCache: Map<string, MeshStandardMaterial>,
+  textureCache: Map<string, Promise<Texture>>,
+  options: WebHammerSceneLoaderOptions
+) {
+  const baseGroup = await createInstancedGeometryObject(sourceNode.geometry, sourceNode, instances, sceneGraph, materialCache, textureCache, options);
+  const lodOptions = resolveSceneLodOptions(options.lod);
+
+  if (!lodOptions || !sourceNode.lods?.length) {
+    return baseGroup;
+  }
+
+  const lod = new LOD();
+  lod.name = `${sourceNode.name}:InstancingLOD`;
+  lod.autoUpdate = true;
+  lod.addLevel(baseGroup, 0);
+
+  for (const level of sourceNode.lods) {
+    const levelGroup = await createInstancedGeometryObject(
+      level.geometry,
+      sourceNode,
+      instances,
+      sceneGraph,
+      materialCache,
+      textureCache,
+      options,
+      level
+    );
+    const distance = level.level === "mid" ? lodOptions.midDistance : lodOptions.lowDistance;
+    lod.addLevel(levelGroup, distance);
+  }
+
+  lod.userData.webHammer = {
+    instanceNodeIds: instances.map((instance) => instance.id),
+    levelOrder: ["high", ...(sourceNode.lods ?? []).map((level) => level.level)],
+    sourceNodeId: sourceNode.id
+  };
+  return lod;
+}
+
+async function createInstancedGeometryObject(
+  geometry: WebHammerExportGeometry,
+  sourceNode: WebHammerEngineGeometryNode,
+  instances: Array<Extract<WebHammerEngineNode, { kind: "instancing" }>>,
+  sceneGraph: ReturnType<typeof resolveSceneGraph>,
+  materialCache: Map<string, MeshStandardMaterial>,
+  textureCache: Map<string, Promise<Texture>>,
+  options: WebHammerSceneLoaderOptions,
+  lodLevel?: WebHammerExportGeometryLod
+) {
+  const group = new Group();
+  const pivot = sourceNode.transform.pivot ?? vec3(0, 0, 0);
+
+  for (const primitive of geometry.primitives) {
+    const primitiveGeometry = new BufferGeometry();
+    primitiveGeometry.setAttribute("position", new Float32BufferAttribute(primitive.positions, 3));
+    primitiveGeometry.setAttribute("normal", new Float32BufferAttribute(primitive.normals, 3));
+
+    if (primitive.uvs.length > 0) {
+      primitiveGeometry.setAttribute("uv", new Float32BufferAttribute(primitive.uvs, 2));
+    }
+
+    primitiveGeometry.setIndex(primitive.indices);
+    primitiveGeometry.computeBoundingBox();
+    primitiveGeometry.computeBoundingSphere();
+
+    const material = await createThreeMaterial(primitive.material, materialCache, textureCache, options);
+    const mesh = new InstancedMesh(primitiveGeometry, material, instances.length);
+    mesh.castShadow = options.castShadow ?? true;
+    mesh.receiveShadow = options.receiveShadow ?? true;
+    mesh.name = `${sourceNode.name}:${lodLevel?.level ?? "high"}:${primitive.material.name}:instanced`;
+    mesh.userData.webHammer = {
+      instanceNodeIds: instances.map((instance) => instance.id),
+      lodLevel: lodLevel?.level ?? "high",
+      materialId: primitive.material.id,
+      sourceNodeId: sourceNode.id
+    };
+
+    instances.forEach((instance, index) => {
+      const worldTransform = sceneGraph.nodeWorldTransforms.get(instance.id) ?? instance.transform;
+      mesh.setMatrixAt(index, composeInstancedMatrix(worldTransform, pivot));
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+  }
+
+  group.name = `${sourceNode.name}:instances`;
+  group.userData.webHammer = {
+    instanceNodeIds: instances.map((instance) => instance.id),
+    sourceNodeId: sourceNode.id
+  };
+  return group;
 }
 
 async function createLodObjectForGeometryNode(
@@ -853,6 +1017,16 @@ function applyTransform(object: Object3D, transform: Transform) {
   object.position.set(transform.position.x, transform.position.y, transform.position.z);
   object.rotation.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, "XYZ");
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+}
+
+function composeInstancedMatrix(transform: Transform, pivot: Vec3) {
+  return new Matrix4()
+    .compose(
+      new Vector3(transform.position.x, transform.position.y, transform.position.z),
+      new Quaternion().setFromEuler(new Euler(transform.rotation.x, transform.rotation.y, transform.rotation.z, "XYZ")),
+      new Vector3(transform.scale.x, transform.scale.y, transform.scale.z)
+    )
+    .multiply(new Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
 }
 
 function extractPhysics(node: WebHammerEngineNode) {

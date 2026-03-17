@@ -1069,7 +1069,7 @@ export function ViewportCanvas({
     const selectedIds = Array.from(
       new Set(
         raycasterRef.current.intersectObjects(objects, true)
-          .map((intersection) => resolveNodeIdFromSceneObject(intersection.object))
+          .map((intersection) => resolveNodeIdFromIntersection(intersection))
           .filter((nodeId): nodeId is string => Boolean(nodeId))
       )
     );
@@ -3523,12 +3523,34 @@ function createBrushRingBasis(normal: Vec3) {
   return { u, v };
 }
 
+function resolveNodeIdFromIntersection(intersection: { instanceId?: number; object: Object3D }) {
+  return typeof intersection.instanceId === "number"
+    ? resolveInstancedNodeIdFromSceneObject(intersection.object, intersection.instanceId)
+    : resolveNodeIdFromSceneObject(intersection.object);
+}
+
 function resolveNodeIdFromSceneObject(object: Object3D | null) {
   let current: Object3D | null = object;
 
   while (current) {
     if (current.name.startsWith("node:")) {
       return current.name.slice(5);
+    }
+
+    current = current.parent;
+  }
+
+  return undefined;
+}
+
+function resolveInstancedNodeIdFromSceneObject(object: Object3D | null, instanceId: number) {
+  let current: Object3D | null = object;
+
+  while (current) {
+    const instanceNodeIds = (current.userData.webHammer as { instanceNodeIds?: string[] } | undefined)?.instanceNodeIds;
+
+    if (Array.isArray(instanceNodeIds)) {
+      return instanceNodeIds[instanceId];
     }
 
     current = current.parent;

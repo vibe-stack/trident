@@ -2,7 +2,7 @@ import { Billboard, TransformControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import type { Entity, GeometryNode, Transform } from "@web-hammer/shared";
-import { localizeTransform, resolveTransformPivot, toTuple, vec3, type Vec3 } from "@web-hammer/shared";
+import { isInstancingNode, localizeTransform, resolveTransformPivot, toTuple, vec3, type Vec3 } from "@web-hammer/shared";
 import { objectToTransform, rebaseTransformPivot, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import type { ViewportCanvasProps } from "@/viewport/types";
@@ -62,7 +62,7 @@ export function ObjectTransformGizmo({
   const snapSize = resolveViewportSnapSize(viewport);
   const activePivotNode = activePivotNodeId ? selectedNodes.find((node) => node.id === activePivotNodeId) : undefined;
   const activePivotWorldNode = activePivotNodeId ? selectedWorldNodes.find((node) => node.id === activePivotNodeId) : undefined;
-  const pivotEditingEnabled = activeToolId === "transform" || activeToolId === "mesh-edit";
+  const pivotEditingEnabled = (activeToolId === "transform" || activeToolId === "mesh-edit") && (!selectedNode || !isInstancingNode(selectedNode));
 
   useEffect(() => {
     if (!pivotEditingEnabled) {

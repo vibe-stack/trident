@@ -1,5 +1,13 @@
-import type { Entity, GeometryNode, GroupNode, Vec3 } from "@web-hammer/shared";
-import { addVec3, localizeTransform, makeTransform, resolveSceneGraph, vec3 } from "@web-hammer/shared";
+import type { Entity, GeometryNode, GroupNode, InstancingNode, Vec3 } from "@web-hammer/shared";
+import {
+  addVec3,
+  isInstancingNode,
+  localizeTransform,
+  makeTransform,
+  resolveInstancingSourceNode,
+  resolveSceneGraph,
+  vec3
+} from "@web-hammer/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 import {
@@ -113,6 +121,166 @@ export function createDuplicateNodesCommand(
       }
     },
     duplicateIds: duplicateRootIds
+  };
+}
+
+export function createInstanceNodesCommand(
+  scene: SceneDocument,
+  nodeIds: string[],
+  offset: Vec3
+): {
+  command: Command;
+  instanceIds: string[];
+} {
+  const topLevelIds = resolveTopLevelSelectionIds(scene, nodeIds);
+  const sceneNodes = Array.from(scene.nodes.values());
+  const usedIds = new Set(sceneNodes.map((node) => node.id));
+  const childNodeIdsByParentId = new Map<string, string[]>();
+  sceneNodes.forEach((node) => {
+    if (!node.parentId) {
+      return;
+    }
+
+    const existingChildren = childNodeIdsByParentId.get(node.parentId);
+
+    if (existingChildren) {
+      existingChildren.push(node.id);
+      return;
+    }
+
+    childNodeIdsByParentId.set(node.parentId, [node.id]);
+  });
+  const createUniqueNodeId = (sourceId: string) => {
+    let attempt = 1;
+
+    while (true) {
+      const nodeId = `${sourceId}:copy:${attempt}`;
+
+      if (!usedIds.has(nodeId)) {
+        usedIds.add(nodeId);
+        return nodeId;
+      }
+
+      attempt += 1;
+    }
+  };
+  const createUniqueInstanceId = (sourceId: string) => {
+    let attempt = 1;
+
+    while (true) {
+      const instanceId = `${sourceId}:instance:copy:${attempt}`;
+
+      if (!usedIds.has(instanceId)) {
+        usedIds.add(instanceId);
+        return instanceId;
+      }
+
+      attempt += 1;
+    }
+  };
+  const createdNodes: GeometryNode[] = [];
+  const instanceIds: string[] = [];
+  const subtreeContainsInstancingTargets = (nodeId: string): boolean => {
+    const node = scene.getNode(nodeId);
+
+    if (!node) {
+      return false;
+    }
+
+    if (node.kind !== "group") {
+      return Boolean(resolveInstancingSourceNode(sceneNodes, node));
+    }
+
+    return (childNodeIdsByParentId.get(node.id) ?? []).some((childNodeId) => subtreeContainsInstancingTargets(childNodeId));
+  };
+  const cloneInstancedSubtree = (sourceNodeId: string, parentIdOverride?: string, isTopLevel = false): string | undefined => {
+    const node = scene.getNode(sourceNodeId);
+
+    if (!node) {
+      return undefined;
+    }
+
+    if (node.kind === "group") {
+      if (!subtreeContainsInstancingTargets(node.id)) {
+        return undefined;
+      }
+
+      const groupId = createUniqueNodeId(node.id);
+      const groupNode: GroupNode = {
+        ...structuredClone(node),
+        id: groupId,
+        name: isTopLevel ? `${node.name} Copy` : node.name,
+        parentId: parentIdOverride ?? node.parentId,
+        transform: structuredClone(node.transform)
+      };
+
+      if (isTopLevel) {
+        groupNode.transform.position = addVec3(groupNode.transform.position, offset);
+      }
+
+      createdNodes.push(groupNode);
+      (childNodeIdsByParentId.get(node.id) ?? []).forEach((childNodeId) => {
+        cloneInstancedSubtree(childNodeId, groupId);
+      });
+
+      return groupId;
+    }
+
+    const source = resolveInstancingSourceNode(sceneNodes, node);
+
+    if (!source) {
+      return undefined;
+    }
+
+    const instanceId = createUniqueInstanceId(source.id);
+    const instance: InstancingNode = {
+      data: {
+        sourceNodeId: source.id
+      },
+      id: instanceId,
+      kind: "instancing",
+      name: isInstancingNode(node) ? `${node.name} Copy` : `${source.name} Instance`,
+      parentId: parentIdOverride ?? node.parentId,
+      transform: {
+        position: isTopLevel ? addVec3(node.transform.position, offset) : structuredClone(node.transform.position),
+        rotation: structuredClone(node.transform.rotation),
+        scale: structuredClone(node.transform.scale)
+      }
+    };
+
+    createdNodes.push(instance);
+    return instance.id;
+  };
+
+  topLevelIds.forEach((id) => {
+    const node = scene.getNode(id);
+
+    if (!node) {
+      return;
+    }
+
+    const createdRootId = cloneInstancedSubtree(node.id, undefined, true);
+
+    if (createdRootId) {
+      instanceIds.push(createdRootId);
+    }
+  });
+
+  return {
+    command: {
+      label: "instance selection",
+      execute(nextScene) {
+        createdNodes.forEach((createdNode) => {
+          nextScene.addNode(structuredClone(createdNode));
+        });
+      },
+      undo(nextScene) {
+        createdNodes.forEach((createdNode) => {
+          nextScene.removeNode(createdNode.id);
+        });
+      }
+    },
+    instanceIds
   };
 }
 

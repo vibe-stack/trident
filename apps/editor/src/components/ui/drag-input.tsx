@@ -40,6 +40,7 @@ export function DragInput({
   const [dragStartValue, setDragStartValue] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const displayRef = useRef<HTMLDivElement>(null);
+  const hasDraggedRef = useRef(false);
   const lastValueRef = useRef<number | undefined>(value);
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export function DragInput({
     
     setIsDragging(true);
     setHasDragged(false);
+    hasDraggedRef.current = false;
     setDragStartX(e.clientX);
     setDragStartValue(value ?? 0);
     lastValueRef.current = value ?? 0;
@@ -89,6 +91,7 @@ export function DragInput({
     
     // Mark that we've actually dragged if moved more than 2 pixels
     if (Math.abs(deltaX) > 2) {
+      hasDraggedRef.current = true;
       setHasDragged(true);
     }
     
@@ -103,12 +106,15 @@ export function DragInput({
   }, [isDragging, step, min, max, onChange, dragStartX, dragStartValue]);
 
   const handleMouseUp = useCallback(() => {
+    const didDrag = hasDraggedRef.current;
+
     setIsDragging(false);
     // Reset accumulated delta after a short delay to allow click detection
     setTimeout(() => {
+      hasDraggedRef.current = false;
       setHasDragged(false);
     }, 0);
-    if (onValueCommit) {
+    if (didDrag && onValueCommit) {
       const v = lastValueRef.current ?? value ?? dragStartValue;
       onValueCommit(v);
     }
@@ -178,8 +184,13 @@ export function DragInput({
       let finalValue = numValue;
       if (min !== undefined) finalValue = Math.max(min, finalValue);
       if (max !== undefined) finalValue = Math.min(max, finalValue);
+      lastValueRef.current = finalValue;
       onChange(finalValue);
-      if (onValueCommit) onValueCommit(finalValue);
+      if (onValueCommit) {
+        window.setTimeout(() => {
+          onValueCommit(finalValue);
+        }, 0);
+      }
     }
     setIsEditing(false);
   };

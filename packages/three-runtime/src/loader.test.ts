@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { loadWebHammerEngineScene } from "./loader";
 import type { WebHammerEngineScene } from "./types";
 import { makeTransform, vec3 } from "@web-hammer/shared";
-import { LOD, Vector3 } from "three";
+import { InstancedMesh, LOD, Vector3 } from "three";
 
 describe("loadWebHammerEngineScene", () => {
   test("rebuilds grouped runtime hierarchies and resolves entity world transforms", async () => {
@@ -378,5 +378,232 @@ describe("loadWebHammerEngineScene", () => {
 
     expect(lodObject).toBeInstanceOf(LOD);
     expect((lodObject as LOD | undefined)?.levels.map((level) => level.distance)).toEqual([0, 10, 30]);
+  });
+
+  test("builds instanced runtime meshes for instancing nodes", async () => {
+    const scene: WebHammerEngineScene = {
+      assets: [],
+      entities: [],
+      layers: [],
+      materials: [],
+      metadata: {
+        exportedAt: new Date("2026-03-17T10:00:00.000Z").toISOString(),
+        format: "web-hammer-engine",
+        version: 6
+      },
+      nodes: [
+        {
+          data: {
+            role: "prop",
+            shape: "cube",
+            size: vec3(1, 1, 1)
+          },
+          geometry: {
+            primitives: [
+              {
+                indices: [0, 1, 2, 0, 2, 3],
+                material: {
+                  color: "#ffffff",
+                  id: "material:test",
+                  metallicFactor: 0,
+                  name: "Test",
+                  roughnessFactor: 1
+                },
+                normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+                positions: [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0],
+                uvs: [0, 0, 1, 0, 1, 1, 0, 1]
+              }
+            ]
+          },
+          id: "node:source",
+          kind: "primitive",
+          name: "Source Cube",
+          transform: makeTransform(vec3(0, 0, 0))
+        },
+        {
+          data: {
+            sourceNodeId: "node:source"
+          },
+          id: "node:instance:a",
+          kind: "instancing",
+          name: "Instance A",
+          transform: {
+            position: vec3(2, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        },
+        {
+          data: {
+            sourceNodeId: "node:source"
+          },
+          id: "node:instance:b",
+          kind: "instancing",
+          name: "Instance B",
+          transform: {
+            position: vec3(-2, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        }
+      ],
+      settings: {
+        player: {
+          cameraMode: "fps",
+          canCrouch: true,
+          canJump: true,
+          canRun: true,
+          crouchHeight: 1.2,
+          height: 1.8,
+          jumpHeight: 1,
+          movementSpeed: 4,
+          runningSpeed: 6
+        },
+        world: {
+          ambientColor: "#ffffff",
+          ambientIntensity: 0,
+          fogColor: "#000000",
+          fogFar: 50,
+          fogNear: 10,
+          gravity: vec3(0, -9.81, 0),
+          lod: {
+            bakedAt: "",
+            enabled: false,
+            lowDetailRatio: 0.22,
+            midDetailRatio: 0.52
+          },
+          physicsEnabled: true,
+          skybox: {
+            affectsLighting: false,
+            blur: 0,
+            enabled: false,
+            format: "image",
+            intensity: 1,
+            lightingIntensity: 1,
+            name: "",
+            source: ""
+          }
+        }
+      }
+    };
+
+    const loaded = await loadWebHammerEngineScene(scene);
+    const instancedMeshes: InstancedMesh[] = [];
+
+    loaded.root.traverse((child) => {
+      if (child instanceof InstancedMesh) {
+        instancedMeshes.push(child);
+      }
+    });
+
+    expect(instancedMeshes).toHaveLength(1);
+    expect(instancedMeshes[0]?.count).toBe(2);
+    expect(loaded.nodes.get("node:instance:a")?.visible).toBe(false);
+  });
+
+  test("builds instanced runtime meshes for imported model instancing nodes", async () => {
+    const scene: WebHammerEngineScene = {
+      assets: [
+        {
+          id: "asset:model:source",
+          metadata: {
+            modelFormat: "glb",
+            nativeCenterX: 0,
+            nativeCenterY: 0.5,
+            nativeCenterZ: 0,
+            nativeSizeX: 2,
+            nativeSizeY: 2,
+            nativeSizeZ: 2,
+            previewColor: "#6b7280"
+          },
+          path: "",
+          type: "model"
+        }
+      ],
+      entities: [],
+      layers: [],
+      materials: [],
+      metadata: {
+        exportedAt: new Date("2026-03-17T10:00:00.000Z").toISOString(),
+        format: "web-hammer-engine",
+        version: 6
+      },
+      nodes: [
+        {
+          data: {
+            assetId: "asset:model:source",
+            path: ""
+          },
+          id: "node:model-source",
+          kind: "model",
+          name: "Model Source",
+          transform: makeTransform(vec3(0, 0, 0))
+        },
+        {
+          data: {
+            sourceNodeId: "node:model-source"
+          },
+          id: "node:model-instance",
+          kind: "instancing",
+          name: "Model Source Instance",
+          transform: {
+            position: vec3(4, 0, 0),
+            rotation: vec3(0, 0, 0),
+            scale: vec3(1, 1, 1)
+          }
+        }
+      ],
+      settings: {
+        player: {
+          cameraMode: "fps",
+          canCrouch: true,
+          canJump: true,
+          canRun: true,
+          crouchHeight: 1.2,
+          height: 1.8,
+          jumpHeight: 1,
+          movementSpeed: 4,
+          runningSpeed: 6
+        },
+        world: {
+          ambientColor: "#ffffff",
+          ambientIntensity: 0,
+          fogColor: "#000000",
+          fogFar: 50,
+          fogNear: 10,
+          gravity: vec3(0, -9.81, 0),
+          lod: {
+            bakedAt: "",
+            enabled: false,
+            lowDetailRatio: 0.22,
+            midDetailRatio: 0.52
+          },
+          physicsEnabled: true,
+          skybox: {
+            affectsLighting: false,
+            blur: 0,
+            enabled: false,
+            format: "image",
+            intensity: 1,
+            lightingIntensity: 1,
+            name: "",
+            source: ""
+          }
+        }
+      }
+    };
+
+    const loaded = await loadWebHammerEngineScene(scene);
+    const instancedMeshes: InstancedMesh[] = [];
+
+    loaded.root.traverse((child) => {
+      if (child instanceof InstancedMesh) {
+        instancedMeshes.push(child);
+      }
+    });
+
+    expect(instancedMeshes).toHaveLength(1);
+    expect(instancedMeshes[0]?.count).toBe(1);
+    expect(instancedMeshes[0]?.userData.webHammer?.sourceNodeId).toBe("node:model-source");
   });
 });

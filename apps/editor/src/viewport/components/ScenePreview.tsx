@@ -6,11 +6,15 @@ import {
   Box3,
   BoxGeometry,
   CapsuleGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
   FrontSide,
+  InstancedMesh,
+  Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   RepeatWrapping,
@@ -18,7 +22,7 @@ import {
   SRGBColorSpace,
   TextureLoader,
   Vector3,
-  type BufferGeometry,
+  BufferGeometry,
   type Side
 } from "three";
 import type { GeometryNode, MaterialRenderSide, SceneHook, Transform, Vec3 } from "@web-hammer/shared";
@@ -30,6 +34,7 @@ import {
   enableBvhRaycast,
   type DerivedEntityMarker,
   type DerivedGroupMarker,
+  type DerivedInstancedMesh,
   type DerivedLight,
   type DerivedRenderMesh,
   type DerivedRenderScene
@@ -44,6 +49,10 @@ const modelSceneCache = new Map<string, Object3D>();
 const gltfLoader = new GLTFLoader();
 const mtlLoader = new MTLLoader();
 const modelTextureLoader = new TextureLoader();
+const tempInstanceObject = new Object3D();
+const tempInstanceMatrix = new Matrix4();
+const tempPivotMatrix = new Matrix4();
+const tempInstanceColor = new Color();
 
 export function ScenePreview({
   hiddenNodeIds = [],
@@ -80,7 +89,7 @@ export function ScenePreview({
   const hiddenIds = useMemo(() => new Set(hiddenNodeIds), [hiddenNodeIds]);
   const selectedIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const physicsActive = renderMode === "lit" && physicsPlayback !== "stopped" && sceneSettings.world.physicsEnabled;
-  const { physicsPropMeshes, playerSpawn, staticMeshes, visibleEntityMarkers } = useMemo(() => {
+  const { physicsPropMeshes, playerSpawn, staticMeshes, visibleEntityMarkers, visibleInstancedMeshes } = useMemo(() => {
     const nextPlayerSpawn = physicsActive
       ? renderScene.entityMarkers.find((entity) => entity.entityType === "player-spawn")
       : undefined;
@@ -95,12 +104,19 @@ export function ScenePreview({
       physicsActive && nextPlayerSpawn
         ? renderScene.entityMarkers.filter((entity) => entity.entityId !== nextPlayerSpawn.entityId)
         : renderScene.entityMarkers;
+    const nextVisibleInstancedMeshes = renderScene.instancedMeshes
+      .map((batch) => ({
+        ...batch,
+        instances: batch.instances.filter((instance) => !hiddenIds.has(instance.nodeId))
+      }))
+      .filter((batch) => batch.instances.length > 0);
 
     return {
       physicsPropMeshes: nextPhysicsPropMeshes,
       playerSpawn: nextPlayerSpawn,
       staticMeshes: nextStaticMeshes,
-      visibleEntityMarkers: nextVisibleEntityMarkers
+      visibleEntityMarkers: nextVisibleEntityMarkers,
+      visibleInstancedMeshes: nextVisibleInstancedMeshes
     };
   }, [hiddenIds, physicsActive, renderScene]);
 
@@ -122,6 +138,22 @@ export function ScenePreview({
           onSelectNodes={onSelectNode}
           renderMode={renderMode}
           selected={selectedIdSet.has(mesh.nodeId)}
+        />
+      ))}
+
+      {visibleInstancedMeshes.map((batch) => (
+        <RenderInstancedMeshBatch
+          batch={batch}
+          hoveredNodeId={hoveredNodeId}
+          interactive={interactive}
+          key={batch.batchId}
+          onFocusNode={onFocusNode}
+          onHoverEnd={() => setHoveredNodeId(undefined)}
+          onHoverStart={setHoveredNodeId}
+          onMeshObjectChange={onMeshObjectChange}
+          onSelectNodes={onSelectNode}
+          renderMode={renderMode}
+          selectedNodeIds={selectedIdSet}
         />
       ))}
 
@@ -856,6 +888,581 @@ function PhysicsPropMesh({
         }}
       />
     </RigidBody>
+  );
+}
+
+function RenderInstancedMeshBatch({
+  batch,
+  hoveredNodeId,
+  interactive,
+  onFocusNode,
+  onHoverEnd,
+  onHoverStart,
+  onMeshObjectChange,
+  onSelectNodes,
+  renderMode,
+  selectedNodeIds
+}: {
+  batch: DerivedInstancedMesh;
+  hoveredNodeId?: string;
+  interactive: boolean;
+  onFocusNode: (nodeId: string) => void;
+  onHoverEnd: () => void;
+  onHoverStart: (nodeId: string) => void;
+  onMeshObjectChange: (nodeId: string, object: Object3D | null) => void;
+  onSelectNodes: (nodeIds: string[]) => void;
+  renderMode: ViewportRenderMode;
+  selectedNodeIds: Set<string>;
+}) {
+  if (batch.mesh.modelPath) {
+    return (
+      <RenderInstancedModelBatch
+        batch={batch}
+        hoveredNodeId={hoveredNodeId}
+        interactive={interactive}
+        onFocusNode={onFocusNode}
+        onHoverEnd={onHoverEnd}
+        onHoverStart={onHoverStart}
+        onMeshObjectChange={onMeshObjectChange}
+        onSelectNodes={onSelectNodes}
+        renderMode={renderMode}
+        selectedNodeIds={selectedNodeIds}
+      />
+    );
+  }
+
+  const meshRef = useRef<InstancedMesh | null>(null);
+  const geometry = useRenderableGeometry(batch.mesh, renderMode);
+  const previewMaterials = useInstancedPreviewMaterials(batch.mesh, renderMode);
+  const pivot = resolveMeshPivot(batch.mesh);
+  const batchNodeIds = useMemo(() => batch.instances.map((instance) => instance.nodeId), [batch.instances]);
+
+  useEffect(() => {
+    const meshObject = meshRef.current;
+
+    if (!meshObject || !geometry || previewMaterials.length === 0) {
+      return;
+    }
+
+    tempPivotMatrix.makeTranslation(-pivot.x, -pivot.y, -pivot.z);
+
+    batch.instances.forEach((instance, index) => {
+      tempInstanceObject.position.set(instance.position.x, instance.position.y, instance.position.z);
+      tempInstanceObject.rotation.set(instance.rotation.x, instance.rotation.y, instance.rotation.z);
+      tempInstanceObject.scale.set(instance.scale.x, instance.scale.y, instance.scale.z);
+      tempInstanceObject.updateMatrix();
+      tempInstanceMatrix.copy(tempInstanceObject.matrix).multiply(tempPivotMatrix);
+      meshObject.setMatrixAt(index, tempInstanceMatrix);
+      meshObject.setColorAt(
+        index,
+        tempInstanceColor.set(
+          selectedNodeIds.has(instance.nodeId)
+            ? "#ffb35a"
+            : hoveredNodeId === instance.nodeId
+              ? "#67e8f9"
+              : "#ffffff"
+        )
+      );
+    });
+
+    meshObject.count = batch.instances.length;
+    meshObject.instanceMatrix.needsUpdate = true;
+
+    if (meshObject.instanceColor) {
+      meshObject.instanceColor.needsUpdate = true;
+    }
+  }, [batch.instances, geometry, hoveredNodeId, pivot.x, pivot.y, pivot.z, previewMaterials, selectedNodeIds]);
+
+  useEffect(() => {
+    return () => {
+      previewMaterials.forEach((material) => {
+        if (material instanceof MeshStandardMaterial || material instanceof MeshBasicMaterial) {
+          material.dispose();
+        }
+      });
+    };
+  }, [previewMaterials]);
+
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  if (!geometry || previewMaterials.length === 0) {
+    return null;
+  }
+
+  return (
+    <instancedMesh
+      args={[geometry, previewMaterials.length === 1 ? previewMaterials[0] : previewMaterials, batch.instances.length]}
+      castShadow={renderMode === "lit"}
+      name={`node:${batch.batchId}`}
+      onClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onSelectNodes([nodeId]);
+      }}
+      onDoubleClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onFocusNode(nodeId);
+      }}
+      onPointerOut={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverEnd();
+      }}
+      onPointerOver={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverStart(nodeId);
+      }}
+      receiveShadow={renderMode === "lit"}
+      ref={(object) => {
+        if (object) {
+          object.userData.webHammer = {
+            instanceNodeIds: batchNodeIds,
+            sourceNodeId: batch.sourceNodeId
+          };
+        }
+
+        onMeshObjectChange(batch.batchId, object);
+        meshRef.current = object;
+      }}
+    />
+  );
+}
+
+function RenderInstancedModelBatch({
+  batch,
+  hoveredNodeId,
+  interactive,
+  onFocusNode,
+  onHoverEnd,
+  onHoverStart,
+  onMeshObjectChange,
+  onSelectNodes,
+  renderMode,
+  selectedNodeIds
+}: {
+  batch: DerivedInstancedMesh;
+  hoveredNodeId?: string;
+  interactive: boolean;
+  onFocusNode: (nodeId: string) => void;
+  onHoverEnd: () => void;
+  onHoverStart: (nodeId: string) => void;
+  onMeshObjectChange: (nodeId: string, object: Object3D | null) => void;
+  onSelectNodes: (nodeIds: string[]) => void;
+  renderMode: ViewportRenderMode;
+  selectedNodeIds: Set<string>;
+}) {
+  const loadedScene = useLoadedModelScene(
+    batch.mesh.modelPath,
+    batch.mesh.modelFormat === "obj" ? "obj" : "glb",
+    batch.mesh.modelTexturePath,
+    batch.mesh.modelMtlText
+  );
+  const loadedBounds = useMemo(
+    () => (loadedScene ? computeModelBounds(loadedScene) : undefined),
+    [loadedScene]
+  );
+  const center = loadedBounds?.center ?? batch.mesh.modelCenter ?? { x: 0, y: 0, z: 0 };
+  const modelParts = useMemo(() => {
+    if (!loadedScene) {
+      return [];
+    }
+
+    const root = loadedScene.clone(true);
+    root.position.set(-center.x, -center.y, -center.z);
+    root.updateMatrixWorld(true);
+    const parts: Array<{
+      geometry: BufferGeometry;
+      key: string;
+      localMatrix: Matrix4;
+      material: Mesh["material"];
+    }> = [];
+    let partIndex = 0;
+
+    root.traverse((child) => {
+      if (!(child instanceof Mesh) || !(child.geometry instanceof BufferGeometry)) {
+        return;
+      }
+
+      parts.push({
+        geometry: child.geometry,
+        key: `${partIndex}:${child.name || "mesh"}`,
+        localMatrix: child.matrixWorld.clone(),
+        material: child.material
+      });
+      partIndex += 1;
+    });
+
+    return parts;
+  }, [center.x, center.y, center.z, loadedScene]);
+
+  if (renderMode === "wireframe" || modelParts.length === 0) {
+    return (
+      <RenderInstancedModelBoundsBatch
+        batch={batch}
+        hoveredNodeId={hoveredNodeId}
+        interactive={interactive}
+        onFocusNode={onFocusNode}
+        onHoverEnd={onHoverEnd}
+        onHoverStart={onHoverStart}
+        onMeshObjectChange={onMeshObjectChange}
+        onSelectNodes={onSelectNodes}
+        renderMode={renderMode}
+        selectedNodeIds={selectedNodeIds}
+        size={loadedBounds?.size ?? batch.mesh.modelSize ?? { x: 1.4, y: 1.4, z: 1.4 }}
+      />
+    );
+  }
+
+  return (
+    <group
+      name={`node:${batch.batchId}`}
+      ref={(object) => {
+        onMeshObjectChange(batch.batchId, object);
+      }}
+    >
+      {modelParts.map((part) => (
+        <RenderInstancedModelPart
+          batch={batch}
+          hoveredNodeId={hoveredNodeId}
+          interactive={interactive}
+          key={part.key}
+          localMatrix={part.localMatrix}
+          material={part.material}
+          onFocusNode={onFocusNode}
+          onHoverEnd={onHoverEnd}
+          onHoverStart={onHoverStart}
+          onSelectNodes={onSelectNodes}
+          partKey={part.key}
+          renderMode={renderMode}
+          selectedNodeIds={selectedNodeIds}
+          sourceGeometry={part.geometry}
+        />
+      ))}
+    </group>
+  );
+}
+
+function RenderInstancedModelPart({
+  batch,
+  hoveredNodeId,
+  interactive,
+  localMatrix,
+  material,
+  onFocusNode,
+  onHoverEnd,
+  onHoverStart,
+  onSelectNodes,
+  partKey,
+  renderMode,
+  selectedNodeIds,
+  sourceGeometry
+}: {
+  batch: DerivedInstancedMesh;
+  hoveredNodeId?: string;
+  interactive: boolean;
+  localMatrix: Matrix4;
+  material: Mesh["material"];
+  onFocusNode: (nodeId: string) => void;
+  onHoverEnd: () => void;
+  onHoverStart: (nodeId: string) => void;
+  onSelectNodes: (nodeIds: string[]) => void;
+  partKey: string;
+  renderMode: ViewportRenderMode;
+  selectedNodeIds: Set<string>;
+  sourceGeometry: BufferGeometry;
+}) {
+  const meshRef = useRef<InstancedMesh | null>(null);
+  const batchNodeIds = useMemo(() => batch.instances.map((instance) => instance.nodeId), [batch.instances]);
+
+  useEffect(() => {
+    const meshObject = meshRef.current;
+
+    if (!meshObject) {
+      return;
+    }
+
+    batch.instances.forEach((instance, index) => {
+      tempInstanceObject.position.set(instance.position.x, instance.position.y, instance.position.z);
+      tempInstanceObject.rotation.set(instance.rotation.x, instance.rotation.y, instance.rotation.z);
+      tempInstanceObject.scale.set(instance.scale.x, instance.scale.y, instance.scale.z);
+      tempInstanceObject.updateMatrix();
+      tempInstanceMatrix.copy(tempInstanceObject.matrix).multiply(localMatrix);
+      meshObject.setMatrixAt(index, tempInstanceMatrix);
+      meshObject.setColorAt(
+        index,
+        tempInstanceColor.set(
+          selectedNodeIds.has(instance.nodeId)
+            ? "#ffb35a"
+            : hoveredNodeId === instance.nodeId
+              ? "#67e8f9"
+              : "#ffffff"
+        )
+      );
+    });
+
+    meshObject.count = batch.instances.length;
+    meshObject.instanceMatrix.needsUpdate = true;
+
+    if (meshObject.instanceColor) {
+      meshObject.instanceColor.needsUpdate = true;
+    }
+  }, [batch.instances, hoveredNodeId, localMatrix, selectedNodeIds]);
+
+  return (
+    <instancedMesh
+      args={[sourceGeometry, material, batch.instances.length]}
+      castShadow={renderMode === "lit"}
+      name={`node:${batch.batchId}:${partKey}`}
+      onClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onSelectNodes([nodeId]);
+      }}
+      onDoubleClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onFocusNode(nodeId);
+      }}
+      onPointerOut={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverEnd();
+      }}
+      onPointerOver={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverStart(nodeId);
+      }}
+      receiveShadow={renderMode === "lit"}
+      ref={(object) => {
+        if (object) {
+          object.userData.webHammer = {
+            instanceNodeIds: batchNodeIds,
+            sourceNodeId: batch.sourceNodeId
+          };
+        }
+
+        meshRef.current = object;
+      }}
+    />
+  );
+}
+
+function RenderInstancedModelBoundsBatch({
+  batch,
+  hoveredNodeId,
+  interactive,
+  onFocusNode,
+  onHoverEnd,
+  onHoverStart,
+  onMeshObjectChange,
+  onSelectNodes,
+  renderMode,
+  selectedNodeIds,
+  size
+}: {
+  batch: DerivedInstancedMesh;
+  hoveredNodeId?: string;
+  interactive: boolean;
+  onFocusNode: (nodeId: string) => void;
+  onHoverEnd: () => void;
+  onHoverStart: (nodeId: string) => void;
+  onMeshObjectChange: (nodeId: string, object: Object3D | null) => void;
+  onSelectNodes: (nodeIds: string[]) => void;
+  renderMode: ViewportRenderMode;
+  selectedNodeIds: Set<string>;
+  size: Vec3;
+}) {
+  const meshRef = useRef<InstancedMesh | null>(null);
+  const geometry = useMemo(() => new BoxGeometry(size.x, size.y, size.z), [size.x, size.y, size.z]);
+  const material = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: "#94a3b8",
+        depthWrite: false,
+        opacity: renderMode === "wireframe" ? 1 : 0.85,
+        toneMapped: false,
+        transparent: renderMode !== "wireframe",
+        wireframe: true
+      }),
+    [renderMode]
+  );
+  const batchNodeIds = useMemo(() => batch.instances.map((instance) => instance.nodeId), [batch.instances]);
+
+  useEffect(() => {
+    const meshObject = meshRef.current;
+
+    if (!meshObject) {
+      return;
+    }
+
+    batch.instances.forEach((instance, index) => {
+      tempInstanceObject.position.set(instance.position.x, instance.position.y, instance.position.z);
+      tempInstanceObject.rotation.set(instance.rotation.x, instance.rotation.y, instance.rotation.z);
+      tempInstanceObject.scale.set(instance.scale.x, instance.scale.y, instance.scale.z);
+      tempInstanceObject.updateMatrix();
+      meshObject.setMatrixAt(index, tempInstanceObject.matrix);
+      meshObject.setColorAt(
+        index,
+        tempInstanceColor.set(
+          selectedNodeIds.has(instance.nodeId)
+            ? "#f97316"
+            : hoveredNodeId === instance.nodeId
+              ? "#67e8f9"
+              : "#94a3b8"
+        )
+      );
+    });
+
+    meshObject.count = batch.instances.length;
+    meshObject.instanceMatrix.needsUpdate = true;
+
+    if (meshObject.instanceColor) {
+      meshObject.instanceColor.needsUpdate = true;
+    }
+  }, [batch.instances, hoveredNodeId, selectedNodeIds]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
+  return (
+    <instancedMesh
+      args={[geometry, material, batch.instances.length]}
+      castShadow={renderMode === "lit"}
+      name={`node:${batch.batchId}`}
+      onClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onSelectNodes([nodeId]);
+      }}
+      onDoubleClick={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onFocusNode(nodeId);
+      }}
+      onPointerOut={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverEnd();
+      }}
+      onPointerOver={(event) => {
+        if (!interactive) {
+          return;
+        }
+
+        const nodeId = typeof event.instanceId === "number" ? batch.instances[event.instanceId]?.nodeId : undefined;
+
+        if (!nodeId) {
+          return;
+        }
+
+        event.stopPropagation();
+        onHoverStart(nodeId);
+      }}
+      receiveShadow={renderMode === "lit"}
+      ref={(object) => {
+        if (object) {
+          object.userData.webHammer = {
+            instanceNodeIds: batchNodeIds,
+            sourceNodeId: batch.sourceNodeId
+          };
+        }
+
+        onMeshObjectChange(batch.batchId, object);
+        meshRef.current = object;
+      }}
+    />
   );
 }
 
@@ -1624,6 +2231,24 @@ function usePreviewMaterials(
   }, [hovered, mesh.material, mesh.materials, renderMode, selected]);
 }
 
+function useInstancedPreviewMaterials(mesh: DerivedRenderMesh, renderMode: ViewportRenderMode) {
+  return useMemo(() => {
+    const specs = mesh.materials ?? [mesh.material];
+
+    if (renderMode === "lit") {
+      return specs.map((spec) => createPreviewMaterial(spec, false, false));
+    }
+
+    return specs.map((spec) => new MeshBasicMaterial({
+      color: "#ffffff",
+      depthWrite: false,
+      side: resolvePreviewMaterialSide(spec.side),
+      toneMapped: false,
+      wireframe: true
+    }));
+  }, [mesh.material, mesh.materials, renderMode]);
+}
+
 function resolveMeshPivot(mesh: DerivedRenderMesh) {
   return resolveTransformPivot({
     pivot: mesh.pivot,
@@ -1633,12 +2258,15 @@ function resolveMeshPivot(mesh: DerivedRenderMesh) {
   });
 }
 
-function resolveIntersectedIds(intersections: Array<{ object: Object3D }>) {
+function resolveIntersectedIds(intersections: Array<{ instanceId?: number; object: Object3D }>) {
   const ids: string[] = [];
   const seen = new Set<string>();
 
   intersections.forEach((intersection) => {
-    const id = resolveSceneObjectIdFromObject(intersection.object);
+    const id =
+      typeof intersection.instanceId === "number"
+        ? resolveInstancedNodeIdFromObject(intersection.object, intersection.instanceId)
+        : resolveSceneObjectIdFromObject(intersection.object);
 
     if (!id || seen.has(id)) {
       return;
@@ -1661,6 +2289,22 @@ function resolveSceneObjectIdFromObject(object: Object3D | null) {
 
     if (current.name.startsWith("entity:")) {
       return current.name.slice(7);
+    }
+
+    current = current.parent;
+  }
+
+  return undefined;
+}
+
+function resolveInstancedNodeIdFromObject(object: Object3D | null, instanceId: number) {
+  let current: Object3D | null = object;
+
+  while (current) {
+    const instanceNodeIds = (current.userData.webHammer as { instanceNodeIds?: string[] } | undefined)?.instanceNodeIds;
+
+    if (Array.isArray(instanceNodeIds)) {
+      return instanceNodeIds[instanceId];
     }
 
     current = current.parent;

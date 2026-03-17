@@ -3,6 +3,7 @@ import type {
   Entity,
   GeometryNode,
   GroupNode,
+  InstancingNode,
   LightNode,
   MeshNode,
   ModelNode,
@@ -464,8 +465,41 @@ export function isPrimitiveNode(node: GeometryNode): node is PrimitiveNode {
   return node.kind === "primitive";
 }
 
+export function isInstancingNode(node: GeometryNode): node is InstancingNode {
+  return node.kind === "instancing";
+}
+
 export function isLightNode(node: GeometryNode): node is LightNode {
   return node.kind === "light";
+}
+
+export function isInstancingSourceNode(node: GeometryNode): node is BrushNode | MeshNode | PrimitiveNode | ModelNode {
+  return isBrushNode(node) || isMeshNode(node) || isPrimitiveNode(node) || isModelNode(node);
+}
+
+export function resolveInstancingSourceNode(
+  nodes: Iterable<GeometryNode>,
+  nodeOrId: GeometryNode | NodeID,
+  maxDepth = 32
+) {
+  const nodesById = new Map(Array.from(nodes, (node) => [node.id, node] as const));
+  let current = typeof nodeOrId === "string" ? nodesById.get(nodeOrId) : nodeOrId;
+  let depth = 0;
+
+  while (current && depth <= maxDepth) {
+    if (isInstancingSourceNode(current)) {
+      return current;
+    }
+
+    if (!isInstancingNode(current)) {
+      return undefined;
+    }
+
+    current = nodesById.get(current.data.sourceNodeId);
+    depth += 1;
+  }
+
+  return undefined;
 }
 
 function transformToMatrix(transform: Transform) {

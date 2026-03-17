@@ -1,5 +1,5 @@
 import type { Transform, Vec3 } from "@web-hammer/shared";
-import { scaleVec3, vec3 } from "@web-hammer/shared";
+import { isInstancingNode, scaleVec3, vec3 } from "@web-hammer/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 import { applyPositionDelta, flipScaleAxis } from "./helpers";
@@ -47,7 +47,13 @@ export function createSetNodeTransformCommand(
   }
 
   const before = structuredClone(beforeTransform ?? node.transform);
-  const next = structuredClone(nextTransform);
+  const next = isInstancingNode(node)
+    ? {
+        position: structuredClone(nextTransform.position),
+        rotation: structuredClone(nextTransform.rotation),
+        scale: structuredClone(nextTransform.scale)
+      }
+    : structuredClone(nextTransform);
 
   return {
     label: "set transform",

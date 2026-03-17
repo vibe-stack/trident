@@ -1,6 +1,7 @@
 import type {
   BrushNode,
   Entity,
+  InstancingNode,
   LightNode,
   MeshNode,
   ModelNode,
@@ -146,6 +147,41 @@ export function createPlaceLightNodeCommand(
   return {
     command: {
       label: "place light",
+      execute(nextScene) {
+        nextScene.addNode(structuredClone(node));
+      },
+      undo(nextScene) {
+        nextScene.removeNode(node.id);
+      }
+    },
+    nodeId
+  };
+}
+
+export function createPlaceInstancingNodeCommand(
+  scene: SceneDocument,
+  transform: Transform,
+  instance: Pick<InstancingNode, "data" | "name">
+): {
+  command: Command;
+  nodeId: string;
+} {
+  const nodeId = createDuplicateNodeId(scene, "node:instance:placed");
+  const node: InstancingNode = {
+    id: nodeId,
+    kind: "instancing",
+    name: instance.name,
+    transform: {
+      position: structuredClone(transform.position),
+      rotation: structuredClone(transform.rotation),
+      scale: structuredClone(transform.scale)
+    },
+    data: structuredClone(instance.data)
+  };
+
+  return {
+    command: {
+      label: "place instance",
       execute(nextScene) {
         nextScene.addNode(structuredClone(node));
       },

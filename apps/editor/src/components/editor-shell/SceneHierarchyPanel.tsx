@@ -11,7 +11,7 @@ type SceneHierarchyPanelProps = {
   nodes: GeometryNode[];
   onFocusNode: (nodeId: string) => void;
   onSelectNodes: (nodeIds: string[]) => void;
-  selectedNodeId?: string;
+  selectedNodeIds: string[];
 };
 
 export function SceneHierarchyPanel({
@@ -20,9 +20,10 @@ export function SceneHierarchyPanel({
   nodes,
   onFocusNode,
   onSelectNodes,
-  selectedNodeId
+  selectedNodeIds
 }: SceneHierarchyPanelProps) {
   const [query, setQuery] = useState("");
+  const selectedIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const sceneGraph = resolveSceneGraph(nodes, entities);
@@ -137,11 +138,22 @@ export function SceneHierarchyPanel({
               <button
                 className={cn(
                   "block w-full rounded-xl px-2.5 py-2 text-left text-[12px] font-medium text-foreground/62 transition-colors hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-45",
-                  selectedNodeId === item.id && "bg-emerald-500/14 text-emerald-200"
+                  selectedIdSet.has(item.id) && "bg-emerald-500/14 text-emerald-200"
                 )}
                 disabled={!interactive}
                 key={item.id}
-                onClick={() => onSelectNodes([item.id])}
+                onClick={(event) => {
+                  if (event.shiftKey) {
+                    onSelectNodes(
+                      selectedIdSet.has(item.id)
+                        ? selectedNodeIds.filter((selectedId) => selectedId !== item.id)
+                        : [...selectedNodeIds, item.id]
+                    );
+                    return;
+                  }
+
+                  onSelectNodes([item.id]);
+                }}
                 onDoubleClick={() => onFocusNode(item.id)}
                 style={{ paddingLeft: `${item.depth * 14 + 10}px` }}
                 type="button"

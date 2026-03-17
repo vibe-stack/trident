@@ -2,6 +2,29 @@
 
 Runtime loader and bundle helpers for consuming Web Hammer scene exports in plain Three.js apps.
 
+## Runtime Scene Object Factory
+
+If you do not want the full `loadWebHammerEngineScene()` scene-loader lifecycle, `@web-hammer/three-runtime` also exposes `createWebHammerSceneObjectFactory()` for lower-level consumers.
+
+Use it when your app already owns scene orchestration but wants the same object/model/instancing behavior as the runtime loader:
+
+```ts
+import { createWebHammerSceneObjectFactory } from "@web-hammer/three-runtime";
+
+const factory = createWebHammerSceneObjectFactory(scene, {
+  lod: {
+    midDistance: 10,
+    lowDistance: 30
+  },
+  resolveAssetUrl: ({ path }) => `/assets/${path}`
+});
+
+const nodeObject = await factory.createNodeObject(scene.nodes[0]);
+const instancingObjects = await factory.createInstancingObjects();
+```
+
+`createInstancingObjects()` batches both authored geometry instances and imported model instances into real Three.js `InstancedMesh` objects.
+
 ## What To Export
 
 - Use `.whmap` as the editor-native source file. It is for save/load and round-tripping back into the editor.

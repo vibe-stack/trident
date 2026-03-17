@@ -504,7 +504,7 @@ export function EditorShell({
           selectedFaceIds={selectedFaceIds}
           selectedMaterialId={selectedMaterialId}
           selectedNode={selectedNode}
-          selectedNodeId={selectedObjectId}
+          selectedNodeIds={selectedNodeIds}
           textures={textures}
           viewportTarget={activeViewport.camera.target}
         />
