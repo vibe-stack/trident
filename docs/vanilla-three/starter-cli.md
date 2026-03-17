@@ -32,6 +32,8 @@ Using pnpm:
 pnpm dlx create-web-hammer my-game --package-manager pnpm
 ```
 
+Inside this repository, create starters under `samples/*` so Bun can resolve the local `@web-hammer/*` workspace packages.
+
 ## What It Generates
 
 The starter includes:

@@ -12,11 +12,11 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.2",
-    "@web-hammer/gameplay-runtime": "latest",
-    "@web-hammer/runtime-format": "latest",
-    "@web-hammer/runtime-physics-rapier": "latest",
-    "@web-hammer/runtime-streaming": "latest",
-    "@web-hammer/three-runtime": "latest",
+    "@web-hammer/gameplay-runtime": "workspace:*",
+    "@web-hammer/runtime-format": "workspace:*",
+    "@web-hammer/runtime-physics-rapier": "workspace:*",
+    "@web-hammer/runtime-streaming": "workspace:*",
+    "@web-hammer/three-runtime": "workspace:*",
     "three": "^0.181.1"
   },
   "devDependencies": {

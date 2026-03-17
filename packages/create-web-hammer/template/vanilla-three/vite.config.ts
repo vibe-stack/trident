@@ -1,8 +1,9 @@
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 export default defineConfig({
   server: {
-    host: "0.0.0.0",
-    port: 5173
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd())]
+    }
   }
 });

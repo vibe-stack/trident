@@ -1,3 +1,5 @@
+/// <reference path="./earcut.d.ts" />
+
 export * from "./brush/brush-kernel";
 export * from "./brush/brush-ops";
 export * from "./mesh/editable-mesh";
