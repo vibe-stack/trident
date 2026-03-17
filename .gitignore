@@ -4,3 +4,4 @@ dist
 bun.lock
 coverage
 .env
+samples
