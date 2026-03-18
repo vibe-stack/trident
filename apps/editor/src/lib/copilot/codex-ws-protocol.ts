@@ -8,6 +8,7 @@ export type CodexWsClientMessage =
       model: string;
       systemPrompt: string;
       tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+      threadId?: string;
       userMessage: string;
     }
   | {
@@ -22,6 +23,7 @@ export type CodexWsClientMessage =
 
 // Server → Browser
 export type CodexWsServerMessage =
+  | { type: "thread"; threadId: string }
   | { type: "status"; status: "connecting" | "thinking" | "executing" }
   | { type: "delta"; text: string }
   | { type: "tool_call"; id: string; name: string; args: Record<string, unknown> }

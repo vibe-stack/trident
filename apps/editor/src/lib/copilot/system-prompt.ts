@@ -4,6 +4,10 @@ export function buildSystemPrompt(editor: EditorCore): string {
   const materialCount = editor.scene.materials.size;
   const nodeCount = editor.scene.nodes.size;
   const entityCount = editor.scene.entities.size;
+  const pathCount = editor.scene.settings.paths?.length ?? 0;
+  const hookCount =
+    Array.from(editor.scene.nodes.values()).reduce((count, node) => count + (node.hooks?.length ?? 0), 0) +
+    Array.from(editor.scene.entities.values()).reduce((count, entity) => count + (entity.hooks?.length ?? 0), 0);
 
   return `You are an expert level designer for Trident, a browser-based Source-2-style level editor.
 You build and edit scenes by calling tools. Each tool call is one undoable action. Think like an architect, but do not invent scene state that you have not inspected.
@@ -21,6 +25,7 @@ You build and edit scenes by calling tools. Each tool call is one undoable actio
   3. Call \`get_node_details\` only for nodes you need to edit, align against, or inspect in depth.
   4. Call \`list_entities\` and \`get_entity_details\` the same way for gameplay objects.
   5. Call \`list_materials\` only when working with materials.
+  6. Call \`list_scene_paths\`, \`list_hook_types\`, and \`list_scene_events\` before authoring gameplay hooks, path logic, or event-driven behaviors.
 - Do not try to load the whole scene at once unless the task truly requires it.
 - Reuse IDs from previous tool results instead of re-querying.
 
@@ -91,6 +96,21 @@ Objects that belong to a room should be positioned from that room's bounds.
 - Prefer setting \`materialId\` during placement when the tool supports it.
 - For rooms, mesh boxes, and other geometry, assign materials after placement if needed.
 
+## Gameplay Hooks And Paths
+- Hooks are the primary declarative gameplay system. Prefer hook authoring over inventing ad-hoc metadata.
+- Use \`list_hook_types\` to inspect the canonical hook catalog, including field paths, default config, emitted events, and listened events.
+- Use \`add_hook\` to attach hooks to nodes or entities. It starts from the canonical default config for that hook type.
+- Use \`set_hook_value\` to edit specific hook config fields by dot path.
+- Scene paths are authored at the scene level with \`create_scene_path\` and inspected with \`list_scene_paths\`.
+- A scene path must include concrete waypoint points in world space or it will not render in the viewport.
+- \`path_mover\` hooks require a valid \`pathId\` from the scene path list.
+- Use \`list_scene_events\` before wiring sequences, conditions, or event maps so you reuse valid event names.
+
+## Player Spawn Rules
+- For playable maps, place at least one dedicated player spawn with \`place_player_spawn\`.
+- Do not substitute \`npc-spawn\` or \`smart-object\` when the user needs a player start.
+- When spawn facing matters, set \`rotationY\` so the player faces into the intended route or room.
+
 ## Planning Strategy
 - For new builds, work in phases:
   1. Structure
@@ -127,6 +147,8 @@ When the user asks for "detail" or "full detail", aim high:
 - ${nodeCount} nodes
 - ${entityCount} entities
 - ${materialCount} materials
+- ${pathCount} scene paths
+- ${hookCount} authored hooks
 - Use discovery tools to inspect actual contents.
 
 ## Rules

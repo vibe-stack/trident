@@ -8,6 +8,7 @@ import { Matrix4, Quaternion, Vector3 } from "three";
 export type RuntimePhysicsSession = {
   colliderCount: number;
   dispose: () => void;
+  getBody: (nodeId: string) => RAPIER.RigidBody | undefined;
   renderScene: DerivedRenderScene;
   syncVisuals: () => void;
 };
@@ -20,17 +21,20 @@ export function createRuntimePhysicsSession(options: {
   const physicsMeshes = renderScene.meshes.filter((mesh) => mesh.physics?.enabled);
   const physicsMeshIds = new Set(physicsMeshes.map((mesh) => mesh.nodeId));
   const staticMeshes = renderScene.meshes.filter((mesh) => !physicsMeshIds.has(mesh.nodeId));
+  const bodiesByNodeId = new Map<string, RAPIER.RigidBody>();
   const dynamicBindings: Array<{
     body: RAPIER.RigidBody;
     object: NonNullable<ReturnType<ThreeRuntimeSceneInstance["nodesById"]["get"]>>;
   }> = [];
 
   staticMeshes.forEach((mesh) => {
-    createStaticRigidBody(options.world, mesh);
+    const body = createStaticRigidBody(options.world, mesh);
+    bodiesByNodeId.set(mesh.nodeId, body);
   });
 
   physicsMeshes.forEach((mesh) => {
     const body = createDynamicRigidBody(options.world, mesh);
+    bodiesByNodeId.set(mesh.nodeId, body);
     const object = options.runtimeScene.nodesById.get(mesh.nodeId);
 
     if (object) {
@@ -40,7 +44,13 @@ export function createRuntimePhysicsSession(options: {
 
   return {
     colliderCount: staticMeshes.length + physicsMeshes.length,
-    dispose() {},
+    dispose() {
+      bodiesByNodeId.clear();
+      dynamicBindings.length = 0;
+    },
+    getBody(nodeId) {
+      return bodiesByNodeId.get(nodeId);
+    },
     renderScene,
     syncVisuals() {
       dynamicBindings.forEach(({ body, object }) => {

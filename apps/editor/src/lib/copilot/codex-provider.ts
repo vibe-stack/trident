@@ -67,6 +67,7 @@ export function createCodexProvider(): SessionBasedCopilotProvider {
             type: "start",
             model: config.providerConfig.model,
             systemPrompt: config.systemPrompt,
+            threadId: config.threadId,
             tools: wsTools,
             userMessage: config.userPrompt
           }));
@@ -78,6 +79,11 @@ export function createCodexProvider(): SessionBasedCopilotProvider {
           const msg = JSON.parse(event.data) as CodexWsServerMessage;
 
           switch (msg.type) {
+            case "thread": {
+              config.onThreadId?.(msg.threadId);
+              break;
+            }
+
             case "status": {
               if (msg.status === "thinking") session.status = "thinking";
               else if (msg.status === "executing") session.status = "executing";

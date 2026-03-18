@@ -17,7 +17,9 @@ import {
   createPlaceMeshNodeCommand,
   createPlacePrimitiveNodeCommand,
   createReplaceNodesCommand,
+  createSetEntityCommand,
   createSetMeshDataCommand,
+  createSetNodeCommand,
   createSetNodeTransformCommand,
   createSetSceneSettingsCommand,
   createSetUvScaleCommand,
@@ -42,7 +44,7 @@ import {
   subdivideEditableMeshFace
 } from "@web-hammer/geometry-kernel";
 import { isBrushNode, isMeshNode, makeTransform, resolveSceneGraph, vec3 } from "@web-hammer/shared";
-import type { EditableMesh, Material, SceneSettings } from "@web-hammer/shared";
+import type { EditableMesh, GameplayObject, GameplayValue, Material, SceneHook, ScenePathDefinition, SceneSettings, Vec3 } from "@web-hammer/shared";
 import {
   createDefaultEntity,
   createDefaultLightData,
@@ -50,6 +52,7 @@ import {
   createPrimitiveNodeData,
   createPrimitiveNodeLabel
 } from "@/lib/authoring";
+import { createSceneHook, HOOK_DEFINITION_MAP, HOOK_DEFINITIONS, resolveGameplayEvents, setGameplayValue } from "@/lib/gameplay";
 import type { CopilotToolCall, CopilotToolResult } from "./types";
 
 type Args = Record<string, unknown>;
@@ -67,6 +70,79 @@ function str(args: Args, key: string, fallback = ""): string {
 function strArray(args: Args, key: string): string[] {
   const v = args[key];
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function bool(args: Args, key: string): boolean | undefined {
+  const v = args[key];
+  return typeof v === "boolean" ? v : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function gameplayObject(value: unknown): GameplayObject | undefined {
+  return isRecord(value) ? value as GameplayObject : undefined;
+}
+
+function mergeGameplayObject(base: GameplayObject, patch: unknown): GameplayObject {
+  if (!isRecord(patch)) {
+    return structuredClone(base);
+  }
+
+  const next: GameplayObject = structuredClone(base);
+
+  Object.entries(patch).forEach(([key, value]) => {
+    const current = next[key];
+
+    next[key] =
+      isRecord(current) && isRecord(value)
+        ? mergeGameplayObject(current as GameplayObject, value)
+        : structuredClone(value) as GameplayValue;
+  });
+
+  return next;
+}
+
+function pointFromUnknown(value: unknown): Vec3 | undefined {
+  if (Array.isArray(value) && value.length >= 3) {
+    const [x, y, z] = value;
+
+    if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+      return { x, y, z };
+    }
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (isRecord(value.position)) {
+    const { x, y, z } = value.position;
+
+    if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+      return { x, y, z };
+    }
+  }
+
+  const { x, y, z } = value;
+
+  if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+    return { x, y, z };
+  }
+
+  return undefined;
+}
+
+function pointArray(value: unknown): Vec3[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    const point = pointFromUnknown(entry);
+    return point ? [point] : [];
+  });
 }
 
 function ok(data: Record<string, unknown>): string {
@@ -120,6 +196,57 @@ function buildSceneOutline(editor: EditorCore) {
       rootEntities: graph.rootEntityIds.map(buildEntityOutline)
     }
   };
+}
+
+function buildHookCatalog() {
+  return HOOK_DEFINITIONS.map((definition) => ({
+    ...definition,
+    defaultConfig: structuredClone(HOOK_DEFINITION_MAP.get(definition.type)?.defaultConfig ?? {})
+  }));
+}
+
+function resolvePathId(paths: ScenePathDefinition[], requestedId: string, requestedName: string) {
+  const slugSource = requestedId || requestedName || `path_${paths.length + 1}`;
+  const baseId = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `path_${paths.length + 1}`;
+  let nextId = baseId;
+  let suffix = 2;
+
+  while (paths.some((pathDefinition) => pathDefinition.id === nextId)) {
+    nextId = `${baseId}_${suffix++}`;
+  }
+
+  return nextId;
+}
+
+function updateHooksOnTarget(
+  editor: EditorCore,
+  targetKind: "entity" | "node",
+  targetId: string,
+  update: (hooks: SceneHook[]) => { hooks: SceneHook[]; result: Record<string, unknown> }
+): string {
+  if (targetKind === "node") {
+    const node = editor.scene.getNode(targetId);
+
+    if (!node) {
+      return fail("Node not found");
+    }
+
+    const currentHooks = structuredClone(node.hooks ?? []);
+    const { hooks, result } = update(currentHooks);
+    editor.execute(createSetNodeCommand(editor.scene, targetId, { ...structuredClone(node), hooks }));
+    return ok(result);
+  }
+
+  const entity = editor.scene.getEntity(targetId);
+
+  if (!entity) {
+    return fail("Entity not found");
+  }
+
+  const currentHooks = structuredClone(entity.hooks ?? []);
+  const { hooks, result } = update(currentHooks);
+  editor.execute(createSetEntityCommand(editor.scene, targetId, { ...structuredClone(entity), hooks }));
+  return ok(result);
 }
 
 export function executeTool(editor: EditorCore, toolCall: CopilotToolCall): CopilotToolResult {
@@ -245,12 +372,32 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
       const entityCount = Array.from(scene.entities.values()).filter((e) => e.type === entityType).length;
       const entity = createDefaultEntity(entityType, vec3(num(args, "x"), num(args, "y"), num(args, "z")), entityCount);
 
+      if (typeof args.rotationY === "number") {
+        entity.transform.rotation.y = args.rotationY as number;
+      }
+
       if (str(args, "name")) {
         entity.name = str(args, "name");
       }
 
       const command = createPlaceEntityCommand(entity);
       editor.execute(command);
+      return ok({ entityId: entity.id });
+    }
+
+    case "place_player_spawn": {
+      const entityCount = Array.from(scene.entities.values()).filter((e) => e.type === "player-spawn").length;
+      const entity = createDefaultEntity("player-spawn", vec3(num(args, "x"), num(args, "y"), num(args, "z")), entityCount);
+
+      if (typeof args.rotationY === "number") {
+        entity.transform.rotation.y = args.rotationY as number;
+      }
+
+      if (str(args, "name")) {
+        entity.name = str(args, "name");
+      }
+
+      editor.execute(createPlaceEntityCommand(entity));
       return ok({ entityId: entity.id });
     }
 
@@ -454,6 +601,18 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
       return JSON.stringify({ materials });
     }
 
+    case "list_scene_paths": {
+      return JSON.stringify({ paths: scene.settings.paths ?? [] });
+    }
+
+    case "list_scene_events": {
+      return JSON.stringify({ events: resolveGameplayEvents(scene.settings.events ?? []) });
+    }
+
+    case "list_hook_types": {
+      return JSON.stringify({ hookTypes: buildHookCatalog() });
+    }
+
     case "get_node_details": {
       const node = scene.getNode(str(args, "nodeId"));
 
@@ -502,6 +661,143 @@ function executeToolInner(editor: EditorCore, name: string, args: Args): string 
 
     case "get_scene_settings": {
       return JSON.stringify(scene.settings);
+    }
+
+    case "create_scene_path": {
+      const currentPaths = scene.settings.paths ?? [];
+      const points = pointArray(args.points);
+
+      if (points.length === 0) {
+        return fail("Path must include at least one valid point");
+      }
+
+      const nextPath: ScenePathDefinition = {
+        id: resolvePathId(currentPaths, str(args, "id"), str(args, "name")),
+        loop: bool(args, "loop") ?? false,
+        name: str(args, "name", "Path"),
+        points
+      };
+      const nextSettings: SceneSettings = {
+        ...structuredClone(scene.settings),
+        paths: [...currentPaths, nextPath]
+      };
+      editor.execute(createSetSceneSettingsCommand(scene, nextSettings));
+      return ok({ path: nextPath });
+    }
+
+    case "update_scene_path": {
+      const pathId = str(args, "pathId");
+      const currentPaths = scene.settings.paths ?? [];
+      const existingPath = currentPaths.find((pathDefinition) => pathDefinition.id === pathId);
+
+      if (!existingPath) {
+        return fail("Path not found");
+      }
+
+      const nextPoints = Array.isArray(args.points) ? pointArray(args.points) : undefined;
+
+      if (Array.isArray(args.points) && (nextPoints?.length ?? 0) === 0) {
+        return fail("Path must include at least one valid point");
+      }
+
+      const nextPath: ScenePathDefinition = {
+        ...structuredClone(existingPath),
+        ...(str(args, "name") ? { name: str(args, "name") } : {}),
+        ...(typeof args.loop === "boolean" ? { loop: args.loop as boolean } : {}),
+        ...(nextPoints ? { points: nextPoints } : {})
+      };
+      const nextSettings: SceneSettings = {
+        ...structuredClone(scene.settings),
+        paths: currentPaths.map((pathDefinition) => (pathDefinition.id === pathId ? nextPath : pathDefinition))
+      };
+      editor.execute(createSetSceneSettingsCommand(scene, nextSettings));
+      return ok({ path: nextPath });
+    }
+
+    case "delete_scene_path": {
+      const pathId = str(args, "pathId");
+      const currentPaths = scene.settings.paths ?? [];
+
+      if (!currentPaths.some((pathDefinition) => pathDefinition.id === pathId)) {
+        return fail("Path not found");
+      }
+
+      const nextSettings: SceneSettings = {
+        ...structuredClone(scene.settings),
+        paths: currentPaths.filter((pathDefinition) => pathDefinition.id !== pathId)
+      };
+      editor.execute(createSetSceneSettingsCommand(scene, nextSettings));
+      return ok({ pathId });
+    }
+
+    case "add_hook": {
+      const targetKind = str(args, "targetKind") as "entity" | "node";
+      const targetId = str(args, "targetId");
+      const hookType = str(args, "hookType");
+      const hook = createSceneHook(hookType, {
+        defaultPathId: str(args, "defaultPathId") || undefined,
+        targetId
+      });
+
+      if (!hook) {
+        return fail("Unknown hook type");
+      }
+
+      const configPatch = gameplayObject(args.config);
+      if (configPatch) {
+        hook.config = mergeGameplayObject(hook.config, configPatch);
+      }
+
+      if (typeof args.enabled === "boolean") {
+        hook.enabled = args.enabled as boolean;
+      }
+
+      return updateHooksOnTarget(editor, targetKind, targetId, (hooks) => ({
+        hooks: [...hooks, hook],
+        result: { hook, hookId: hook.id, targetId, targetKind }
+      }));
+    }
+
+    case "set_hook_value": {
+      const targetKind = str(args, "targetKind") as "entity" | "node";
+      const targetId = str(args, "targetId");
+      const hookId = str(args, "hookId");
+      const path = str(args, "path");
+
+      return updateHooksOnTarget(editor, targetKind, targetId, (hooks) => {
+        const hookIndex = hooks.findIndex((hook) => hook.id === hookId);
+
+        if (hookIndex === -1) {
+          throw new Error("Hook not found");
+        }
+
+        const nextHooks = structuredClone(hooks);
+        const nextHook = structuredClone(nextHooks[hookIndex]);
+        nextHook.config = setGameplayValue(nextHook.config, path, structuredClone(args.value) as GameplayValue);
+        nextHooks[hookIndex] = nextHook;
+
+        return {
+          hooks: nextHooks,
+          result: { hook: nextHook, hookId, path, targetId, targetKind }
+        };
+      });
+    }
+
+    case "remove_hook": {
+      const targetKind = str(args, "targetKind") as "entity" | "node";
+      const targetId = str(args, "targetId");
+      const hookId = str(args, "hookId");
+
+      return updateHooksOnTarget(editor, targetKind, targetId, (hooks) => {
+        if (!hooks.some((hook) => hook.id === hookId)) {
+          throw new Error("Hook not found");
+        }
+
+        return {
+          hooks: hooks.filter((hook) => hook.id !== hookId),
+          result: { hookId, targetId, targetKind }
+        };
+      });
     }
 
     // ── Mesh topology query ─────────────────────────────────

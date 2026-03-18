@@ -18,6 +18,7 @@ export function useCopilot(editor: EditorCore) {
   const [session, setSession] = useState<CopilotSession>(EMPTY_SESSION);
   const [configured, setConfigured] = useState(() => isCopilotConfigured());
   const abortRef = useRef<AbortController | null>(null);
+  const codexThreadIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const check = () => setConfigured(isCopilotConfigured());
@@ -64,6 +65,10 @@ export function useCopilot(editor: EditorCore) {
           tools: COPILOT_TOOL_DECLARATIONS,
           systemPrompt,
           providerConfig,
+          threadId: codexThreadIdRef.current,
+          onThreadId: (threadId) => {
+            codexThreadIdRef.current = threadId;
+          },
           executeTool: (toolCall) => executeTool(editor, toolCall),
           onUpdate: (updated) => {
             setSession({ ...updated, messages: [...updated.messages] });
@@ -103,6 +108,7 @@ export function useCopilot(editor: EditorCore) {
   const clearHistory = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    codexThreadIdRef.current = undefined;
     setSession(EMPTY_SESSION);
   }, []);
 

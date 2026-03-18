@@ -8,6 +8,7 @@ import { createRapierPhysicsWorld, ensureRapierRuntimePhysics } from "@web-hamme
 import { createThreeRuntimeSceneInstance, type ThreeRuntimeSceneInstance } from "@web-hammer/three-runtime";
 import * as THREE from "three";
 import { frameCameraOnObject } from "./camera";
+import { createDefaultGameplaySystems, createStarterGameplayHost, mergeGameplaySystems } from "./gameplay";
 import { createRuntimePhysicsSession, type RuntimePhysicsSession } from "./runtime-physics";
 import type { GameSceneBootstrapContext, GameSceneDefinition, GameSceneLifecycle } from "./scene-types";
 import { StarterPlayerController } from "./starter-player-controller";
@@ -144,6 +145,10 @@ export function createGameApp(options: GameAppOptions) {
         runtimeScene,
         world: physicsWorld
       });
+      const gameplayHost = createStarterGameplayHost({
+        runtimePhysics,
+        runtimeScene
+      });
       const bootstrapContext = createBootstrapContext({
         camera,
         gotoScene: loadScene,
@@ -156,6 +161,7 @@ export function createGameApp(options: GameAppOptions) {
       });
       const systems = resolveSceneSystems(definition, bootstrapContext);
       const gameplayRuntime = createGameplayRuntime({
+        host: gameplayHost,
         scene: createGameplayRuntimeSceneFromRuntimeScene(runtimeScene.scene),
         systems
       });
@@ -341,9 +347,12 @@ function createStarterPlayerController(options: {
 }
 
 function resolveSceneSystems(definition: GameSceneDefinition, context: GameSceneBootstrapContext): GameplayRuntimeSystemRegistration[] {
+  const starterSystems = createDefaultGameplaySystems(context.sceneSettings);
+
   if (!definition.systems) {
-    return [];
+    return starterSystems;
   }
 
-  return typeof definition.systems === "function" ? definition.systems(context) : definition.systems;
+  const sceneSystems = typeof definition.systems === "function" ? definition.systems(context) : definition.systems;
+  return mergeGameplaySystems(starterSystems, sceneSystems);
 }

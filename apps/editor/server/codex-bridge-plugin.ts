@@ -114,6 +114,7 @@ async function handleClientMessage(
           type: "start";
           model: string;
           systemPrompt: string;
+          threadId?: string;
           tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
           userMessage: string;
         });
@@ -165,6 +166,7 @@ async function startCodexSession(
   config: {
     model: string;
     systemPrompt: string;
+    threadId?: string;
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
     userMessage: string;
   }
@@ -226,13 +228,23 @@ async function startCodexSession(
     inputSchema: tool.inputSchema
   }));
 
-  const threadResult = await sendCodexRequest(session, "thread/start", {
-    model: config.model,
-    baseInstructions: config.systemPrompt,
-    dynamicTools
-  }) as { thread?: { id?: string } };
+  const threadResult = await sendCodexRequest(
+    session,
+    config.threadId ? "thread/resume" : "thread/start",
+    {
+      ...(config.threadId ? { threadId: config.threadId } : {}),
+      model: config.model,
+      baseInstructions: config.systemPrompt,
+      dynamicTools,
+      serviceName: "trident-editor"
+    }
+  ) as { thread?: { id?: string } };
 
   session.threadId = threadResult?.thread?.id;
+
+  if (session.threadId) {
+    sendToClient(ws, { type: "thread", threadId: session.threadId });
+  }
 
   sendToClient(ws, { type: "status", status: "thinking" });
 

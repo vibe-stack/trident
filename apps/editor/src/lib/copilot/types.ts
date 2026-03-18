@@ -93,6 +93,8 @@ export type SessionBasedCopilotProvider = {
     tools: CopilotToolDeclaration[];
     systemPrompt: string;
     providerConfig: CopilotProviderConfig;
+    threadId?: string;
+    onThreadId?: (threadId: string | undefined) => void;
     executeTool: (call: CopilotToolCall) => CopilotToolResult;
     onUpdate: (session: CopilotSession) => void;
     signal?: AbortSignal;

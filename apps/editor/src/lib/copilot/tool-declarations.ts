@@ -131,13 +131,14 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
   },
   {
     name: "place_entity",
-    description: "Places a gameplay entity (spawn point, NPC, or interactive object).",
+    description: "Places a gameplay entity (spawn point, NPC, or interactive object). Prefer place_player_spawn for playable start positions.",
     parameters: {
       type: "object",
       properties: {
         x: { type: "number", description: "World X position" },
         y: { type: "number", description: "World Y position" },
         z: { type: "number", description: "World Z position" },
+        rotationY: { type: "number", description: "Yaw rotation in radians" },
         type: {
           type: "string",
           enum: ["player-spawn", "npc-spawn", "smart-object"],
@@ -146,6 +147,21 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
         name: { type: "string", description: "Display name" }
       },
       required: ["x", "y", "z", "type"]
+    }
+  },
+  {
+    name: "place_player_spawn",
+    description: "Places a player-spawn entity. Use this for playable maps instead of generic entity placement.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "World X position" },
+        y: { type: "number", description: "World Y position" },
+        z: { type: "number", description: "World Z position" },
+        rotationY: { type: "number", description: "Yaw rotation in radians" },
+        name: { type: "string", description: "Display name" }
+      },
+      required: ["x", "y", "z"]
     }
   },
 
@@ -412,6 +428,21 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
     parameters: { type: "object", properties: {} }
   },
   {
+    name: "list_scene_paths",
+    description: "Lists all scene-level waypoint paths with ids, names, loop state, and points.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "list_scene_events",
+    description: "Lists the standard and custom gameplay events available in the scene.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "list_hook_types",
+    description: "Lists all supported gameplay hook types, including field paths, defaults, emitted events, and listened events.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
     name: "get_node_details",
     description: "Gets full details of a specific node, including transform, worldTransform, hierarchy links, hooks, metadata, and node data.",
     parameters: {
@@ -437,6 +468,119 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
     name: "get_scene_settings",
     description: "Gets current scene settings. This is the canonical source for player scale, jump height, movement, camera mode, physics, fog, and ambient lighting.",
     parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "create_scene_path",
+    description: "Creates a new scene-level waypoint path. Paths are referenced by hook config such as path_mover.pathId.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Optional explicit path id" },
+        name: { type: "string", description: "Display name" },
+        loop: { type: "boolean", description: "Whether the path loops" },
+        points: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" }
+            },
+            required: ["x", "y", "z"]
+          },
+          description: "Waypoint points in world space"
+        }
+      },
+      required: ["name", "points"]
+    }
+  },
+  {
+    name: "update_scene_path",
+    description: "Updates a scene path by replacing any provided fields such as name, loop, or points.",
+    parameters: {
+      type: "object",
+      properties: {
+        pathId: { type: "string", description: "Path id to update" },
+        name: { type: "string", description: "New display name" },
+        loop: { type: "boolean", description: "Whether the path loops" },
+        points: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" }
+            },
+            required: ["x", "y", "z"]
+          },
+          description: "Replacement waypoint points in world space"
+        }
+      },
+      required: ["pathId"]
+    }
+  },
+  {
+    name: "delete_scene_path",
+    description: "Deletes a scene-level waypoint path.",
+    parameters: {
+      type: "object",
+      properties: {
+        pathId: { type: "string", description: "Path id to delete" }
+      },
+      required: ["pathId"]
+    }
+  },
+  {
+    name: "add_hook",
+    description: "Attaches a gameplay hook to a node or entity using the canonical default config for that hook type, then applies any provided config overrides.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetKind: { type: "string", enum: ["node", "entity"], description: "Whether the hook attaches to a node or entity" },
+        targetId: { type: "string", description: "Node or entity id" },
+        hookType: { type: "string", description: "Hook type. Use list_hook_types to inspect supported types." },
+        enabled: { type: "boolean", description: "Whether the hook starts enabled" },
+        defaultPathId: { type: "string", description: "Optional default path id for path_mover hooks" },
+        config: {
+          type: "object",
+          additionalProperties: true,
+          description: "Optional config override object merged into the canonical default config"
+        }
+      },
+      required: ["targetKind", "targetId", "hookType"]
+    }
+  },
+  {
+    name: "set_hook_value",
+    description: "Sets a specific hook config value by dot path on an existing node/entity hook.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetKind: { type: "string", enum: ["node", "entity"], description: "Whether the hook is on a node or entity" },
+        targetId: { type: "string", description: "Node or entity id" },
+        hookId: { type: "string", description: "Hook id to edit" },
+        path: { type: "string", description: "Dot path inside hook.config, for example 'pathId' or 'trigger.event'" },
+        value: {
+          description: "New value to write at the config path"
+        }
+      },
+      required: ["targetKind", "targetId", "hookId", "path", "value"]
+    }
+  },
+  {
+    name: "remove_hook",
+    description: "Removes a gameplay hook from a node or entity.",
+    parameters: {
+      type: "object",
+      properties: {
+        targetKind: { type: "string", enum: ["node", "entity"], description: "Whether the hook is on a node or entity" },
+        targetId: { type: "string", description: "Node or entity id" },
+        hookId: { type: "string", description: "Hook id to remove" }
+      },
+      required: ["targetKind", "targetId", "hookId"]
+    }
   },
   {
     name: "get_mesh_topology",
