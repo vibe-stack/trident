@@ -12,12 +12,20 @@
     "dev": "bun run --cwd apps/editor dev",
     "build": "bun run --cwd apps/editor build",
     "typecheck": "bun run --cwd apps/editor typecheck",
+    "build:packages": "bun ./scripts/release-packages.mjs build",
+    "publish:packages:dry-run": "bun ./scripts/release-packages.mjs publish --dry-run",
+    "publish:packages": "bun ./scripts/release-packages.mjs publish",
     "dev:three-runtime": "bun run --cwd apps/three-runtime-playground dev",
     "build:three-runtime": "bun run --cwd apps/three-runtime-playground build",
     "typecheck:three-runtime": "bun run --cwd apps/three-runtime-playground typecheck",
     "dev:three-vanilla": "bun run --cwd apps/three-vanilla-playground dev",
     "build:three-vanilla": "bun run --cwd apps/three-vanilla-playground build",
     "typecheck:three-vanilla": "bun run --cwd apps/three-vanilla-playground typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.2",

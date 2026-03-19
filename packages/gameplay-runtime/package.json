@@ -1,13 +1,40 @@
 {
   "name": "@ggez/gameplay-runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Lightweight gameplay runtime primitives and system orchestration for Web Hammer scenes.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/gameplay-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/gameplay-runtime",
   "dependencies": {
-    "@ggez/runtime-format": "workspace:*",
-    "@ggez/shared": "workspace:*"
+    "@ggez/runtime-format": "0.1.0",
+    "@ggez/shared": "0.1.0"
   }
 }

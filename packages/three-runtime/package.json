@@ -1,18 +1,45 @@
 {
   "name": "@ggez/three-runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Three.js runtime loader and object factory for Web Hammer content.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/three-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/three-runtime",
   "devDependencies": {
     "@types/three": "^0.181.0"
   },
   "dependencies": {
-    "@ggez/runtime-build": "workspace:*",
-    "@ggez/runtime-format": "workspace:*",
-    "@ggez/shared": "workspace:*",
+    "@ggez/runtime-build": "0.1.0",
+    "@ggez/runtime-format": "0.1.0",
+    "@ggez/shared": "0.1.0",
     "three": "^0.181.1"
   }
 }

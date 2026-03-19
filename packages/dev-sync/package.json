@@ -1,10 +1,43 @@
 {
   "name": "@ggez/dev-sync",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Development-time editor and game synchronization utilities for Web Hammer.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./node": "./src/node.ts"
-  }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/dev-sync"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/dev-sync"
 }

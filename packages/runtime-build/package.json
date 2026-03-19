@@ -1,22 +1,49 @@
 {
   "name": "@ggez/runtime-build",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Headless build utilities and CLI for compiling Web Hammer runtime bundles.",
   "license": "MIT",
   "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "bin": {
-    "web-hammer-runtime-build": "./src/cli.ts"
+    "web-hammer-runtime-build": "./dist/cli.js"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/runtime-build"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/runtime-build",
   "devDependencies": {
+    "@types/node": "^24.10.1",
     "@types/three": "^0.181.0"
   },
   "dependencies": {
-    "@ggez/editor-core": "workspace:*",
-    "@ggez/geometry-kernel": "workspace:*",
-    "@ggez/runtime-format": "workspace:*",
-    "@ggez/shared": "workspace:*",
+    "@ggez/editor-core": "0.1.0",
+    "@ggez/geometry-kernel": "0.1.0",
+    "@ggez/runtime-format": "0.1.0",
+    "@ggez/shared": "0.1.0",
     "fflate": "^0.8.2",
     "three": "^0.181.1",
     "three-mesh-bvh": "^0.9.2"

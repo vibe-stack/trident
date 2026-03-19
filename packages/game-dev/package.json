@@ -1,9 +1,34 @@
 {
   "name": "@ggez/game-dev",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Vite development plugin for Web Hammer game projects with scene discovery and editor sync.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
   "exports": {
-    ".": "./src/index.js"
-  }
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/game-dev"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/game-dev"
 }

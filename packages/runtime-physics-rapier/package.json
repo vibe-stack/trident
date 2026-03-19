@@ -1,19 +1,46 @@
 {
   "name": "@ggez/runtime-physics-rapier",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Rapier physics adapters for Web Hammer runtime scenes.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/runtime-physics-rapier"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/runtime-physics-rapier",
   "devDependencies": {
     "@types/three": "^0.181.0"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.2",
-    "@ggez/render-pipeline": "workspace:*",
-    "@ggez/runtime-format": "workspace:*",
-    "@ggez/shared": "workspace:*",
+    "@ggez/render-pipeline": "0.1.0",
+    "@ggez/runtime-format": "0.1.0",
+    "@ggez/shared": "0.1.0",
     "three": "^0.181.1"
   }
 }

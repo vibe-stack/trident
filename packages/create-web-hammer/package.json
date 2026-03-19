@@ -1,12 +1,31 @@
 {
   "name": "create-web-hammer",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Scaffold a Web Hammer starter project with a vanilla Three.js runtime setup.",
   "license": "MIT",
   "type": "module",
+  "files": [
+    "dist",
+    "template",
+    "README.md"
+  ],
+  "bin": {
+    "create-web-hammer": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibe-stack/trident.git",
+    "directory": "packages/create-web-hammer"
+  },
+  "bugs": {
+    "url": "https://github.com/vibe-stack/trident/issues"
+  },
+  "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/create-web-hammer",
   "devDependencies": {
     "@types/node": "^24.10.1"
-  },
-  "bin": {
-    "create-web-hammer": "./src/cli.js"
   }
 }
