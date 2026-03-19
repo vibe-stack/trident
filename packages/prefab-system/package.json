@@ -1,0 +1,13 @@
+{
+  "name": "@ggez/prefab-system",
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ggez/editor-core": "workspace:*",
+    "@ggez/shared": "workspace:*"
+  }
+}
