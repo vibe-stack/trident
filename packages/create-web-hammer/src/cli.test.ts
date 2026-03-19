@@ -20,7 +20,7 @@ describe("create-web-hammer cli", () => {
     const sceneModule = await readFile(join(targetDir, "app/src/scenes/main/index.ts"), "utf8");
 
     expect(packageJson).toContain("\"name\": \"app\"");
-    expect(packageJson).toContain("@gg-ez/three-runtime");
+    expect(packageJson).toContain("@ggez/three-runtime");
     expect(mainFile).toContain("createGameApp");
     expect(sceneModule).toContain("createBundledRuntimeSceneSource");
 

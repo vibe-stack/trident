@@ -1,4 +1,4 @@
-import type { EditorCore } from "@gg-ez/editor-core";
+import type { EditorCore } from "@ggez/editor-core";
 
 export function buildSystemPrompt(editor: EditorCore): string {
   const materialCount = editor.scene.materials.size;

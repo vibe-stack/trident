@@ -1,11 +1,11 @@
-import { createGameplayRuntime, createGameplayRuntimeSceneFromRuntimeScene } from "@gg-ez/gameplay-runtime";
-import { normalizeSceneSettings } from "@gg-ez/shared";
+import { createGameplayRuntime, createGameplayRuntimeSceneFromRuntimeScene } from "@ggez/gameplay-runtime";
+import { normalizeSceneSettings } from "@ggez/shared";
 import {
   createWebHammerBundleAssetResolver,
   parseWebHammerEngineBundleZip,
   parseWebHammerEngineScene,
   type WebHammerEngineScene
-} from "@gg-ez/three-runtime";
+} from "@ggez/three-runtime";
 import { createPlaybackRenderScene } from "./adapter";
 import { createPlaybackGameplayHost } from "./gameplay-host";
 import { createPlaybackGameplaySystems } from "./gameplay-systems";

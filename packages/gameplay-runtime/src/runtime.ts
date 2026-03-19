@@ -1,4 +1,4 @@
-import { type GameplayValue, type Transform, type Vec3 } from "@gg-ez/shared";
+import { type GameplayValue, type Transform, type Vec3 } from "@ggez/shared";
 import { GameplayEventBus, type GameplayEventBusOptions } from "./event-bus";
 import { GameplayWorld } from "./scene-store";
 import {

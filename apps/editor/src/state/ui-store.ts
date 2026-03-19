@@ -1,5 +1,5 @@
 import { proxy } from "valtio";
-import type { ViewportState } from "@gg-ez/render-pipeline";
+import type { ViewportState } from "@ggez/render-pipeline";
 import { createEditorViewports, type ViewModeId, type ViewportPaneId } from "@/viewport/viewports";
 
 export type ViewportQuality = 0.5 | 0.75 | 1 | 1.5;

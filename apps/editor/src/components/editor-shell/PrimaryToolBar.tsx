@@ -1,4 +1,4 @@
-import type { ToolId } from "@gg-ez/tool-system";
+import type { ToolId } from "@ggez/tool-system";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import { toolIconFor } from "@/components/editor-shell/icons";
 import { Button } from "@/components/ui/button";

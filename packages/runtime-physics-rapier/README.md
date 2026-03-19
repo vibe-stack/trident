@@ -1,4 +1,4 @@
-# @gg-ez/runtime-physics-rapier
+# @ggez/runtime-physics-rapier
 
 Optional Rapier bindings for Web Hammer runtime physics data.
 
@@ -11,7 +11,7 @@ This package owns:
 ## Install
 
 ```bash
-bun add @gg-ez/runtime-physics-rapier @dimforge/rapier3d-compat
+bun add @ggez/runtime-physics-rapier @dimforge/rapier3d-compat
 ```
 
 ## Example
@@ -22,7 +22,7 @@ import {
   createRapierPhysicsWorld,
   createStaticRigidBody,
   ensureRapierRuntimePhysics
-} from "@gg-ez/runtime-physics-rapier";
+} from "@ggez/runtime-physics-rapier";
 
 await ensureRapierRuntimePhysics();
 

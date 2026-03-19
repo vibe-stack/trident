@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/three-runtime",
+  "name": "@ggez/three-runtime",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -10,9 +10,9 @@
     "@types/three": "^0.181.0"
   },
   "dependencies": {
-    "@gg-ez/runtime-build": "workspace:*",
-    "@gg-ez/runtime-format": "workspace:*",
-    "@gg-ez/shared": "workspace:*",
+    "@ggez/runtime-build": "workspace:*",
+    "@ggez/runtime-format": "workspace:*",
+    "@ggez/shared": "workspace:*",
     "three": "^0.181.1"
   }
 }

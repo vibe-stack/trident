@@ -32,10 +32,10 @@ __PACKAGE_MANAGER__ run build
 
 ## Runtime Packages
 
-- `@gg-ez/three-runtime`
-- `@gg-ez/runtime-format`
-- `@gg-ez/gameplay-runtime`
-- `@gg-ez/runtime-physics-rapier`
+- `@ggez/three-runtime`
+- `@ggez/runtime-format`
+- `@ggez/gameplay-runtime`
+- `@ggez/runtime-physics-rapier`
 
 ## Notes
 

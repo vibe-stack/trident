@@ -10,7 +10,7 @@ Related guides:
 
 ## Build-Time Package
 
-Use `@gg-ez/runtime-build` for headless compilation.
+Use `@ggez/runtime-build` for headless compilation.
 
 Main APIs:
 
@@ -40,7 +40,7 @@ import {
   buildRuntimeBundleFromSnapshot,
   buildRuntimeSceneFromSnapshot,
   packRuntimeBundle
-} from "@gg-ez/runtime-build";
+} from "@ggez/runtime-build";
 
 const runtimeScene = await buildRuntimeSceneFromSnapshot(snapshot);
 

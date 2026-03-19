@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/render-pipeline",
+  "name": "@ggez/render-pipeline",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -7,8 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gg-ez/geometry-kernel": "workspace:*",
-    "@gg-ez/shared": "workspace:*",
+    "@ggez/geometry-kernel": "workspace:*",
+    "@ggez/shared": "workspace:*",
     "three": "^0.181.1",
     "three-mesh-bvh": "^0.9.2"
   }

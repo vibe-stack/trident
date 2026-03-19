@@ -1,5 +1,5 @@
-import { getFaceVertices, reconstructBrushFaces, triangulateMeshFace } from "@gg-ez/geometry-kernel";
-import type { SceneDocumentSnapshot } from "@gg-ez/editor-core";
+import { getFaceVertices, reconstructBrushFaces, triangulateMeshFace } from "@ggez/geometry-kernel";
+import type { SceneDocumentSnapshot } from "@ggez/editor-core";
 import {
   createBlockoutTextureDataUri,
   crossVec3,
@@ -19,20 +19,20 @@ import {
   type MaterialID,
   type Vec2,
   type Vec3
-} from "@gg-ez/shared";
+} from "@ggez/shared";
 import {
   buildRuntimeBundleFromSnapshot,
   buildRuntimeSceneFromSnapshot,
   serializeRuntimeScene,
   type WebHammerEngineBundle
-} from "@gg-ez/runtime-build";
+} from "@ggez/runtime-build";
 import {
   type WebHammerEngineScene,
   type WebHammerExportGeometry,
   type WebHammerExportGeometryLod,
   type WebHammerExportModelLod,
   type WebHammerExportMaterial
-} from "@gg-ez/runtime-format";
+} from "@ggez/runtime-format";
 import { MeshBVH } from "three-mesh-bvh";
 import {
   Box3,

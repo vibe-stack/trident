@@ -1,6 +1,6 @@
 import { Cuboid } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { GeometryNode } from "@gg-ez/shared";
+import type { GeometryNode } from "@ggez/shared";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import { cn } from "@/lib/utils";

@@ -1,7 +1,7 @@
 import { Euler, Quaternion, type Object3D } from "three";
 import type { RapierRigidBody } from "@react-three/rapier";
-import type { GameplayRuntimeHost } from "@gg-ez/gameplay-runtime";
-import type { Transform } from "@gg-ez/shared";
+import type { GameplayRuntimeHost } from "@ggez/gameplay-runtime";
+import type { Transform } from "@ggez/shared";
 
 export type PlaybackGameplayHost = {
   bindNodePhysicsBody: (nodeId: string, body: RapierRigidBody | null) => void;

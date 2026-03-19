@@ -3,9 +3,9 @@ import {
   createGameplayRuntimeSceneFromRuntimeScene,
   type GameplayRuntime,
   type GameplayRuntimeSystemRegistration
-} from "@gg-ez/gameplay-runtime";
-import { createRapierPhysicsWorld, ensureRapierRuntimePhysics } from "@gg-ez/runtime-physics-rapier";
-import { createThreeRuntimeSceneInstance, type ThreeRuntimeSceneInstance } from "@gg-ez/three-runtime";
+} from "@ggez/gameplay-runtime";
+import { createRapierPhysicsWorld, ensureRapierRuntimePhysics } from "@ggez/runtime-physics-rapier";
+import { createThreeRuntimeSceneInstance, type ThreeRuntimeSceneInstance } from "@ggez/three-runtime";
 import * as THREE from "three";
 import { frameCameraOnObject } from "./camera";
 import { createDefaultGameplaySystems, createStarterGameplayHost, mergeGameplaySystems } from "./gameplay";

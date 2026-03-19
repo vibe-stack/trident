@@ -1,4 +1,4 @@
-import { dotVec3, scaleVec3, subVec3, vec3, type Vec3 } from "@gg-ez/shared";
+import { dotVec3, scaleVec3, subVec3, vec3, type Vec3 } from "@ggez/shared";
 import type { BrushEditHandle, MeshEditHandle } from "@/viewport/editing";
 import type { ExtrudeGestureState } from "@/viewport/types";
 

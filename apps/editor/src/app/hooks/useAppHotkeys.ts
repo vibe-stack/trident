@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import type { EditorCore, TransformAxis } from "@gg-ez/editor-core";
+import type { EditorCore, TransformAxis } from "@ggez/editor-core";
 import type { MeshEditMode } from "@/viewport/editing";
-import type { ToolId } from "@gg-ez/tool-system";
+import type { ToolId } from "@ggez/tool-system";
 
 type UseAppHotkeysOptions = {
   activeToolId: ToolId;

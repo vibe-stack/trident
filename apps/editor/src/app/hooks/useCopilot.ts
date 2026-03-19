@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EditorCore } from "@gg-ez/editor-core";
+import type { EditorCore } from "@ggez/editor-core";
 import type { CopilotSession } from "@/lib/copilot/types";
 import { runAgenticLoop } from "@/lib/copilot/agentic-loop";
 import { createCopilotProvider } from "@/lib/copilot/provider";

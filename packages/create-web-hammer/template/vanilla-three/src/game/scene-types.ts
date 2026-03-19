@@ -1,7 +1,7 @@
-import type { GameplayRuntime, GameplayRuntimeSystemRegistration } from "@gg-ez/gameplay-runtime";
-import type { SceneSettings } from "@gg-ez/shared";
-import type { RuntimeScene } from "@gg-ez/runtime-format";
-import type { ThreeRuntimeSceneInstance } from "@gg-ez/three-runtime";
+import type { GameplayRuntime, GameplayRuntimeSystemRegistration } from "@ggez/gameplay-runtime";
+import type { SceneSettings } from "@ggez/shared";
+import type { RuntimeScene } from "@ggez/runtime-format";
+import type { ThreeRuntimeSceneInstance } from "@ggez/three-runtime";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import type { PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import type { StarterPlayerController } from "./starter-player-controller";

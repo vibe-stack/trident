@@ -32,8 +32,8 @@ import {
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
-import type { DerivedLight, DerivedRenderMesh } from "@gg-ez/render-pipeline";
-import { createBlockoutTextureDataUri, resolveTransformPivot, toTuple, type MaterialRenderSide } from "@gg-ez/shared";
+import type { DerivedLight, DerivedRenderMesh } from "@ggez/render-pipeline";
+import { createBlockoutTextureDataUri, resolveTransformPivot, toTuple, type MaterialRenderSide } from "@ggez/shared";
 import type { AssetPathResolver } from "./types";
 
 const previewTextureCache = new Map<string, ReturnType<TextureLoader["load"]>>();

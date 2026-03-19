@@ -1,6 +1,6 @@
-import type { EditableMesh, Vec3, VertexID } from "@gg-ez/shared";
+import type { EditableMesh, Vec3, VertexID } from "@ggez/shared";
 import { computePolygonNormal } from "../../polygon/polygon-utils";
-import { lengthVec3, vec3 } from "@gg-ez/shared";
+import { lengthVec3, vec3 } from "@ggez/shared";
 import { createEditableMeshFromPolygons, getMeshPolygons, makeUndirectedEdgeKey, orderBoundaryEdges, orientPolygonLoops } from "./shared";
 import type { OrientedEditablePolygon } from "./types";
 

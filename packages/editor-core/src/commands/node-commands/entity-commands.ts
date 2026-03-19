@@ -1,4 +1,4 @@
-import type { Entity } from "@gg-ez/shared";
+import type { Entity } from "@ggez/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 

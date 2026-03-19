@@ -1,5 +1,5 @@
-import type { Asset, MaterialRenderSide, PropPhysics, SceneSkyboxSettings, Transform, Vec3 } from "@gg-ez/shared";
-import { resolveInstancingSourceNode, resolveSceneGraph, vec3 } from "@gg-ez/shared";
+import type { Asset, MaterialRenderSide, PropPhysics, SceneSkyboxSettings, Transform, Vec3 } from "@ggez/shared";
+import { resolveInstancingSourceNode, resolveSceneGraph, vec3 } from "@ggez/shared";
 import {
   AmbientLight,
   BackSide,
@@ -41,7 +41,7 @@ import {
   isRuntimeScene,
   parseRuntimeScene,
   type RuntimeScene
-} from "@gg-ez/runtime-format";
+} from "@ggez/runtime-format";
 import {
   createWebHammerSceneObjectFactory,
   extractPhysics as extractNodePhysics,

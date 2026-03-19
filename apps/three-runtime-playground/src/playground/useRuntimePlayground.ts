@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createGameplayRuntime, createGameplayRuntimeSceneFromRuntimeScene } from "@gg-ez/gameplay-runtime";
+import { createGameplayRuntime, createGameplayRuntimeSceneFromRuntimeScene } from "@ggez/gameplay-runtime";
 import {
   createWebHammerBundleAssetResolver,
   parseWebHammerEngineBundleZip,
   parseWebHammerEngineScene,
   type WebHammerEngineScene
-} from "@gg-ez/three-runtime";
-import { normalizeSceneSettings, type Vec3 } from "@gg-ez/shared";
+} from "@ggez/three-runtime";
+import { normalizeSceneSettings, type Vec3 } from "@ggez/shared";
 import { createPlaybackRenderScene } from "../adapter";
 import { createPlaybackGameplayHost } from "../gameplay-host";
 import { createPlaybackGameplaySystems } from "../gameplay-systems";

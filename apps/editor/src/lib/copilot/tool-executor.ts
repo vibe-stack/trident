@@ -1,4 +1,4 @@
-import type { EditorCore } from "@gg-ez/editor-core";
+import type { EditorCore } from "@ggez/editor-core";
 import {
   createAssignMaterialCommand,
   createAssignMaterialToBrushesCommand,
@@ -27,7 +27,7 @@ import {
   createSplitBrushNodesCommand,
   createTranslateNodesCommand,
   createUpsertMaterialCommand
-} from "@gg-ez/editor-core";
+} from "@ggez/editor-core";
 import {
   arcEditableMeshEdges,
   bevelEditableMeshEdges,
@@ -42,9 +42,9 @@ import {
   mergeEditableMeshFaces,
   mergeEditableMeshVertices,
   subdivideEditableMeshFace
-} from "@gg-ez/geometry-kernel";
-import { isBrushNode, isMeshNode, makeTransform, resolveSceneGraph, vec3 } from "@gg-ez/shared";
-import type { EditableMesh, GameplayObject, GameplayValue, Material, SceneHook, ScenePathDefinition, SceneSettings, Vec3 } from "@gg-ez/shared";
+} from "@ggez/geometry-kernel";
+import { isBrushNode, isMeshNode, makeTransform, resolveSceneGraph, vec3 } from "@ggez/shared";
+import type { EditableMesh, GameplayObject, GameplayValue, Material, SceneHook, ScenePathDefinition, SceneSettings, Vec3 } from "@ggez/shared";
 import {
   createDefaultEntity,
   createDefaultLightData,

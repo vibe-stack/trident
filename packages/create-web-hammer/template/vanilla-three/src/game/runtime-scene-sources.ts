@@ -1,4 +1,4 @@
-import { parseRuntimeScene, type RuntimeScene } from "@gg-ez/runtime-format";
+import { parseRuntimeScene, type RuntimeScene } from "@ggez/runtime-format";
 import type { GameSceneDefinition, RuntimeSceneSource } from "./scene-types";
 
 const MATERIAL_TEXTURE_SLOTS = ["baseColorTexture", "metallicRoughnessTexture", "normalTexture"] as const;

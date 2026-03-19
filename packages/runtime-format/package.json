@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/runtime-format",
+  "name": "@ggez/runtime-format",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -7,6 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gg-ez/shared": "workspace:*"
+    "@ggez/shared": "workspace:*"
   }
 }

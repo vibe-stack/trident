@@ -1,7 +1,7 @@
-import { convertBrushToEditableMesh } from "@gg-ez/geometry-kernel";
+import { convertBrushToEditableMesh } from "@ggez/geometry-kernel";
 import { TransformControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type Brush, type EditableMesh, type GeometryNode, type Transform, type Vec3, vec3 } from "@gg-ez/shared";
+import { type Brush, type EditableMesh, type GeometryNode, type Transform, type Vec3, vec3 } from "@ggez/shared";
 import {
   applyBrushEditTransform,
   collectMeshEdgeLoop,
@@ -17,7 +17,7 @@ import {
   type MeshEditMode
 } from "@/viewport/editing";
 import type { ViewportCanvasProps } from "@/viewport/types";
-import type { ViewportState } from "@gg-ez/render-pipeline";
+import type { ViewportState } from "@ggez/render-pipeline";
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { objectToTransform, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { findMatchingBrushEdgeHandleId, findMatchingMeshEdgePair, resolveSubobjectSelection } from "@/viewport/utils/interaction";

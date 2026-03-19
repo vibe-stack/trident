@@ -12,7 +12,7 @@ import type {
   PropPhysics,
   PrimitiveNode,
   SceneSettings
-} from "@gg-ez/shared";
+} from "@ggez/shared";
 
 export const RUNTIME_SCENE_FORMAT = "web-hammer-engine" as const;
 export const CURRENT_RUNTIME_SCENE_VERSION = 6 as const;

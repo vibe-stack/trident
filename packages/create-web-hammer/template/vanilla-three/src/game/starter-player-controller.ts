@@ -1,5 +1,5 @@
-import type { GameplayRuntime } from "@gg-ez/gameplay-runtime";
-import { vec3, type SceneSettings, type Vec3 } from "@gg-ez/shared";
+import type { GameplayRuntime } from "@ggez/gameplay-runtime";
+import { vec3, type SceneSettings, type Vec3 } from "@ggez/shared";
 import RAPIER from "@dimforge/rapier3d-compat";
 import {
   CapsuleGeometry,

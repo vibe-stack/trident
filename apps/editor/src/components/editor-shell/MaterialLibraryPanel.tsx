@@ -27,7 +27,7 @@ import {
   type TextureKind,
   type TextureRecord,
   type Vec2
-} from "@gg-ez/shared";
+} from "@ggez/shared";
 import { AnimatePresence, motion } from "motion/react";
 import { TextureBrowserOverlay } from "@/components/editor-shell/TextureBrowserOverlay";
 import { Button } from "@/components/ui/button";

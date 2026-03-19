@@ -1,6 +1,6 @@
 import { MapControls, OrbitControls } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { toTuple } from "@gg-ez/shared";
+import { toTuple } from "@ggez/shared";
 import { useEffect, useRef } from "react";
 import { OrthographicCamera, PerspectiveCamera } from "three";
 import type { ViewportCanvasProps } from "@/viewport/types";

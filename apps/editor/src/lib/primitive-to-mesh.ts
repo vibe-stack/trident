@@ -1,14 +1,14 @@
 import {
   createEditableMeshFromPolygons,
   type EditableMeshPolygon
-} from "@gg-ez/geometry-kernel";
+} from "@ggez/geometry-kernel";
 import {
   vec2,
   vec3,
   type PrimitiveNodeData,
   type MeshNode,
   type PrimitiveNode
-} from "@gg-ez/shared";
+} from "@ggez/shared";
 import {
   BoxGeometry,
   ConeGeometry,

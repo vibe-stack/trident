@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeTransform, vec3 } from "@gg-ez/shared";
+import { makeTransform, vec3 } from "@ggez/shared";
 import runtimeSceneV4 from "./__fixtures__/runtime-scene.v4.json";
 import {
   CURRENT_RUNTIME_SCENE_VERSION,

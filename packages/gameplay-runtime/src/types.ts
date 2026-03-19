@@ -1,4 +1,4 @@
-import type { Entity, GameplayValue, GeometryNode, SceneHook, Transform, Vec3 } from "@gg-ez/shared";
+import type { Entity, GameplayValue, GeometryNode, SceneHook, Transform, Vec3 } from "@ggez/shared";
 
 export type GameplayRuntimeTargetKind = "entity" | "node" | "system";
 

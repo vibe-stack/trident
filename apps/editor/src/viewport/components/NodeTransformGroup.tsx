@@ -1,4 +1,4 @@
-import { resolveTransformPivot, toTuple, type Transform } from "@gg-ez/shared";
+import { resolveTransformPivot, toTuple, type Transform } from "@ggez/shared";
 import type { ReactNode } from "react";
 
 export function NodeTransformGroup({

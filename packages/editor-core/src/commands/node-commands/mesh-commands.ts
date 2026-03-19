@@ -1,6 +1,6 @@
-import { inflateEditableMesh, offsetEditableMeshTop } from "@gg-ez/geometry-kernel";
-import type { MeshNode } from "@gg-ez/shared";
-import { isMeshNode } from "@gg-ez/shared";
+import { inflateEditableMesh, offsetEditableMeshTop } from "@ggez/geometry-kernel";
+import type { MeshNode } from "@ggez/shared";
+import { isMeshNode } from "@ggez/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 import { createMeshMutationCommand } from "./helpers";

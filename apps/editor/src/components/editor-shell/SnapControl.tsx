@@ -1,4 +1,4 @@
-import type { GridSnapValue } from "@gg-ez/render-pipeline";
+import type { GridSnapValue } from "@ggez/render-pipeline";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import { Grid3X3 } from "@/components/editor-shell/icons";
 import { Button } from "@/components/ui/button";

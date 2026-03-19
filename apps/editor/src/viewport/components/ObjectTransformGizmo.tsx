@@ -1,8 +1,8 @@
 import { Billboard, TransformControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
-import type { Entity, GeometryNode, Transform } from "@gg-ez/shared";
-import { isInstancingNode, localizeTransform, resolveTransformPivot, toTuple, vec3, type Vec3 } from "@gg-ez/shared";
+import type { Entity, GeometryNode, Transform } from "@ggez/shared";
+import { isInstancingNode, localizeTransform, resolveTransformPivot, toTuple, vec3, type Vec3 } from "@ggez/shared";
 import { objectToTransform, rebaseTransformPivot, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import type { ViewportCanvasProps } from "@/viewport/types";

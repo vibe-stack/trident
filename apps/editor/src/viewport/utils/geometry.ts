@@ -1,6 +1,6 @@
-import { resolveTransformPivot, vec3, type Transform, type Vec3 } from "@gg-ez/shared";
+import { resolveTransformPivot, vec3, type Transform, type Vec3 } from "@ggez/shared";
 import { BufferGeometry, Euler, Float32BufferAttribute, Object3D, Quaternion, Vector3 } from "three";
-import type { DerivedSurfaceGroup } from "@gg-ez/render-pipeline";
+import type { DerivedSurfaceGroup } from "@ggez/render-pipeline";
 
 export function createIndexedGeometry(positions: number[], indices?: number[], uvs?: number[], groups?: DerivedSurfaceGroup[]) {
   const geometry = new BufferGeometry();

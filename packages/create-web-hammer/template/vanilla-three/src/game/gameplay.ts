@@ -7,9 +7,9 @@ import {
   createTriggerSystemDefinition,
   type GameplayRuntimeHost,
   type GameplayRuntimeSystemRegistration
-} from "@gg-ez/gameplay-runtime";
-import type { SceneSettings, Transform } from "@gg-ez/shared";
-import type { ThreeRuntimeSceneInstance } from "@gg-ez/three-runtime";
+} from "@ggez/gameplay-runtime";
+import type { SceneSettings, Transform } from "@ggez/shared";
+import type { ThreeRuntimeSceneInstance } from "@ggez/three-runtime";
 import { Euler, Quaternion, type Object3D } from "three";
 import type { RuntimePhysicsSession } from "./runtime-physics";
 

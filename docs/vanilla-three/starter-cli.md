@@ -32,7 +32,7 @@ Using pnpm:
 pnpm dlx create-web-hammer my-game --package-manager pnpm
 ```
 
-Inside this repository, create starters under `samples/*` so Bun can resolve the local `@gg-ez/*` workspace packages.
+Inside this repository, create starters under `samples/*` so Bun can resolve the local `@ggez/*` workspace packages.
 
 ## What It Generates
 
@@ -42,10 +42,10 @@ The starter includes:
 - TypeScript
 - Three.js
 - Rapier
-- `@gg-ez/three-runtime`
-- `@gg-ez/runtime-format`
-- `@gg-ez/gameplay-runtime`
-- `@gg-ez/runtime-physics-rapier`
+- `@ggez/three-runtime`
+- `@ggez/runtime-format`
+- `@ggez/gameplay-runtime`
+- `@ggez/runtime-physics-rapier`
 - a scaffold-owned starter player controller that reads runtime camera/player settings
 - scene modules with `mount`, `systems`, `player`, and `gotoScene(...)`
 

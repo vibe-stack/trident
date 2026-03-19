@@ -16,7 +16,7 @@ import {
   type PointerEvent as ReactPointerEvent
 } from "react";
 import { createPortal } from "react-dom";
-import type { TextureKind, TextureRecord } from "@gg-ez/shared";
+import type { TextureKind, TextureRecord } from "@ggez/shared";
 import {
   createTextureGenerator,
   TEXTURE_GENERATION_MODELS,

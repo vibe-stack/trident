@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { Entity, GeometryNode } from "@gg-ez/shared";
-import { resolveSceneGraph } from "@gg-ez/shared";
+import type { Entity, GeometryNode } from "@ggez/shared";
+import { resolveSceneGraph } from "@ggez/shared";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";

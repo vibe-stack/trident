@@ -1,3 +1,3 @@
-export type * from "@gg-ez/runtime-format";
+export type * from "@ggez/runtime-format";
 export * from "./bundle";
 export * from "./snapshot-build";

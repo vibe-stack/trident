@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { exportEngineBundle, serializeGltfScene } from "./export-tasks";
-import { makeTransform, vec3, type SceneSettings } from "@gg-ez/shared";
-import type { SceneDocumentSnapshot } from "@gg-ez/editor-core";
-import { buildRuntimeBundleFromSnapshot, buildRuntimeSceneFromSnapshot } from "@gg-ez/runtime-build";
+import { makeTransform, vec3, type SceneSettings } from "@ggez/shared";
+import type { SceneDocumentSnapshot } from "@ggez/editor-core";
+import { buildRuntimeBundleFromSnapshot, buildRuntimeSceneFromSnapshot } from "@ggez/runtime-build";
 
 const settings: SceneSettings = {
   player: {

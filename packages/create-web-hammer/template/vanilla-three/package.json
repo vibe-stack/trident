@@ -12,13 +12,13 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.2",
-    "@gg-ez/game-dev": "workspace:*",
-    "@gg-ez/gameplay-runtime": "workspace:*",
-    "@gg-ez/render-pipeline": "workspace:*",
-    "@gg-ez/runtime-format": "workspace:*",
-    "@gg-ez/runtime-physics-rapier": "workspace:*",
-    "@gg-ez/shared": "workspace:*",
-    "@gg-ez/three-runtime": "workspace:*",
+    "@ggez/game-dev": "workspace:*",
+    "@ggez/gameplay-runtime": "workspace:*",
+    "@ggez/render-pipeline": "workspace:*",
+    "@ggez/runtime-format": "workspace:*",
+    "@ggez/runtime-physics-rapier": "workspace:*",
+    "@ggez/shared": "workspace:*",
+    "@ggez/three-runtime": "workspace:*",
     "three": "^0.181.1"
   },
   "devDependencies": {

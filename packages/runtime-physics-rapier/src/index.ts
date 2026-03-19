@@ -1,7 +1,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import type { DerivedRenderMesh } from "@gg-ez/render-pipeline";
-import { getRuntimePhysicsDescriptors, type RuntimePhysicsDescriptor } from "@gg-ez/runtime-format";
-import { resolveTransformPivot, type SceneSettings } from "@gg-ez/shared";
+import type { DerivedRenderMesh } from "@ggez/render-pipeline";
+import { getRuntimePhysicsDescriptors, type RuntimePhysicsDescriptor } from "@ggez/runtime-format";
+import { resolveTransformPivot, type SceneSettings } from "@ggez/shared";
 import {
   BoxGeometry,
   BufferGeometry,

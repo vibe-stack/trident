@@ -1,6 +1,6 @@
-import type { GridSnapValue } from "@gg-ez/render-pipeline";
-import type { BrushShape, EntityType, LightType, PrimitiveShape } from "@gg-ez/shared";
-import type { ToolId } from "@gg-ez/tool-system";
+import type { GridSnapValue } from "@ggez/render-pipeline";
+import type { BrushShape, EntityType, LightType, PrimitiveShape } from "@ggez/shared";
+import type { ToolId } from "@ggez/tool-system";
 import { AnimatePresence, motion } from "motion/react";
 import { CreationToolBar } from "@/components/editor-shell/CreationToolBar";
 import { MeshEditToolBars } from "@/components/editor-shell/MeshEditToolBars";

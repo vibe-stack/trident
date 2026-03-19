@@ -7,7 +7,7 @@ import {
   Scaling,
   Scissors
 } from "lucide-react";
-import type { ToolId } from "@gg-ez/tool-system";
+import type { ToolId } from "@ggez/tool-system";
 
 export function TridentIcon(props: SVGProps<SVGSVGElement>) {
   return (

@@ -4,7 +4,7 @@ import {
   createRapierPhysicsWorld,
   createStaticRigidBody,
   ensureRapierRuntimePhysics
-} from "@gg-ez/runtime-physics-rapier";
+} from "@ggez/runtime-physics-rapier";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
@@ -56,9 +56,9 @@ import {
   type WebHammerEngineNode,
   type WebHammerExportGeometry,
   type WebHammerExportMaterial
-} from "@gg-ez/three-runtime";
-import { createBlockoutTextureDataUri, resolveSceneGraph, resolveTransformPivot, vec3, type Asset, type MaterialRenderSide } from "@gg-ez/shared";
-import type { DerivedLight, DerivedRenderMesh } from "@gg-ez/render-pipeline";
+} from "@ggez/three-runtime";
+import { createBlockoutTextureDataUri, resolveSceneGraph, resolveTransformPivot, vec3, type Asset, type MaterialRenderSide } from "@ggez/shared";
+import type { DerivedLight, DerivedRenderMesh } from "@ggez/render-pipeline";
 import type { PlaybackGameplayHost } from "../gameplay-host";
 import type { AssetPathResolver, PlayerActor, SceneRuntimeConfig } from "../types";
 

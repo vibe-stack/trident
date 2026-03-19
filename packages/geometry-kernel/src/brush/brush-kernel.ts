@@ -5,8 +5,8 @@ import {
   normalizeVec3,
   scaleVec3,
   vec3
-} from "@gg-ez/shared";
-import type { Brush, Face, Plane, Vec3 } from "@gg-ez/shared";
+} from "@ggez/shared";
+import type { Brush, Face, Plane, Vec3 } from "@ggez/shared";
 import { computeFaceCenter, sortVerticesOnPlane, triangulatePolygon3D } from "../polygon/polygon-utils";
 
 export type ReconstructedBrushVertex = {

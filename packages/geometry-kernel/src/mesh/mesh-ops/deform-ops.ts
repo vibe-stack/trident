@@ -1,5 +1,5 @@
-import type { EditableMesh, Vec3, VertexID } from "@gg-ez/shared";
-import { addVec3, averageVec3, lengthVec3, normalizeVec3, scaleVec3, subVec3, vec3 } from "@gg-ez/shared";
+import type { EditableMesh, Vec3, VertexID } from "@ggez/shared";
+import { addVec3, averageVec3, lengthVec3, normalizeVec3, scaleVec3, subVec3, vec3 } from "@ggez/shared";
 import { computePolygonNormal } from "../../polygon/polygon-utils";
 import { getFaceVertices } from "../editable-mesh";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/gameplay-runtime",
+  "name": "@ggez/gameplay-runtime",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gg-ez/runtime-format": "workspace:*",
-    "@gg-ez/shared": "workspace:*"
+    "@ggez/runtime-format": "workspace:*",
+    "@ggez/shared": "workspace:*"
   }
 }

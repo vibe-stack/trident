@@ -1,8 +1,8 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
-import { deriveRenderScene, type DerivedRenderScene } from "@gg-ez/render-pipeline";
-import { createDynamicRigidBody, createStaticRigidBody } from "@gg-ez/runtime-physics-rapier";
-import type { Material } from "@gg-ez/shared";
-import type { ThreeRuntimeSceneInstance } from "@gg-ez/three-runtime";
+import { deriveRenderScene, type DerivedRenderScene } from "@ggez/render-pipeline";
+import { createDynamicRigidBody, createStaticRigidBody } from "@ggez/runtime-physics-rapier";
+import type { Material } from "@ggez/shared";
+import type { ThreeRuntimeSceneInstance } from "@ggez/three-runtime";
 import { Matrix4, Quaternion, Vector3 } from "three";
 
 export type RuntimePhysicsSession = {

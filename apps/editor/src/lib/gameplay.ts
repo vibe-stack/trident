@@ -1,4 +1,4 @@
-import type { GameplayObject, GameplayValue, SceneEventDefinition, SceneHook } from "@gg-ez/shared";
+import type { GameplayObject, GameplayValue, SceneEventDefinition, SceneHook } from "@ggez/shared";
 
 type HookFieldCondition = {
   equals?: GameplayValue;

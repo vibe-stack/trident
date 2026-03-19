@@ -1,4 +1,4 @@
-import type { FaceID, MaterialID, Vec2, Vec3, VertexID } from "@gg-ez/shared";
+import type { FaceID, MaterialID, Vec2, Vec3, VertexID } from "@ggez/shared";
 
 export type MeshPolygonData = {
   center: Vec3;

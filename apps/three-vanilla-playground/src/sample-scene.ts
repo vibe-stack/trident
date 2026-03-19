@@ -1,4 +1,4 @@
-import type { WebHammerEngineScene, WebHammerExportMaterial } from "@gg-ez/three-runtime";
+import type { WebHammerEngineScene, WebHammerExportMaterial } from "@ggez/three-runtime";
 import { BoxGeometry, BufferGeometry, ConeGeometry, CylinderGeometry, Float32BufferAttribute } from "three";
 
 const checkerTexture = createCheckerTexture("#f0e3c8", "#d8b881");

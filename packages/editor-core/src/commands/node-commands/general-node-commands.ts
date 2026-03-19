@@ -1,4 +1,4 @@
-import type { GeometryNode } from "@gg-ez/shared";
+import type { GeometryNode } from "@ggez/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 

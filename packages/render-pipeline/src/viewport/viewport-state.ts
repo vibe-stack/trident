@@ -1,4 +1,4 @@
-import { vec3 } from "@gg-ez/shared";
+import { vec3 } from "@ggez/shared";
 
 export const gridSnapValues = [1, 2, 4, 8, 16, 32, 64, 128] as const;
 

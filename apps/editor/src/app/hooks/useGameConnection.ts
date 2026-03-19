@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DevSyncGameRegistration, EditorFileMetadata } from "@gg-ez/dev-sync";
+import type { DevSyncGameRegistration, EditorFileMetadata } from "@ggez/dev-sync";
 
 type EditorSyncPushResponse = {
   game: DevSyncGameRegistration;

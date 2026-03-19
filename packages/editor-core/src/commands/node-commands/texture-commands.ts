@@ -1,4 +1,4 @@
-import type { Material, TextureRecord } from "@gg-ez/shared";
+import type { Material, TextureRecord } from "@ggez/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 

@@ -1,5 +1,5 @@
-import type { Asset, GeometryNode, PrimitiveNode, Vec3 } from "@gg-ez/shared";
-import { isPrimitiveNode, vec3 } from "@gg-ez/shared";
+import type { Asset, GeometryNode, PrimitiveNode, Vec3 } from "@ggez/shared";
+import { isPrimitiveNode, vec3 } from "@ggez/shared";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Box3, Vector3 } from "three";

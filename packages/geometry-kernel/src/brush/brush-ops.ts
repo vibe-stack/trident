@@ -1,5 +1,5 @@
-import type { Brush } from "@gg-ez/shared";
-import { vec3 } from "@gg-ez/shared";
+import type { Brush } from "@ggez/shared";
+import { vec3 } from "@ggez/shared";
 
 export type BrushAxis = "x" | "y" | "z";
 

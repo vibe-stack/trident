@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/editor-core",
+  "name": "@ggez/editor-core",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gg-ez/geometry-kernel": "workspace:*",
-    "@gg-ez/shared": "workspace:*"
+    "@ggez/geometry-kernel": "workspace:*",
+    "@ggez/shared": "workspace:*"
   }
 }

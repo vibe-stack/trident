@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createGameplayRuntime } from "@gg-ez/gameplay-runtime";
-import { createDefaultSceneSettings, makeTransform, vec3, type GeometryNode } from "@gg-ez/shared";
+import { createGameplayRuntime } from "@ggez/gameplay-runtime";
+import { createDefaultSceneSettings, makeTransform, vec3, type GeometryNode } from "@ggez/shared";
 import { createPlaybackGameplaySystems, type PlaybackGameplaySystemsState } from "../src/gameplay-systems";
 
 const enabledSystems: PlaybackGameplaySystemsState = {

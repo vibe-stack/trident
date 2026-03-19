@@ -2,7 +2,7 @@ import {
   convertBrushToEditableMesh,
   extrudeEditableMeshEdge,
   extrudeEditableMeshFace
-} from "@gg-ez/geometry-kernel";
+} from "@ggez/geometry-kernel";
 import {
   createBrushExtrudeHandles,
   createMeshExtrudeHandles,
@@ -12,8 +12,8 @@ import {
 } from "@/viewport/editing";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plane, Raycaster, Vector2, Vector3 } from "three";
-import { toTuple, vec3, type Brush, type EditableMesh, type GeometryNode } from "@gg-ez/shared";
-import type { ViewportState } from "@gg-ez/render-pipeline";
+import { toTuple, vec3, type Brush, type EditableMesh, type GeometryNode } from "@ggez/shared";
+import type { ViewportState } from "@ggez/render-pipeline";
 import { useThree } from "@react-three/fiber";
 import type { ViewportCanvasProps } from "@/viewport/types";
 import { EditableMeshPreviewOverlay } from "@/viewport/components/EditableMeshPreviewOverlay";

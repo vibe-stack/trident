@@ -2,8 +2,8 @@ import { useBeforePhysicsStep, CapsuleCollider, CuboidCollider, RigidBody, type 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { CapsuleGeometry, Group, MathUtils, Object3D, Quaternion, Vector3 } from "three";
-import type { DerivedEntityMarker } from "@gg-ez/render-pipeline";
-import { vec3, type SceneSettings } from "@gg-ez/shared";
+import type { DerivedEntityMarker } from "@ggez/render-pipeline";
+import { vec3, type SceneSettings } from "@ggez/shared";
 import type { PlaybackPhysicsState, PlayerActor } from "./types";
 
 const PHYSICS_STEP_SECONDS = 1 / 60;

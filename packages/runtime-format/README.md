@@ -1,4 +1,4 @@
-# @gg-ez/runtime-format
+# @ggez/runtime-format
 
 Renderer-agnostic runtime contracts for Web Hammer.
 
@@ -14,7 +14,7 @@ This package owns:
 ## Install
 
 ```bash
-bun add @gg-ez/runtime-format
+bun add @ggez/runtime-format
 ```
 
 ## Example
@@ -25,7 +25,7 @@ import {
   parseRuntimeScene,
   parseRuntimeWorldIndex,
   validateRuntimeScene
-} from "@gg-ez/runtime-format";
+} from "@ggez/runtime-format";
 
 const scene = parseRuntimeScene(runtimeSceneJson);
 const validation = validateRuntimeScene(scene);

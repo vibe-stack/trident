@@ -1,5 +1,5 @@
 {
-  "name": "@gg-ez/runtime-physics-rapier",
+  "name": "@ggez/runtime-physics-rapier",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.2",
-    "@gg-ez/render-pipeline": "workspace:*",
-    "@gg-ez/runtime-format": "workspace:*",
-    "@gg-ez/shared": "workspace:*",
+    "@ggez/render-pipeline": "workspace:*",
+    "@ggez/runtime-format": "workspace:*",
+    "@ggez/shared": "workspace:*",
     "three": "^0.181.1"
   }
 }

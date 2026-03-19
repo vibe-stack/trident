@@ -1,4 +1,4 @@
-import type { ViewportState } from "@gg-ez/render-pipeline";
+import type { ViewportState } from "@ggez/render-pipeline";
 
 export const MINIMUM_SNAP_SIZE = 0.05;
 

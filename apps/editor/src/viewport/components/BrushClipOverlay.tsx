@@ -1,12 +1,12 @@
-import { reconstructBrushFaces, type ReconstructedBrushFace } from "@gg-ez/geometry-kernel";
-import { vec3, type GeometryNode } from "@gg-ez/shared";
+import { reconstructBrushFaces, type ReconstructedBrushFace } from "@ggez/geometry-kernel";
+import { vec3, type GeometryNode } from "@ggez/shared";
 import { useEffect, useMemo, useState } from "react";
 import { Vector3 } from "three";
 import { buildBrushClipPreview, buildClipPreview } from "@/viewport/editing";
 import { NodeTransformGroup } from "@/viewport/components/NodeTransformGroup";
 import { FaceHitArea, PreviewLine } from "@/viewport/components/SelectionVisuals";
 import type { ViewportCanvasProps } from "@/viewport/types";
-import type { ViewportState } from "@gg-ez/render-pipeline";
+import type { ViewportState } from "@ggez/render-pipeline";
 import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 
 export function BrushClipOverlay({

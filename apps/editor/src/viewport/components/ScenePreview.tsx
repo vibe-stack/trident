@@ -25,7 +25,7 @@ import {
   BufferGeometry,
   type Side
 } from "three";
-import type { GeometryNode, MaterialRenderSide, SceneHook, Transform, Vec3 } from "@gg-ez/shared";
+import type { GeometryNode, MaterialRenderSide, SceneHook, Transform, Vec3 } from "@ggez/shared";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -38,11 +38,11 @@ import {
   type DerivedLight,
   type DerivedRenderMesh,
   type DerivedRenderScene
-} from "@gg-ez/render-pipeline";
-import { createBlockoutTextureDataUri, resolveTransformPivot, toTuple } from "@gg-ez/shared";
+} from "@ggez/render-pipeline";
+import { createBlockoutTextureDataUri, resolveTransformPivot, toTuple } from "@ggez/shared";
 import { createIndexedGeometry } from "@/viewport/utils/geometry";
 import type { ViewportRenderMode } from "@/viewport/viewports";
-import type { SceneSettings } from "@gg-ez/shared";
+import type { SceneSettings } from "@ggez/shared";
 
 const previewTextureCache = new Map<string, ReturnType<TextureLoader["load"]>>();
 const modelSceneCache = new Map<string, Object3D>();

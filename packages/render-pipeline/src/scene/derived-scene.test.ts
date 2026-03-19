@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { deriveRenderScene } from "./derived-scene";
-import { makeTransform, vec3, type Entity, type GeometryNode, type Material } from "@gg-ez/shared";
+import { makeTransform, vec3, type Entity, type GeometryNode, type Material } from "@ggez/shared";
 
 describe("deriveRenderScene", () => {
   test("applies parent transforms to child meshes, groups, and entities", () => {

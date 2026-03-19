@@ -1,4 +1,4 @@
-import type { Asset } from "@gg-ez/shared";
+import type { Asset } from "@ggez/shared";
 import type { Command } from "../command-stack";
 import type { SceneDocument } from "../../document/scene-document";
 

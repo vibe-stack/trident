@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { type Entity, type GameplayObject, type GameplayValue, type GeometryNode, type SceneEventDefinition, type SceneHook, type ScenePathDefinition, type SceneSettings } from "@gg-ez/shared";
+import { type Entity, type GameplayObject, type GameplayValue, type GeometryNode, type SceneEventDefinition, type SceneHook, type ScenePathDefinition, type SceneSettings } from "@ggez/shared";
 import { CircleHelp, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
-import type { ToolId } from "@gg-ez/tool-system";
+import type { ToolId } from "@ggez/tool-system";
 import { Button } from "@/components/ui/button";
 import { DragInput } from "@/components/ui/drag-input";
 import { Input } from "@/components/ui/input";

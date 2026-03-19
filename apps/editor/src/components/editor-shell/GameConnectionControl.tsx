@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Gamepad2, LoaderCircle, RefreshCw, Upload } from "lucide-react";
-import type { DevSyncGameRegistration } from "@gg-ez/dev-sync";
+import type { DevSyncGameRegistration } from "@ggez/dev-sync";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

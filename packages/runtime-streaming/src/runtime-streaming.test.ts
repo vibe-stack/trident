@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { vec3 } from "@gg-ez/shared";
+import { vec3 } from "@ggez/shared";
 import { createRuntimeWorldManager, distanceToChunkBounds } from "./index";
 
 describe("runtime-streaming", () => {

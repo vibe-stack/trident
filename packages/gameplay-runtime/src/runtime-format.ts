@@ -1,4 +1,4 @@
-import type { RuntimeScene } from "@gg-ez/runtime-format";
+import type { RuntimeScene } from "@ggez/runtime-format";
 import type { GameplayRuntimeScene } from "./types";
 
 export function createGameplayRuntimeSceneFromRuntimeScene(
