@@ -11,3 +11,4 @@ export * from "./selection-commands";
 export * from "./settings-commands";
 export * from "./texture-commands";
 export * from "./transform-commands";
+export * from "./helpers";
