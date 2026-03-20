@@ -1,4 +1,4 @@
-import { Bot, Gauge } from "lucide-react";
+import { Bot, Gauge, Play } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +9,11 @@ import {
   MenubarShortcut,
   MenubarTrigger
 } from "@/components/ui/menubar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover";
 import { TridentIcon } from "@/components/editor-shell/icons";
 import type { ViewportQuality } from "@/state/ui-store";
 
@@ -165,6 +170,40 @@ export function EditorMenuBar({
           <Gauge className="size-3.5" />
           {viewportQuality.toFixed(2)}
         </Button>
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                aria-label="Open playground"
+                className="text-[11px] text-foreground/65 hover:text-foreground"
+                size="icon-xs"
+                title="Open playground"
+                variant="ghost"
+              >
+                <Play className="size-3.5" />
+              </Button>
+            }
+          />
+          <PopoverContent
+            align="end"
+            className="w-52 rounded-2xl border border-white/8 bg-[#09110f]/96 p-1.5 shadow-[0_24px_60px_rgba(1,6,5,0.5)] backdrop-blur-xl"
+          >
+            <button
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-foreground/70 hover:bg-white/7 hover:text-foreground transition"
+              onClick={() => window.open("http://localhost:5174", "_blank")}
+              type="button"
+            >
+              React Playground
+            </button>
+            <button
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-foreground/70 hover:bg-white/7 hover:text-foreground transition"
+              onClick={() => window.open("http://localhost:5175", "_blank")}
+              type="button"
+            >
+              Vanilla Playground
+            </button>
+          </PopoverContent>
+        </Popover>
         <Button
           aria-label="AI Vibe"
           className={`size-7 rounded-lg ${copilotOpen ? "text-emerald-400 hover:text-emerald-300" : "text-foreground/65 hover:text-foreground"}`}
