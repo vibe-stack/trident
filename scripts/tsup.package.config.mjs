@@ -72,9 +72,6 @@ export default defineConfig([
     : undefined,
   Object.keys(cliEntries).length > 0
     ? {
-        banner: {
-          js: "#!/usr/bin/env node"
-        },
         bundle: true,
         clean: Object.keys(libraryEntries).length === 0,
         dts: false,

@@ -24,6 +24,11 @@ switch (command) {
     }
 
     for (const pkg of orderedPackages) {
+      if (!dryRun && isVersionPublished(pkg)) {
+        process.stdout.write(`Skipping ${pkg.name}@${pkg.version}; version is already published.\n`);
+        continue;
+      }
+
       const args = ["publish"];
 
       if (dryRun) {
@@ -40,6 +45,20 @@ switch (command) {
   }
   default:
     throw new Error(`Unsupported command: ${command}`);
+}
+
+function isVersionPublished(pkg) {
+  const result = spawnSync("npm", ["view", pkg.name, "version"], {
+    cwd: pkg.dir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+
+  if (result.status !== 0) {
+    return false;
+  }
+
+  return result.stdout.trim() === pkg.version;
 }
 
 function loadPackages() {

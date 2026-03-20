@@ -1,6 +1,6 @@
 {
   "name": "create-ggez",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scaffold a GGEZ starter project with a vanilla Three.js runtime setup.",
   "license": "MIT",
   "type": "module",
