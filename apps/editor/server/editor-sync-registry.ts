@@ -163,7 +163,20 @@ async function writeDevSyncRegistry(registry: DevSyncRegistry) {
   const tempPath = `${DEV_SYNC_REGISTRY_PATH}.${process.pid}.${randomUUID()}.tmp`;
   await mkdir(dirname(DEV_SYNC_REGISTRY_PATH), { recursive: true });
   await writeFile(tempPath, JSON.stringify(registry, null, 2), "utf8");
-  await rename(tempPath, DEV_SYNC_REGISTRY_PATH);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await rename(tempPath, DEV_SYNC_REGISTRY_PATH);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM" && attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+        continue;
+      }
+      await rm(tempPath, { force: true });
+      throw error;
+    }
+  }
 }
 
 function pruneDevSyncRegistry(registry: DevSyncRegistry) {
