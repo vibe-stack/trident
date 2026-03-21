@@ -16,7 +16,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["apps/editor/src/*"],
+      "@/*": ["./src/*"],
       "@ggez/dev-sync": ["packages/dev-sync/src/index.ts"],
       "@ggez/dev-sync/node": ["packages/dev-sync/src/node.ts"],
       "@ggez/shared": ["packages/shared/src/index.ts"],
