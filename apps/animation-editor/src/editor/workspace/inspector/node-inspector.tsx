@@ -1,4 +1,6 @@
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useEditorStoreValue } from "../../use-editor-store-value";
@@ -8,7 +10,7 @@ import { NumericDragInput, updateTypedNode } from "./shared";
 import { StateMachineInspector } from "./state-machine-inspector";
 
 export function NodeInspector(props: { store: AnimationEditorStore }) {
-  const state = useEditorStoreValue(props.store, () => props.store.getState(), ["selection", "graphs", "parameters"]);
+  const state = useEditorStoreValue(props.store, () => props.store.getState(), ["document", "selection", "graphs", "parameters"]);
   const graph = state.document.graphs.find((entry) => entry.id === state.selection.graphId);
   const node = graph?.nodes.find((entry) => entry.id === state.selection.nodeIds[0]);
 
@@ -63,6 +65,38 @@ export function NodeInspector(props: { store: AnimationEditorStore }) {
                   />
                   <span>{node.loop ? "Looping" : "Play once"}</span>
                 </label>
+              </PropertyField>
+              <PropertyField label="Translation">
+                <ButtonGroup className="grid w-full grid-cols-2">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={node.inPlace ? "outline" : "default"}
+                    className={node.inPlace ? "border-white/10 bg-white/6 text-zinc-300 hover:bg-white/10" : "border-emerald-300/30 bg-emerald-300 text-emerald-950 hover:bg-emerald-200"}
+                    onClick={() =>
+                      updateTypedNode(props.store, graph.id, node.id, "clip", (current) => ({
+                        ...current,
+                        inPlace: false,
+                      }))
+                    }
+                  >
+                    Root Motion
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={node.inPlace ? "default" : "outline"}
+                    className={node.inPlace ? "border-emerald-300/30 bg-emerald-300 text-emerald-950 hover:bg-emerald-200" : "border-white/10 bg-white/6 text-zinc-300 hover:bg-white/10"}
+                    onClick={() =>
+                      updateTypedNode(props.store, graph.id, node.id, "clip", (current) => ({
+                        ...current,
+                        inPlace: true,
+                      }))
+                    }
+                  >
+                    In Place
+                  </Button>
+                </ButtonGroup>
               </PropertyField>
             </>
           ) : null}

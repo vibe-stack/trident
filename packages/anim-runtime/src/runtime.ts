@@ -121,6 +121,106 @@ function copyRootMotion(source: RootMotionDelta, out: RootMotionDelta): RootMoti
   return out;
 }
 
+function getBoneDepth(rig: RigDefinition, boneIndex: number): number {
+  let depth = 0;
+  let current = boneIndex;
+
+  while (current >= 0) {
+    current = rig.parentIndices[current] ?? -1;
+    if (current >= 0) {
+      depth += 1;
+    }
+  }
+
+  return depth;
+}
+
+function scoreRootMotionBoneName(name: string): number {
+  const normalized = name.toLowerCase();
+
+  if (normalized.includes("hips")) {
+    return 400;
+  }
+  if (normalized.includes("pelvis")) {
+    return 320;
+  }
+  if (normalized === "root") {
+    return 240;
+  }
+  if (normalized.includes("root")) {
+    return 180;
+  }
+  if (normalized.includes("armature")) {
+    return 60;
+  }
+  return 0;
+}
+
+function estimateTranslationTravel(values: Float32Array | undefined): number {
+  if (!values || values.length < 6) {
+    return 0;
+  }
+
+  let maxDistance = 0;
+  const startX = values[0] ?? 0;
+  const startY = values[1] ?? 0;
+  const startZ = values[2] ?? 0;
+
+  for (let index = 3; index < values.length; index += 3) {
+    const dx = (values[index] ?? 0) - startX;
+    const dy = (values[index + 1] ?? 0) - startY;
+    const dz = (values[index + 2] ?? 0) - startZ;
+    maxDistance = Math.max(maxDistance, Math.hypot(dx, dy, dz));
+  }
+
+  return maxDistance;
+}
+
+function inferMotionRootBoneIndex(clip: AnimationClipAsset, rig: RigDefinition): number {
+  const candidates = clip.tracks
+    .filter((track) => track.translationTimes && track.translationValues && track.translationValues.length >= 3)
+    .map((track) => ({
+      boneIndex: track.boneIndex,
+      nameScore: scoreRootMotionBoneName(rig.boneNames[track.boneIndex] ?? ""),
+      travel: estimateTranslationTravel(track.translationValues),
+      depth: getBoneDepth(rig, track.boneIndex)
+    }))
+    .sort((left, right) => {
+      if (left.nameScore !== right.nameScore) {
+        return right.nameScore - left.nameScore;
+      }
+      if (left.travel !== right.travel) {
+        return right.travel - left.travel;
+      }
+      if (left.depth !== right.depth) {
+        return left.depth - right.depth;
+      }
+      return left.boneIndex - right.boneIndex;
+    });
+
+  return candidates[0]?.boneIndex ?? rig.rootBoneIndex;
+}
+
+function getEffectiveRootBoneIndex(clip: AnimationClipAsset, rig: RigDefinition): number {
+  return clip.rootBoneIndex ?? inferMotionRootBoneIndex(clip, rig);
+}
+
+function forceBoneTranslationToBindPose(context: EvaluationContext, boneIndex: number, pose: PoseBuffer): void {
+  const translationOffset = boneIndex * 3;
+  pose.translations[translationOffset] = context.rig.bindTranslations[translationOffset]!;
+  pose.translations[translationOffset + 1] = context.rig.bindTranslations[translationOffset + 1]!;
+  pose.translations[translationOffset + 2] = context.rig.bindTranslations[translationOffset + 2]!;
+}
+
+function forceRootMotionChainToBindPose(context: EvaluationContext, rootBoneIndex: number, pose: PoseBuffer): void {
+  let current = rootBoneIndex;
+
+  while (current >= 0) {
+    forceBoneTranslationToBindPose(context, current, pose);
+    current = context.rig.parentIndices[current] ?? -1;
+  }
+}
+
 function blendRootMotion(a: RootMotionDelta, b: RootMotionDelta, weight: number, out: RootMotionDelta): RootMotionDelta {
   const t = clamp(weight, 0, 1);
   out.translation[0] = a.translation[0] + (b.translation[0] - a.translation[0]) * t;
@@ -249,11 +349,18 @@ function evaluateNode(
     case "clip": {
       const clip = context.clips[node.clipIndex]!;
       sampleClipPose(clip, context.rig, time * node.speed, outPose, node.loop);
-      const rootBoneIndex = clip.rootBoneIndex ?? context.rig.rootBoneIndex;
+      const rootBoneIndex = getEffectiveRootBoneIndex(clip, context.rig);
+      if (node.inPlace) {
+        forceRootMotionChainToBindPose(context, rootBoneIndex, outPose);
+      }
       const prevPose = ensureScratchPose(context);
       const nextPose = ensureScratchPose(context);
       sampleClipPose(clip, context.rig, previousTime * node.speed, prevPose, node.loop);
       sampleClipPose(clip, context.rig, time * node.speed, nextPose, node.loop);
+      if (node.inPlace) {
+        forceRootMotionChainToBindPose(context, rootBoneIndex, prevPose);
+        forceRootMotionChainToBindPose(context, rootBoneIndex, nextPose);
+      }
       const prevTranslationOffset = rootBoneIndex * 3;
       const prevRotationOffset = rootBoneIndex * 4;
       copyRootMotion(
@@ -284,6 +391,9 @@ function evaluateNode(
         ),
         outRootMotion
       );
+      if (node.inPlace) {
+        resetRootMotion(outRootMotion);
+      }
       releaseScratchPose(context);
       releaseScratchPose(context);
       break;

@@ -86,7 +86,8 @@ export const clipNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("clip"),
   clipId: z.string(),
   speed: z.number().default(1),
-  loop: z.boolean().default(true)
+  loop: z.boolean().default(true),
+  inPlace: z.boolean().default(false)
 });
 
 export const blend1DChildSchema = z.object({
@@ -258,7 +259,8 @@ export const compiledClipNodeSchema = z.object({
   type: z.literal("clip"),
   clipIndex: z.number().int().nonnegative(),
   speed: z.number(),
-  loop: z.boolean()
+  loop: z.boolean(),
+  inPlace: z.boolean().default(false)
 });
 
 export const compiledBlend1DNodeSchema = z.object({

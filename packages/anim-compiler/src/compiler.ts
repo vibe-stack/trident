@@ -179,6 +179,25 @@ function collectReachableNodeIds(graph: AnimationEditorDocument["graphs"][number
   return reachable;
 }
 
+function collectReferencedClipIds(
+  document: AnimationEditorDocument,
+  reachableNodeIdsByGraphId: Map<string, Set<string>>
+): Set<string> {
+  const referencedClipIds = new Set<string>();
+
+  document.graphs.forEach((graph) => {
+    const reachableNodeIds = reachableNodeIdsByGraphId.get(graph.id) ?? new Set<string>();
+
+    graph.nodes.forEach((node) => {
+      if (node.kind === "clip" && reachableNodeIds.has(node.id) && node.clipId) {
+        referencedClipIds.add(node.clipId);
+      }
+    });
+  });
+
+  return referencedClipIds;
+}
+
 export function compileAnimationEditorDocument(input: unknown): CompileResult {
   const diagnostics: CompileDiagnostic[] = [];
   const parsed = animationEditorDocumentSchema.safeParse(input);
@@ -195,7 +214,10 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
   const document = parsed.data;
   const graphIndexById = new Map(document.graphs.map((graph, index) => [graph.id, index]));
   const parameterIndexById = new Map(document.parameters.map((parameter, index) => [parameter.id, index]));
-  const clipIndexById = new Map(document.clips.map((clip, index) => [clip.id, index]));
+  const reachableNodeIdsByGraphId = new Map(document.graphs.map((graph) => [graph.id, collectReachableNodeIds(graph)]));
+  const referencedClipIds = collectReferencedClipIds(document, reachableNodeIdsByGraphId);
+  const referencedClips = document.clips.filter((clip) => referencedClipIds.has(clip.id));
+  const clipIndexById = new Map(referencedClips.map((clip, index) => [clip.id, index]));
   const rig = toRig(document);
   const masks = compileMasks(document, rig, diagnostics);
   detectSubgraphCycles(document, diagnostics);
@@ -203,7 +225,7 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
   let machineIndexCounter = 0;
 
   const compiledGraphs: CompiledMotionGraph[] = document.graphs.map((graph, graphIndex) => {
-    const reachableNodeIds = collectReachableNodeIds(graph);
+    const reachableNodeIds = reachableNodeIdsByGraphId.get(graph.id) ?? new Set<string>();
     const nodeIdToCompiledIndex = new Map<string, number>();
     const motionNodes = graph.nodes.filter((node) => node.kind !== "output" && reachableNodeIds.has(node.id));
     motionNodes.forEach((node, index) => {
@@ -241,7 +263,8 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
             type: "clip",
             clipIndex,
             speed: node.speed,
-            loop: node.loop
+            loop: node.loop,
+            inPlace: node.inPlace
           });
           return;
         }
@@ -449,7 +472,7 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
         type: parameter.type,
         defaultValue: parameter.defaultValue
       })),
-      clipSlots: document.clips.map((clip) => ({
+      clipSlots: referencedClips.map((clip) => ({
         id: clip.id,
         name: clip.name,
         duration: clip.duration

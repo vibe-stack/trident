@@ -17,7 +17,8 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
         kind,
         clipId: "",
         speed: 1,
-        loop: true
+        loop: true,
+        inPlace: false
       };
     case "blend1d":
       return {
@@ -105,6 +106,7 @@ export function createDefaultAnimationEditorDocument(): AnimationEditorDocument 
             clipId: "",
             speed: 1,
             loop: true,
+            inPlace: false,
             position: { x: 64, y: 48 }
           },
           {
@@ -114,6 +116,7 @@ export function createDefaultAnimationEditorDocument(): AnimationEditorDocument 
             clipId: "",
             speed: 1,
             loop: true,
+            inPlace: false,
             position: { x: 64, y: 184 }
           },
           {
@@ -123,6 +126,7 @@ export function createDefaultAnimationEditorDocument(): AnimationEditorDocument 
             clipId: "",
             speed: 1,
             loop: true,
+            inPlace: false,
             position: { x: 64, y: 320 }
           },
           {

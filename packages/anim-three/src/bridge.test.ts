@@ -30,7 +30,29 @@ describe("@ggez/anim-three", () => {
     const asset = createClipAssetFromThreeClip(clip, skeleton);
 
     expect(asset.tracks).toHaveLength(1);
+    expect(asset.rootBoneIndex).toBe(0);
     expect(Array.from(asset.tracks[0]!.translationValues ?? [])).toEqual([0, 0, 0, 1, 0, 0]);
+  });
+
+  it("prefers hips as the imported root-motion bone when present", () => {
+    const root = new Bone();
+    root.name = "Armature";
+    const hips = new Bone();
+    hips.name = "mixamorigHips";
+    const spine = new Bone();
+    spine.name = "mixamorigSpine";
+    root.add(hips);
+    hips.add(spine);
+
+    const skeleton = new Skeleton([root, hips, spine]);
+    const clip = new AnimationClip("Walk", 1, [
+      new VectorKeyframeTrack(".bones[mixamorigHips].position", [0, 1], [0, 1, 0, 0.8, 1, 0.4]),
+      new QuaternionKeyframeTrack(".bones[mixamorigSpine].quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])
+    ]);
+
+    const asset = createClipAssetFromThreeClip(clip, skeleton);
+
+    expect(asset.rootBoneIndex).toBe(1);
   });
 
   it("applies a pose without mutating skeleton bind inverses", () => {

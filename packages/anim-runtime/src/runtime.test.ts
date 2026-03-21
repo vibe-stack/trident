@@ -39,6 +39,47 @@ const walkClip: AnimationClipAsset = {
   ]
 };
 
+const twoBoneRig = createRigDefinition({
+  boneNames: ["root", "mixamorigHips"],
+  parentIndices: [-1, 0],
+  rootBoneIndex: 0,
+  bindTranslations: [0, 0, 0, 0, 1, 0],
+  bindRotations: [0, 0, 0, 1, 0, 0, 0, 1],
+  bindScales: [1, 1, 1, 1, 1, 1]
+});
+
+const hipsMotionClip: AnimationClipAsset = {
+  id: "hips-walk",
+  name: "Hips Walk",
+  duration: 1,
+  rootBoneIndex: 1,
+  tracks: [
+    {
+      boneIndex: 1,
+      translationTimes: new Float32Array([0, 1]),
+      translationValues: new Float32Array([0, 1, 0, 2, 1, 0])
+    }
+  ]
+};
+
+const legacyMixamoClip: AnimationClipAsset = {
+  id: "legacy-mixamo-walk",
+  name: "Legacy Mixamo Walk",
+  duration: 1,
+  tracks: [
+    {
+      boneIndex: 0,
+      translationTimes: new Float32Array([0, 1]),
+      translationValues: new Float32Array([0, 0, 0, 1, 0, 0])
+    },
+    {
+      boneIndex: 1,
+      translationTimes: new Float32Array([0, 1]),
+      translationValues: new Float32Array([0, 1, 0, 2, 1, 0])
+    }
+  ]
+};
+
 describe("@ggez/anim-runtime", () => {
   it("evaluates 1d blends and root motion", () => {
     const graph: CompiledAnimatorGraph = {
@@ -55,8 +96,8 @@ describe("@ggez/anim-runtime", () => {
           name: "Locomotion",
           rootNodeIndex: 2,
           nodes: [
-            { type: "clip", clipIndex: 0, speed: 1, loop: true },
-            { type: "clip", clipIndex: 1, speed: 1, loop: true },
+            { type: "clip", clipIndex: 0, speed: 1, loop: true, inPlace: false },
+            { type: "clip", clipIndex: 1, speed: 1, loop: true, inPlace: false },
             {
               type: "blend1d",
               parameterIndex: 0,
@@ -109,8 +150,8 @@ describe("@ggez/anim-runtime", () => {
           name: "Main",
           rootNodeIndex: 2,
           nodes: [
-            { type: "clip", clipIndex: 0, speed: 1, loop: true },
-            { type: "clip", clipIndex: 1, speed: 1, loop: true },
+            { type: "clip", clipIndex: 0, speed: 1, loop: true, inPlace: false },
+            { type: "clip", clipIndex: 1, speed: 1, loop: true, inPlace: false },
             {
               type: "stateMachine",
               machineIndex: 0,
@@ -157,5 +198,134 @@ describe("@ggez/anim-runtime", () => {
     animator.update(0.2);
 
     expect(animator.outputPose.translations[0]).toBeGreaterThan(0);
+  });
+
+  it("can evaluate clips in place by ignoring root translation", () => {
+    const graph: CompiledAnimatorGraph = {
+      version: 1,
+      name: "In Place Clip",
+      parameters: [],
+      clipSlots: [{ id: "walk", name: "Walk", duration: 1 }],
+      masks: [],
+      graphs: [
+        {
+          name: "Main",
+          rootNodeIndex: 0,
+          nodes: [{ type: "clip", clipIndex: 0, speed: 1, loop: true, inPlace: true }]
+        }
+      ],
+      layers: [
+        {
+          name: "Base",
+          graphIndex: 0,
+          weight: 1,
+          blendMode: "override",
+          rootMotionMode: "full",
+          enabled: true
+        }
+      ],
+      entryGraphIndex: 0
+    };
+
+    const animator = createAnimatorInstance({
+      rig,
+      graph,
+      clips: [walkClip]
+    });
+
+    const result = animator.update(0.5);
+
+    expect(result.pose.translations[0]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[0]).toBeCloseTo(0);
+  });
+
+  it("can evaluate clips in place using a clip-specific motion root bone", () => {
+    const graph: CompiledAnimatorGraph = {
+      version: 1,
+      name: "In Place Hips Clip",
+      parameters: [],
+      clipSlots: [{ id: "hips-walk", name: "Hips Walk", duration: 1 }],
+      masks: [],
+      graphs: [
+        {
+          name: "Main",
+          rootNodeIndex: 0,
+          nodes: [{ type: "clip", clipIndex: 0, speed: 1, loop: true, inPlace: true }]
+        }
+      ],
+      layers: [
+        {
+          name: "Base",
+          graphIndex: 0,
+          weight: 1,
+          blendMode: "override",
+          rootMotionMode: "full",
+          enabled: true
+        }
+      ],
+      entryGraphIndex: 0
+    };
+
+    const animator = createAnimatorInstance({
+      rig: twoBoneRig,
+      graph,
+      clips: [hipsMotionClip]
+    });
+
+    const result = animator.update(0.5);
+
+    expect(result.pose.translations[0]).toBeCloseTo(0);
+    expect(result.pose.translations[3]).toBeCloseTo(0);
+    expect(result.pose.translations[4]).toBeCloseTo(1);
+    expect(result.pose.translations[5]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[0]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[1]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[2]).toBeCloseTo(0);
+  });
+
+  it("can evaluate legacy clips in place without imported root-bone metadata", () => {
+    const graph: CompiledAnimatorGraph = {
+      version: 1,
+      name: "Legacy Mixamo In Place",
+      parameters: [],
+      clipSlots: [{ id: "legacy-mixamo-walk", name: "Legacy Mixamo Walk", duration: 1 }],
+      masks: [],
+      graphs: [
+        {
+          name: "Main",
+          rootNodeIndex: 0,
+          nodes: [{ type: "clip", clipIndex: 0, speed: 1, loop: true, inPlace: true }]
+        }
+      ],
+      layers: [
+        {
+          name: "Base",
+          graphIndex: 0,
+          weight: 1,
+          blendMode: "override",
+          rootMotionMode: "full",
+          enabled: true
+        }
+      ],
+      entryGraphIndex: 0
+    };
+
+    const animator = createAnimatorInstance({
+      rig: twoBoneRig,
+      graph,
+      clips: [legacyMixamoClip]
+    });
+
+    const result = animator.update(0.5);
+
+    expect(result.pose.translations[0]).toBeCloseTo(0);
+    expect(result.pose.translations[1]).toBeCloseTo(0);
+    expect(result.pose.translations[2]).toBeCloseTo(0);
+    expect(result.pose.translations[3]).toBeCloseTo(0);
+    expect(result.pose.translations[4]).toBeCloseTo(1);
+    expect(result.pose.translations[5]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[0]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[1]).toBeCloseTo(0);
+    expect(result.rootMotion.translation[2]).toBeCloseTo(0);
   });
 });

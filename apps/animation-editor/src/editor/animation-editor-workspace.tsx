@@ -398,6 +398,8 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
                 store={store}
                 character={character}
                 importedClips={importedClips}
+                assetStatus={assetStatus}
+                assetError={assetError}
               />
             </div>
 

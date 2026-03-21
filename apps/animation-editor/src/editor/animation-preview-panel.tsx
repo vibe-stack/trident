@@ -1,5 +1,5 @@
 import { compileAnimationEditorDocument } from "@ggez/anim-compiler";
-import { createPoseBufferFromRig, sampleClipPose } from "@ggez/anim-core";
+import { copyPose, createPoseBufferFromRig, sampleClipPose } from "@ggez/anim-core";
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
 import { createAnimatorInstance } from "@ggez/anim-runtime";
 import type { AnimatorInstance } from "@ggez/anim-runtime";
@@ -69,12 +69,21 @@ function setAnimatorParameter(animator: AnimatorInstance, name: string, value: n
   }
 }
 
+function forceBoneTranslationToBindPose(translations: Float32Array, bindTranslations: Float32Array, boneIndex: number): void {
+  const offset = boneIndex * 3;
+  translations[offset] = bindTranslations[offset]!;
+  translations[offset + 1] = bindTranslations[offset + 1]!;
+  translations[offset + 2] = bindTranslations[offset + 2]!;
+}
+
 export function AnimationPreviewPanel(props: {
   store: AnimationEditorStore;
   character: ImportedCharacterAsset | null;
   importedClips: ImportedPreviewClip[];
+  assetStatus?: string;
+  assetError?: string | null;
 }) {
-  const { store, character, importedClips } = props;
+  const { store, character, importedClips, assetError, assetStatus } = props;
   const document = useEditorStoreValue(store, () => store.getState().document, ["document"]);
   const [mode, setMode] = useState<PreviewMode>("graph");
   const [selectedClipId, setSelectedClipId] = useState("");
@@ -226,6 +235,7 @@ export function AnimationPreviewPanel(props: {
     let directClipTime = 0;
     let disposed = false;
     const directPose = character ? createPoseBufferFromRig(character.rig) : null;
+    const graphDisplayPose = character ? createPoseBufferFromRig(character.rig) : null;
 
     if (character) {
       previewObject = clone(character.scene);
@@ -283,8 +293,22 @@ export function AnimationPreviewPanel(props: {
             }
           }
 
-          animatorRef.current.update(isPlayingRef.current ? delta * playbackSpeedRef.current : 0);
-          applyPoseToSkeleton(animatorRef.current, previewSkeleton);
+          const result = animatorRef.current.update(isPlayingRef.current ? delta * playbackSpeedRef.current : 0);
+          const graphStaysInPlace = animatorRef.current.graph.layers.every(
+            (layer) => !layer.enabled || layer.weight <= 0 || layer.rootMotionMode === "none"
+          );
+
+          if (graphDisplayPose && graphStaysInPlace) {
+            copyPose(result.pose, graphDisplayPose);
+            forceBoneTranslationToBindPose(
+              graphDisplayPose.translations,
+              animatorRef.current.rig.bindTranslations,
+              animatorRef.current.rig.rootBoneIndex
+            );
+            applyPoseBufferToSkeleton(graphDisplayPose, previewSkeleton);
+          } else {
+            applyPoseToSkeleton(animatorRef.current, previewSkeleton);
+          }
         }
       }
 
@@ -347,6 +371,12 @@ export function AnimationPreviewPanel(props: {
       </div>
 
       <div className="shrink-0 space-y-3">
+        {assetStatus || assetError ? (
+          <div className={assetError ? "rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-100" : "rounded-2xl border border-emerald-400/12 bg-emerald-500/8 px-3 py-2 text-[11px] leading-5 text-emerald-100"}>
+            {assetError ?? assetStatus}
+          </div>
+        ) : null}
+
         <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
           <PropertyField label="Speed">
             <DragInput value={playbackSpeed} min={0.1} max={4} step={0.05} precision={2} onChange={setPlaybackSpeed} className="w-full" />

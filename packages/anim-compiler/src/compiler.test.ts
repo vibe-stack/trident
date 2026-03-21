@@ -22,8 +22,8 @@ describe("@ggez/anim-compiler", () => {
           outputNodeId: "out",
           edges: [],
           nodes: [
-            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, position: { x: 0, y: 0 } },
-            { id: "clip-walk", name: "Walk", kind: "clip", clipId: "walk", speed: 1, loop: true, position: { x: 0, y: 160 } },
+            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 0 } },
+            { id: "clip-walk", name: "Walk", kind: "clip", clipId: "walk", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 160 } },
             {
               id: "blend",
               name: "Blend",
@@ -78,7 +78,7 @@ describe("@ggez/anim-compiler", () => {
           outputNodeId: "out",
           edges: [],
           nodes: [
-            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, position: { x: 0, y: 0 } },
+            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 0 } },
             { id: "out", name: "Output", kind: "output", sourceNodeId: "clip-idle", position: { x: 160, y: 0 } }
           ]
         }
@@ -120,7 +120,7 @@ describe("@ggez/anim-compiler", () => {
           outputNodeId: "out",
           edges: [],
           nodes: [
-            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, position: { x: 0, y: 0 } },
+            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 0 } },
             { id: "blend-draft", name: "Draft Blend", kind: "blend1d", parameterId: "", children: [], position: { x: 240, y: 0 } },
             { id: "out", name: "Output", kind: "output", sourceNodeId: "clip-idle", position: { x: 160, y: 0 } }
           ]
@@ -142,5 +142,47 @@ describe("@ggez/anim-compiler", () => {
     expect(result.ok).toBe(true);
     expect(result.graph?.graphs[0]?.nodes).toHaveLength(1);
     expect(result.diagnostics.some((diagnostic) => diagnostic.severity === "warning" && diagnostic.message.includes("disconnected"))).toBe(true);
+  });
+
+  it("emits clip slots only for reachable referenced clips", () => {
+    const result = compileAnimationEditorDocument({
+      version: 1,
+      name: "Referenced Clips",
+      entryGraphId: "graph-main",
+      parameters: [],
+      clips: [
+        { id: "idle", name: "Idle", duration: 1 },
+        { id: "walk", name: "Walk", duration: 1 },
+        { id: "unused", name: "Unused", duration: 1 }
+      ],
+      masks: [],
+      graphs: [
+        {
+          id: "graph-main",
+          name: "Main",
+          outputNodeId: "out",
+          edges: [],
+          nodes: [
+            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 0 } },
+            { id: "clip-unused", name: "Unused", kind: "clip", clipId: "unused", speed: 1, loop: true, inPlace: false, position: { x: 0, y: 120 } },
+            { id: "out", name: "Output", kind: "output", sourceNodeId: "clip-idle", position: { x: 160, y: 0 } }
+          ]
+        }
+      ],
+      layers: [
+        {
+          id: "layer-base",
+          name: "Base",
+          graphId: "graph-main",
+          weight: 1,
+          blendMode: "override",
+          rootMotionMode: "none",
+          enabled: true
+        }
+      ]
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.graph?.clipSlots.map((clip) => clip.id)).toEqual(["idle"]);
   });
 });

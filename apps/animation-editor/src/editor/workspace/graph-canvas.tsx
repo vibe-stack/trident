@@ -50,6 +50,9 @@ function areCanvasNodesEqual(left: FlowNode[], right: FlowNode[]): boolean {
       candidate &&
       node.id === candidate.id &&
       node.selected === candidate.selected &&
+      node.className === candidate.className &&
+      (node.data as { kind?: string; name?: string }).kind === (candidate.data as { kind?: string; name?: string }).kind &&
+      (node.data as { kind?: string; name?: string }).name === (candidate.data as { kind?: string; name?: string }).name &&
       node.position.x === candidate.position.x &&
       node.position.y === candidate.position.y
     );
@@ -83,6 +86,8 @@ function toCanvasNode(node: EditorGraphNode, selected = false) {
     selected,
     className: cn("animation-flow__node", selected && "selected"),
     data: {
+      kind: node.kind,
+      name: node.name,
       label: (
         <div className="pointer-events-none flex flex-col gap-1">
           <span className="text-[10px] font-medium text-emerald-300/70">{node.kind}</span>
