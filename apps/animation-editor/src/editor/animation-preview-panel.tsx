@@ -1,14 +1,15 @@
 import { compileAnimationEditorDocument } from "@ggez/anim-compiler";
 import { createPoseBufferFromRig, sampleClipPose } from "@ggez/anim-core";
-import { createAnimatorInstance } from "@ggez/anim-runtime";
-import { applyPoseBufferToSkeleton, applyPoseToSkeleton } from "@ggez/anim-three";
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
-import type { AnimationEditorDocument } from "@ggez/anim-schema";
+import { createAnimatorInstance } from "@ggez/anim-runtime";
 import type { AnimatorInstance } from "@ggez/anim-runtime";
+import type { AnimationEditorDocument } from "@ggez/anim-schema";
+import { applyPoseBufferToSkeleton, applyPoseToSkeleton } from "@ggez/anim-three";
+import { Film, Pause, Play, SlidersHorizontal, Workflow } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { DragInput } from "@/components/ui/drag-input";
 import {
   AmbientLight,
   Box3,
@@ -25,10 +26,10 @@ import {
 import type { Object3D, Skeleton } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { useEditorStoreValue } from "./use-editor-store-value";
 import type { ImportedCharacterAsset, ImportedPreviewClip } from "./preview-assets";
 import { findPrimarySkeleton } from "./preview-assets";
-import { PropertyField, StudioSection, editorInputClassName, editorSelectClassName, sectionHintClassName } from "./workspace/shared";
+import { useEditorStoreValue } from "./use-editor-store-value";
+import { PropertyField, editorSelectClassName } from "./workspace/shared";
 
 type PreviewMode = "graph" | "clip";
 
@@ -292,99 +293,106 @@ export function AnimationPreviewPanel(props: {
     };
   }, [character, clipMap, document.parameters]);
 
-  const previewStatus =
-    !character
-      ? "Import a rigged GLB/FBX character to preview animation."
-      : mode === "graph"
-        ? graphPreview.error ?? "Compiled runtime preview is active."
-        : importedClips.length === 0
-          ? "Import animation clips to use raw clip preview."
-          : "Raw clip preview is active.";
-
   return (
-    <StudioSection title="Preview">
-      <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex border border-white/10 bg-black/35 p-0.5">
-          <Button variant={mode === "graph" ? "secondary" : "ghost"} size="xs" onClick={() => setMode("graph")}>
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="shrink-0 rounded-2xl bg-white/4 p-1">
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            onClick={() => setMode("graph")}
+            className={mode === "graph" ? "flex h-10 items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 text-[12px] font-medium text-zinc-50" : "flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-[12px] text-zinc-300 transition hover:bg-white/6"}
+          >
+            <Workflow className="size-3.5" />
             Graph
-          </Button>
-          <Button variant={mode === "clip" ? "secondary" : "ghost"} size="xs" onClick={() => setMode("clip")}>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("clip")}
+            className={mode === "clip" ? "flex h-10 items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 text-[12px] font-medium text-zinc-50" : "flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-[12px] text-zinc-300 transition hover:bg-white/6"}
+          >
+            <Film className="size-3.5" />
             Clip
-          </Button>
+          </button>
         </div>
-        <Button variant="outline" size="xs" onClick={() => setIsPlaying((current) => !current)}>
-          {isPlaying ? "Pause" : "Play"}
+      </div>
+
+      <div className="relative min-h-45 flex-1 overflow-hidden rounded-3xl bg-[#050608] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ring-1 ring-white/8">
+        <div ref={mountRef} className="absolute inset-0" />
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          className="absolute top-3 right-3 z-10 rounded-full bg-black/65 text-zinc-100 shadow-lg hover:bg-black/80"
+          onClick={() => setIsPlaying((current) => !current)}
+          aria-label={isPlaying ? "Pause preview" : "Play preview"}
+        >
+          {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
-        <PropertyField label="Speed">
-          <Input
-            type="number"
-            min={0.1}
-            max={4}
-            step={0.1}
-            value={playbackSpeed}
-            onChange={(event) => setPlaybackSpeed(Number(event.target.value))}
-            className={editorInputClassName}
-          />
-        </PropertyField>
-
-        {mode === "clip" ? (
-          <PropertyField label="Clip" className="xl:col-span-2">
-            <select value={activeSelectedClipId} onChange={(event) => setSelectedClipId(event.target.value)} className={editorSelectClassName}>
-              {importedClips.map((clip) => (
-                <option key={clip.id} value={clip.id}>
-                  {clip.name}
-                </option>
-              ))}
-            </select>
+      <div className="shrink-0 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
+          <PropertyField label="Speed">
+            <DragInput value={playbackSpeed} min={0.1} max={4} step={0.05} precision={2} onChange={setPlaybackSpeed} className="w-full" />
           </PropertyField>
-        ) : (
-          <div className="flex items-end xl:col-span-2">
-            <div className="flex h-8 w-full items-center border border-white/10 bg-black/35 px-2.5 text-[12px] text-zinc-400">Runtime graph playback</div>
-          </div>
-        )}
-      </div>
-
-      {mode === "graph" && document.parameters.length > 0 ? (
-        <div className="grid gap-2 border-t border-white/8 pt-3">
-          {document.parameters.map((parameter) => (
-            <PropertyField key={parameter.id} label={parameter.name}>
-              {parameter.type === "bool" || parameter.type === "trigger" ? (
-                <label className="flex h-8 items-center gap-2 border border-white/10 bg-black/35 px-2.5 text-[12px] text-zinc-200">
-                  <Checkbox
-                    checked={Boolean(resolvedParameterValues[parameter.name])}
-                    onCheckedChange={(checked) =>
-                      setParameterValues((current) => ({
-                        ...current,
-                        [parameter.name]: Boolean(checked),
-                      }))
-                    }
-                  />
-                  <span>{parameter.type === "trigger" ? "Trigger armed" : "Enabled"}</span>
-                </label>
-              ) : (
-                <Input
-                  type="number"
-                  value={Number(resolvedParameterValues[parameter.name] ?? 0)}
-                  onChange={(event) =>
-                    setParameterValues((current) => ({
-                      ...current,
-                      [parameter.name]: Number(event.target.value),
-                    }))
-                  }
-                  className={editorInputClassName}
-                />
-              )}
+          {mode === "clip" ? (
+            <PropertyField label="Clip">
+              <select value={activeSelectedClipId} onChange={(event) => setSelectedClipId(event.target.value)} className={editorSelectClassName}>
+                {importedClips.map((clip) => (
+                  <option key={clip.id} value={clip.id}>
+                    {clip.name}
+                  </option>
+                ))}
+              </select>
             </PropertyField>
-          ))}
+          ) : (
+            <PropertyField label="Mode">
+              <div className="flex h-9 items-center rounded-xl bg-white/7 px-3 text-[12px] text-zinc-400">Runtime graph playback</div>
+            </PropertyField>
+          )}
         </div>
-      ) : null}
 
-      <div ref={mountRef} className="relative h-80 max-h-[38vh] min-h-80 overflow-hidden border border-white/10 bg-[#050608]" />
-
-      <div className={sectionHintClassName}>{previewStatus}</div>
-    </StudioSection>
+        {mode === "graph" && document.parameters.length > 0 ? (
+          <div className="space-y-2 rounded-[22px] bg-white/4 p-3">
+            <div className="flex items-center gap-2 text-[12px] font-medium text-zinc-300">
+              <SlidersHorizontal className="size-3.5" />
+              Parameters
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {document.parameters.map((parameter) => (
+                <PropertyField key={parameter.id} label={parameter.name}>
+                  {parameter.type === "bool" || parameter.type === "trigger" ? (
+                    <label className="flex h-9 items-center gap-2 rounded-xl bg-white/7 px-3 text-[12px] text-zinc-200">
+                      <Checkbox
+                        checked={Boolean(resolvedParameterValues[parameter.name])}
+                        onCheckedChange={(checked) =>
+                          setParameterValues((current) => ({
+                            ...current,
+                            [parameter.name]: Boolean(checked),
+                          }))
+                        }
+                      />
+                      <span>{parameter.type === "trigger" ? "Trigger armed" : "Enabled"}</span>
+                    </label>
+                  ) : (
+                    <DragInput
+                      value={Number(resolvedParameterValues[parameter.name] ?? 0)}
+                      step={parameter.type === "int" ? 1 : 0.05}
+                      precision={parameter.type === "int" ? 0 : 2}
+                      onChange={(value) =>
+                        setParameterValues((current) => ({
+                          ...current,
+                          [parameter.name]: value,
+                        }))
+                      }
+                      className="w-full"
+                    />
+                  )}
+                </PropertyField>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

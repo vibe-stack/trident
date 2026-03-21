@@ -1,10 +1,11 @@
 import "@xyflow/react/dist/style.css";
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
-import { createAnimationArtifact, serializeAnimationArtifact } from "@ggez/anim-exporter";
 import type { ClipReference, EditorGraphNode, SerializableRig } from "@ggez/anim-schema";
 import type { ChangeEvent } from "react";
-import { useRef, useState } from "react";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ArrowDownRight, GripHorizontal } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimationPreviewPanel } from "./animation-preview-panel";
 import { importAnimationFiles, importCharacterFile, type ImportedCharacterAsset, type ImportedPreviewClip } from "./preview-assets";
 import { useEditorStoreValue } from "./use-editor-store-value";
 import { EditorMenubar } from "./workspace/editor-menubar";
@@ -121,17 +122,46 @@ function applyImportedRig(store: AnimationEditorStore, rig: SerializableRig) {
   }
 }
 
+type PreviewRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function clampPreviewRect(rect: PreviewRect, bounds: { width: number; height: number }): PreviewRect {
+  const width = Math.min(Math.max(rect.width, 360), Math.max(bounds.width - 32, 360));
+  const height = Math.min(Math.max(rect.height, 280), Math.max(bounds.height - 32, 280));
+
+  return {
+    width,
+    height,
+    x: Math.min(Math.max(rect.x, 16), Math.max(bounds.width - width - 16, 16)),
+    y: Math.min(Math.max(rect.y, 16), Math.max(bounds.height - height - 16, 16)),
+  };
+}
+
 export function AnimationEditorWorkspace(props: { store: AnimationEditorStore }) {
   const { store } = props;
   const state = useEditorStoreValue(store, () => store.getState(), ["document", "selection", "compile", "clipboard"]);
   const graph = useSelectedGraph(store);
-  const [artifactJson, setArtifactJson] = useState("");
   const [character, setCharacter] = useState<ImportedCharacterAsset | null>(null);
   const [importedClips, setImportedClips] = useState<ImportedPreviewClip[]>([]);
   const [assetStatus, setAssetStatus] = useState("Import a rigged character to unlock preview and rig-aware compilation.");
   const [assetError, setAssetError] = useState<string | null>(null);
   const characterInputRef = useRef<HTMLInputElement | null>(null);
   const animationInputRef = useRef<HTMLInputElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const previewDragRef = useRef<
+    | {
+        mode: "move" | "resize";
+        pointerX: number;
+        pointerY: number;
+        rect: PreviewRect;
+      }
+    | null
+  >(null);
+  const [previewRect, setPreviewRect] = useState<PreviewRect>({ x: 16, y: 16, width: 440, height: 420 });
 
   function handleConnect(connection: { source: string | null; target: string | null }) {
     if (!connection.source || !connection.target) {
@@ -142,19 +172,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
   }
 
   function handleCompile() {
-    const result = store.compile();
-    if (result.graph) {
-      setArtifactJson(
-        serializeAnimationArtifact(
-          createAnimationArtifact({
-            graph: result.graph,
-          })
-        )
-      );
-      return;
-    }
-
-    setArtifactJson("");
+    store.compile();
   }
 
   async function handleCharacterImport(event: ChangeEvent<HTMLInputElement>) {
@@ -225,13 +243,102 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
     }
   }
 
+  const updatePreviewBounds = useCallback(() => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+
+    setPreviewRect((current) => {
+      const nextRect = current.y === 16 && current.x === 16 ? { ...current, y: Math.max(bounds.height - current.height - 16, 16) } : current;
+      return clampPreviewRect(nextRect, { width: bounds.width, height: bounds.height });
+    });
+  }, []);
+
+  useEffect(() => {
+    updatePreviewBounds();
+  }, [updatePreviewBounds]);
+
+  useEffect(() => {
+    const element = workspaceRef.current;
+    if (!element) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => updatePreviewBounds());
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updatePreviewBounds]);
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const interaction = previewDragRef.current;
+      const bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!interaction || !bounds) {
+        return;
+      }
+
+      const deltaX = event.clientX - interaction.pointerX;
+      const deltaY = event.clientY - interaction.pointerY;
+
+      if (interaction.mode === "move") {
+        setPreviewRect(
+          clampPreviewRect(
+            {
+              ...interaction.rect,
+              x: interaction.rect.x + deltaX,
+              y: interaction.rect.y + deltaY,
+            },
+            { width: bounds.width, height: bounds.height }
+          )
+        );
+        return;
+      }
+
+      setPreviewRect(
+        clampPreviewRect(
+          {
+            ...interaction.rect,
+            width: interaction.rect.width + deltaX,
+            height: interaction.rect.height + deltaY,
+          },
+          { width: bounds.width, height: bounds.height }
+        )
+      );
+    }
+
+    function handlePointerUp() {
+      previewDragRef.current = null;
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [previewRect]);
+
+  function beginPreviewInteraction(mode: "move" | "resize", event: ReactPointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    previewDragRef.current = {
+      mode,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      rect: previewRect,
+    };
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <EditorMenubar
         store={store}
-        graphName={graph.name}
-        diagnosticsCount={state.diagnostics.length}
-        clipCount={state.document.clips.length}
         onCompile={handleCompile}
         onImportCharacter={() => characterInputRef.current?.click()}
         onImportAnimations={() => animationInputRef.current?.click()}
@@ -241,44 +348,67 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
       <input ref={characterInputRef} type="file" accept=".glb,.gltf,.fbx" hidden onChange={handleCharacterImport} />
       <input ref={animationInputRef} type="file" accept=".glb,.gltf,.fbx" multiple hidden onChange={handleAnimationImport} />
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <ResizablePanelGroup orientation="horizontal">
-          <ResizablePanel defaultSize={24} minSize={18}>
+      <div ref={workspaceRef} className="relative min-h-0 flex-1 overflow-hidden">
+        <GraphCanvas
+          graph={graph}
+          selectedNodeIds={state.selection.nodeIds}
+          onConnect={handleConnect}
+          onSelectionChange={(nodeIds) => store.selectNodes(nodeIds)}
+          onNodeDragStop={(nodeId, position) =>
+            store.moveNodes(graph.id, {
+              [nodeId]: position,
+            })
+          }
+          onAddNode={(kind, position) => {
+            const nodeId = store.addNode(graph.id, kind);
+            store.moveNodes(graph.id, { [nodeId]: position });
+          }}
+        />
+
+        <div className="pointer-events-none absolute inset-0">
+          <div className="pointer-events-auto absolute top-4 left-4 z-20 h-[min(68vh,720px)] w-[320px] max-w-[calc(100vw-2rem)]">
             <LeftSidebar store={store} state={state} />
-          </ResizablePanel>
+          </div>
 
-          <ResizableHandle withHandle className="bg-white/8" />
+          <div className="pointer-events-auto absolute top-4 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]">
+            <RightSidebar store={store} />
+          </div>
 
-          <ResizablePanel defaultSize={52} minSize={30}>
-            <GraphCanvas
-              graph={graph}
-              selectedNodeIds={state.selection.nodeIds}
-              onConnect={handleConnect}
-              onSelectionChange={(nodeIds) => store.selectNodes(nodeIds)}
-              onNodeDragStop={(nodeId, position) =>
-                store.moveNodes(graph.id, {
-                  [nodeId]: position,
-                })
-              }
-            />
-          </ResizablePanel>
+          <div
+            className="pointer-events-auto absolute z-30 flex min-h-0 flex-col overflow-hidden rounded-[28px] bg-[#091012]/84 shadow-[0_28px_96px_rgba(0,0,0,0.5)] ring-1 ring-white/8 backdrop-blur-2xl"
+            style={{
+              left: `${previewRect.x}px`,
+              top: `${previewRect.y}px`,
+              width: `${previewRect.width}px`,
+              height: `${previewRect.height}px`,
+            }}
+          >
+            <div
+              className="flex h-11 shrink-0 items-center justify-between px-4 text-[12px] font-medium text-zinc-400 cursor-move"
+              onPointerDown={(event) => beginPreviewInteraction("move", event)}
+            >
+              <span>Preview</span>
+              <GripHorizontal className="size-4 text-zinc-600" />
+            </div>
 
-          <ResizableHandle withHandle className="bg-white/8" />
+            <div className="min-h-0 flex-1 px-3 pb-3">
+              <AnimationPreviewPanel
+                store={store}
+                character={character}
+                importedClips={importedClips}
+              />
+            </div>
 
-          <ResizablePanel defaultSize={24} minSize={18}>
-            <RightSidebar
-              store={store}
-              state={state}
-              character={character}
-              importedClips={importedClips}
-              assetStatus={assetStatus}
-              assetError={assetError}
-              artifactJson={artifactJson}
-              characterInputRef={characterInputRef}
-              animationInputRef={animationInputRef}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <button
+              type="button"
+              className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full bg-white/4 text-zinc-500 hover:bg-white/8 hover:text-zinc-300"
+              onPointerDown={(event) => beginPreviewInteraction("resize", event)}
+              aria-label="Resize preview panel"
+            >
+              <ArrowDownRight className="size-4" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

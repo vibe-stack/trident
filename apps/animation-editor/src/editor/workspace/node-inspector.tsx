@@ -3,6 +3,7 @@ import type { AnimationEditorStore } from "@ggez/anim-editor-core";
 import type { EditorGraph, EditorGraphNode, ParameterDefinition, TransitionOperator } from "@ggez/anim-schema";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DragInput } from "@/components/ui/drag-input";
 import { Input } from "@/components/ui/input";
 import { useEditorStoreValue } from "../use-editor-store-value";
 import { PropertyField, StudioSection, editorInputClassName, editorSelectClassName, sectionHintClassName } from "./shared";
@@ -49,6 +50,17 @@ function buildDefaultTransition(parameter?: ParameterDefinition): StateMachineTr
   };
 }
 
+function NumericDragInput(props: {
+  value: number;
+  onChange: (value: number) => void;
+  step?: number;
+  precision?: number;
+  min?: number;
+  max?: number;
+}) {
+  return <DragInput value={props.value} onChange={props.onChange} step={props.step} precision={props.precision} min={props.min} max={props.max} className="w-full" />;
+}
+
 function Blend1DChildrenEditor(props: {
   store: AnimationEditorStore;
   graph: EditorGraph;
@@ -80,18 +92,18 @@ function Blend1DChildrenEditor(props: {
               />
             </PropertyField>
             <PropertyField label="Threshold">
-              <Input
-                type="number"
+              <NumericDragInput
                 value={child.threshold}
-                onChange={(event) =>
+                step={0.05}
+                precision={2}
+                onChange={(value) =>
                   updateTypedNode(props.store, props.graph.id, props.node.id, "blend1d", (current) => ({
                     ...current,
                     children: current.children.map((entry) =>
-                      entry.nodeId === child.nodeId ? { ...entry, threshold: Number(event.target.value) } : entry
+                      entry.nodeId === child.nodeId ? { ...entry, threshold: value } : entry
                     ),
                   }))
                 }
-                className={editorInputClassName}
               />
             </PropertyField>
           </div>
@@ -132,33 +144,33 @@ function Blend2DChildrenEditor(props: {
               />
             </PropertyField>
             <PropertyField label="X">
-              <Input
-                type="number"
+              <NumericDragInput
                 value={child.x}
-                onChange={(event) =>
+                step={0.05}
+                precision={2}
+                onChange={(value) =>
                   updateTypedNode(props.store, props.graph.id, props.node.id, "blend2d", (current) => ({
                     ...current,
                     children: current.children.map((entry) =>
-                      entry.nodeId === child.nodeId ? { ...entry, x: Number(event.target.value) } : entry
+                      entry.nodeId === child.nodeId ? { ...entry, x: value } : entry
                     ),
                   }))
                 }
-                className={editorInputClassName}
               />
             </PropertyField>
             <PropertyField label="Y">
-              <Input
-                type="number"
+              <NumericDragInput
                 value={child.y}
-                onChange={(event) =>
+                step={0.05}
+                precision={2}
+                onChange={(value) =>
                   updateTypedNode(props.store, props.graph.id, props.node.id, "blend2d", (current) => ({
                     ...current,
                     children: current.children.map((entry) =>
-                      entry.nodeId === child.nodeId ? { ...entry, y: Number(event.target.value) } : entry
+                      entry.nodeId === child.nodeId ? { ...entry, y: value } : entry
                     ),
                   }))
                 }
-                className={editorInputClassName}
               />
             </PropertyField>
           </div>
@@ -184,7 +196,7 @@ function TransitionListEditor(props: {
   return (
     <div className="space-y-2 border border-white/8 bg-black/18 p-2">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{props.title}</div>
+        <div className="text-[12px] font-medium text-zinc-400">{props.title}</div>
         <Button
           variant="ghost"
           size="xs"
@@ -222,7 +234,7 @@ function TransitionListEditor(props: {
       {props.transitions.map((transition) => (
         <div key={transition.id} className="space-y-2 border border-white/8 bg-black/25 p-2">
           <div className="flex items-center justify-between">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">{transition.id}</div>
+            <div className="text-[11px] text-zinc-500">{transition.id}</div>
             <Button
               variant="ghost"
               size="xs"
@@ -285,21 +297,22 @@ function TransitionListEditor(props: {
               </select>
             </PropertyField>
             <PropertyField label="Duration">
-              <Input
-                type="number"
+              <NumericDragInput
                 value={transition.duration}
-                onChange={(event) =>
+                step={0.05}
+                precision={2}
+                min={0}
+                onChange={(value) =>
                   updateStateMachineNode(store, graph.id, node.id, (current) => ({
                     ...current,
                     transitions: props.isAnyState
                       ? current.transitions
-                      : current.transitions.map((entry) => (entry.id === transition.id ? { ...entry, duration: Number(event.target.value) } : entry)),
+                      : current.transitions.map((entry) => (entry.id === transition.id ? { ...entry, duration: value } : entry)),
                     anyStateTransitions: props.isAnyState
-                      ? current.anyStateTransitions.map((entry) => (entry.id === transition.id ? { ...entry, duration: Number(event.target.value) } : entry))
+                      ? current.anyStateTransitions.map((entry) => (entry.id === transition.id ? { ...entry, duration: value } : entry))
                       : current.anyStateTransitions,
                   }))
                 }
-                className={editorInputClassName}
               />
             </PropertyField>
           </div>
@@ -325,21 +338,22 @@ function TransitionListEditor(props: {
               </label>
             </PropertyField>
             <PropertyField label="Exit Normalized Time">
-              <Input
-                type="number"
+              <NumericDragInput
                 value={transition.exitTime ?? 1}
-                onChange={(event) =>
+                step={0.05}
+                precision={2}
+                min={0}
+                onChange={(value) =>
                   updateStateMachineNode(store, graph.id, node.id, (current) => ({
                     ...current,
                     transitions: props.isAnyState
                       ? current.transitions
-                      : current.transitions.map((entry) => (entry.id === transition.id ? { ...entry, exitTime: Number(event.target.value) } : entry)),
+                      : current.transitions.map((entry) => (entry.id === transition.id ? { ...entry, exitTime: value } : entry)),
                     anyStateTransitions: props.isAnyState
-                      ? current.anyStateTransitions.map((entry) => (entry.id === transition.id ? { ...entry, exitTime: Number(event.target.value) } : entry))
+                      ? current.anyStateTransitions.map((entry) => (entry.id === transition.id ? { ...entry, exitTime: value } : entry))
                       : current.anyStateTransitions,
                   }))
                 }
-                className={editorInputClassName}
               />
             </PropertyField>
             <PropertyField label="Interrupt">
@@ -377,7 +391,7 @@ function TransitionListEditor(props: {
 
           <div className="space-y-2 border-t border-white/8 pt-2">
             <div className="flex items-center justify-between">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">Conditions</div>
+              <div className="text-[11px] text-zinc-500">Conditions</div>
               <Button
                 variant="ghost"
                 size="xs"
@@ -551,10 +565,11 @@ function TransitionListEditor(props: {
                           <span>{condition.value === true ? "True" : "False"}</span>
                         </label>
                       ) : (
-                        <Input
-                          type="number"
+                        <NumericDragInput
                           value={Number(condition.value ?? 0)}
-                          onChange={(event) =>
+                          step={parameter?.type === "int" ? 1 : 0.05}
+                          precision={parameter?.type === "int" ? 0 : 2}
+                          onChange={(value) =>
                             updateStateMachineNode(store, graph.id, node.id, (current) => ({
                               ...current,
                               transitions: props.isAnyState
@@ -564,7 +579,7 @@ function TransitionListEditor(props: {
                                       ? {
                                           ...entry,
                                           conditions: entry.conditions.map((entryCondition, entryIndex) =>
-                                            entryIndex === conditionIndex ? { ...entryCondition, value: Number(event.target.value) } : entryCondition
+                                            entryIndex === conditionIndex ? { ...entryCondition, value } : entryCondition
                                           ),
                                         }
                                       : entry
@@ -575,7 +590,7 @@ function TransitionListEditor(props: {
                                       ? {
                                           ...entry,
                                           conditions: entry.conditions.map((entryCondition, entryIndex) =>
-                                            entryIndex === conditionIndex ? { ...entryCondition, value: Number(event.target.value) } : entryCondition
+                                            entryIndex === conditionIndex ? { ...entryCondition, value } : entryCondition
                                           ),
                                         }
                                       : entry
@@ -583,7 +598,6 @@ function TransitionListEditor(props: {
                                 : current.anyStateTransitions,
                             }))
                           }
-                          className={editorInputClassName}
                         />
                       )
                     ) : (
@@ -649,7 +663,7 @@ function StateMachineEditor(props: {
 
       <div className="space-y-2 border border-white/8 bg-black/18 p-2">
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">States</div>
+          <div className="text-[12px] font-medium text-zinc-400">States</div>
           <Button
             variant="ghost"
             size="xs"
@@ -676,9 +690,9 @@ function StateMachineEditor(props: {
         {props.node.states.map((state) => (
           <div key={state.id} className="space-y-2 border border-white/8 bg-black/25 p-2">
             <div className="flex items-center justify-between">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">{state.id}</div>
+              <div className="text-[11px] text-zinc-500">{state.id}</div>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-zinc-400">
+                <label className="flex items-center gap-2 text-[11px] text-zinc-400">
                   <Checkbox
                     checked={props.node.entryStateId === state.id}
                     onCheckedChange={(checked) => {
@@ -755,29 +769,29 @@ function StateMachineEditor(props: {
 
             <div className="grid grid-cols-[120px_120px] gap-2">
               <PropertyField label="Speed">
-                <Input
-                  type="number"
+                <NumericDragInput
                   value={state.speed}
-                  onChange={(event) =>
+                  step={0.05}
+                  precision={2}
+                  onChange={(value) =>
                     updateStateMachineNode(props.store, props.graph.id, props.node.id, (current) => ({
                       ...current,
-                      states: current.states.map((entry) => (entry.id === state.id ? { ...entry, speed: Number(event.target.value) } : entry)),
+                      states: current.states.map((entry) => (entry.id === state.id ? { ...entry, speed: value } : entry)),
                     }))
                   }
-                  className={editorInputClassName}
                 />
               </PropertyField>
               <PropertyField label="Cycle Offset">
-                <Input
-                  type="number"
+                <NumericDragInput
                   value={state.cycleOffset}
-                  onChange={(event) =>
+                  step={0.05}
+                  precision={2}
+                  onChange={(value) =>
                     updateStateMachineNode(props.store, props.graph.id, props.node.id, (current) => ({
                       ...current,
-                      states: current.states.map((entry) => (entry.id === state.id ? { ...entry, cycleOffset: Number(event.target.value) } : entry)),
+                      states: current.states.map((entry) => (entry.id === state.id ? { ...entry, cycleOffset: value } : entry)),
                     }))
                   }
-                  className={editorInputClassName}
                 />
               </PropertyField>
             </div>
@@ -815,7 +829,8 @@ export function NodeInspector(props: { store: AnimationEditorStore }) {
   const node = graph?.nodes.find((entry) => entry.id === state.selection.nodeIds[0]);
 
   return (
-    <StudioSection title="Inspector">
+    <div className="space-y-3">
+      <div className="px-1 text-[12px] font-medium text-zinc-300">Inspector</div>
       {!graph || !node ? <div className={sectionHintClassName}>Select a node to edit its properties.</div> : null}
 
       {graph && node ? (
@@ -844,16 +859,16 @@ export function NodeInspector(props: { store: AnimationEditorStore }) {
                 </select>
               </PropertyField>
               <PropertyField label="Speed">
-                <Input
-                  type="number"
+                <NumericDragInput
                   value={node.speed}
-                  onChange={(event) =>
+                  step={0.05}
+                  precision={2}
+                  onChange={(value) =>
                     props.store.updateNode(graph.id, node.id, (current) => ({
                       ...current,
-                      speed: Number(event.target.value),
+                      speed: value,
                     }))
                   }
-                  className={editorInputClassName}
                 />
               </PropertyField>
               <PropertyField label="Loop">
@@ -947,7 +962,7 @@ export function NodeInspector(props: { store: AnimationEditorStore }) {
           ) : null}
         </div>
       ) : null}
-    </StudioSection>
+    </div>
   );
 }
 

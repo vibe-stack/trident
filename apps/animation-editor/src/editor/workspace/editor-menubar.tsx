@@ -1,4 +1,5 @@
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
+import { Button } from "@/components/ui/button";
 import {
   Menubar,
   MenubarContent,
@@ -11,9 +12,6 @@ import {
 
 export function EditorMenubar(props: {
   store: AnimationEditorStore;
-  graphName: string;
-  diagnosticsCount: number;
-  clipCount: number;
   onCompile: () => void;
   onImportCharacter: () => void;
   onImportAnimations: () => void;
@@ -22,7 +20,7 @@ export function EditorMenubar(props: {
   const { store } = props;
 
   return (
-    <header className="flex h-9 items-center gap-2 border-b border-white/8 bg-black/60 px-2 backdrop-blur-md">
+    <header className="flex h-11 items-center gap-2 border-b border-white/8 bg-black/55 px-3 backdrop-blur-xl">
       <div className="px-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Anim Graph</div>
 
       <Menubar className="h-7 border-transparent bg-transparent px-1 py-0 shadow-none">
@@ -35,9 +33,6 @@ export function EditorMenubar(props: {
               Compile
               <MenubarShortcut>Cmd+B</MenubarShortcut>
             </MenubarItem>
-            <MenubarSeparator />
-            <MenubarItem onClick={props.onImportCharacter}>Import Character</MenubarItem>
-            <MenubarItem onClick={props.onImportAnimations}>Import Animations</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 
@@ -93,10 +88,13 @@ export function EditorMenubar(props: {
         </MenubarMenu>
       </Menubar>
 
-      <div className="ml-auto flex items-center gap-4 px-2 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-        <span>{props.graphName}</span>
-        <span>{props.clipCount} clips</span>
-        <span>{props.diagnosticsCount} diagnostics</span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <Button variant="ghost" size="xs" className="h-7 px-2 text-[11px] text-zinc-300" onClick={props.onImportCharacter}>
+          Character
+        </Button>
+        <Button variant="ghost" size="xs" className="h-7 px-2 text-[11px] text-zinc-300" onClick={props.onImportAnimations}>
+          Animations
+        </Button>
       </div>
     </header>
   );
