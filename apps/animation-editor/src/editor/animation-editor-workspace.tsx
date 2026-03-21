@@ -1,6 +1,7 @@
 import "@xyflow/react/dist/style.css";
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
 import { createAnimationArtifact, serializeAnimationArtifact } from "@ggez/anim-exporter";
+import type { ClipReference, SerializableRig } from "@ggez/anim-schema";
 import type { ChangeEvent } from "react";
 import { useRef, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -11,6 +12,30 @@ import { GraphCanvas } from "./workspace/graph-canvas";
 import { LeftSidebar } from "./workspace/left-sidebar";
 import { RightSidebar } from "./workspace/right-sidebar";
 import { useSelectedGraph } from "./workspace/use-selected-graph";
+
+function upsertClipReferences(store: AnimationEditorStore, clips: ClipReference[]) {
+  if (typeof store.upsertClips === "function") {
+    store.upsertClips(clips);
+    return;
+  }
+
+  const existingClipIds = new Set(store.getState().document.clips.map((clip) => clip.id));
+
+  for (const clip of clips) {
+    if (existingClipIds.has(clip.id)) {
+      store.updateClip(clip.id, clip);
+      continue;
+    }
+
+    store.addClip(clip);
+  }
+}
+
+function applyImportedRig(store: AnimationEditorStore, rig: SerializableRig) {
+  if (typeof store.setRig === "function") {
+    store.setRig(rig);
+  }
+}
 
 export function AnimationEditorWorkspace(props: { store: AnimationEditorStore }) {
   const { store } = props;
@@ -62,8 +87,8 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
       const nextCharacter = await importCharacterFile(file, state.document.clips.map((clip) => clip.id));
       setCharacter(nextCharacter);
       setImportedClips(nextCharacter.clips);
-      store.setRig(nextCharacter.documentRig);
-      store.upsertClips(nextCharacter.clips.map((clip) => clip.reference));
+      applyImportedRig(store, nextCharacter.documentRig);
+      upsertClipReferences(store, nextCharacter.clips.map((clip) => clip.reference));
       setAssetStatus(`Loaded "${file.name}" with ${nextCharacter.rig.boneNames.length} bones and ${nextCharacter.clips.length} embedded clips.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to import character.";
@@ -98,7 +123,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
         nextClips.forEach((clip) => merged.set(clip.id, clip));
         return Array.from(merged.values());
       });
-      store.upsertClips(nextClips.map((clip) => clip.reference));
+      upsertClipReferences(store, nextClips.map((clip) => clip.reference));
       setAssetStatus(`Imported ${nextClips.length} animation clip(s) from ${files.length} file(s).`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to import animation files.";

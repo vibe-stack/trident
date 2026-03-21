@@ -111,9 +111,12 @@ export function applyPoseBufferToSkeleton(pose: PoseBuffer, skeleton: Skeleton):
       pose.scales[vectorOffset + 1]!,
       pose.scales[vectorOffset + 2]!
     );
+    bone.updateMatrix();
   });
 
-  skeleton.calculateInverses();
+  const rootBone = skeleton.bones.find((bone) => !(bone.parent instanceof Bone));
+  rootBone?.updateMatrixWorld(true);
+  skeleton.update();
 }
 
 export function applyPoseToSkeleton(animator: AnimatorInstance, skeleton: Skeleton): void {

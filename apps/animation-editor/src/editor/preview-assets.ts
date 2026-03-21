@@ -4,6 +4,12 @@ import { createClipAssetFromThreeClip, createRigFromSkeleton } from "@ggez/anim-
 import type { AnimationClip, Object3D, Skeleton } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+
+const gltfLoader = new GLTFLoader();
+gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+
+const fbxLoader = new FBXLoader();
 
 export interface ImportedPreviewClip {
   id: string;
@@ -96,8 +102,7 @@ async function loadAnimationSource(file: File): Promise<LoadedAnimationSource> {
 
   try {
     if (extension === "glb" || extension === "gltf") {
-      const loader = new GLTFLoader();
-      const result = await loader.loadAsync(url);
+      const result = await gltfLoader.loadAsync(url);
       return {
         root: result.scene,
         animations: result.animations,
@@ -105,8 +110,7 @@ async function loadAnimationSource(file: File): Promise<LoadedAnimationSource> {
     }
 
     if (extension === "fbx") {
-      const loader = new FBXLoader();
-      const result = await loader.loadAsync(url);
+      const result = await fbxLoader.loadAsync(url);
       return {
         root: result,
         animations: result.animations,

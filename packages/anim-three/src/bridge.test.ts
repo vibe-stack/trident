@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { AnimationClip, Bone, QuaternionKeyframeTrack, Skeleton, VectorKeyframeTrack } from "three";
-import { createRigFromSkeleton, createClipAssetFromThreeClip } from "./bridge";
+import { createPoseBufferFromRig } from "@ggez/anim-core";
+import { AnimationClip, Bone, Matrix4, QuaternionKeyframeTrack, Skeleton, VectorKeyframeTrack } from "three";
+import { applyPoseBufferToSkeleton, createClipAssetFromThreeClip, createRigFromSkeleton } from "./bridge";
 
 describe("@ggez/anim-three", () => {
   it("creates a rig definition from a three skeleton", () => {
@@ -30,5 +31,31 @@ describe("@ggez/anim-three", () => {
 
     expect(asset.tracks).toHaveLength(1);
     expect(Array.from(asset.tracks[0]!.translationValues ?? [])).toEqual([0, 0, 0, 1, 0, 0]);
+  });
+
+  it("applies a pose without mutating skeleton bind inverses", () => {
+    const root = new Bone();
+    root.name = "root";
+    const child = new Bone();
+    child.name = "child";
+    root.add(child);
+
+    const skeleton = new Skeleton([root, child]);
+    root.updateMatrixWorld(true);
+    skeleton.calculateInverses();
+
+    const originalInverse = skeleton.boneInverses[0]!.clone();
+    const rig = createRigFromSkeleton(skeleton);
+    const pose = createPoseBufferFromRig(rig);
+
+    pose.translations[0] = 1;
+    pose.translations[1] = 2;
+    pose.translations[2] = 3;
+
+    applyPoseBufferToSkeleton(pose, skeleton);
+
+    expect(root.position.toArray()).toEqual([1, 2, 3]);
+    expect(skeleton.boneInverses[0]!.equals(originalInverse)).toBe(true);
+    expect(root.matrixWorld.equals(new Matrix4())).toBe(false);
   });
 });
