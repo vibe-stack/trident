@@ -175,8 +175,20 @@ export function AnimationPreviewPanel(props: {
   }, [character, clipMap, compileResult]);
 
   useEffect(() => {
-    animatorRef.current = graphPreview.animator;
-  }, [graphPreview.animator]);
+    if (!character) {
+      animatorRef.current = null;
+      return;
+    }
+
+    if (graphPreview.animator) {
+      animatorRef.current = graphPreview.animator;
+      return;
+    }
+
+    if (!graphPreview.error) {
+      animatorRef.current = null;
+    }
+  }, [character, graphPreview.animator, graphPreview.error]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -189,8 +201,8 @@ export function AnimationPreviewPanel(props: {
     const scene = new Scene();
     scene.background = new Color("#060b09");
     const camera = new PerspectiveCamera(45, 1, 0.01, 1000);
-    const renderer = new WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
@@ -248,7 +260,7 @@ export function AnimationPreviewPanel(props: {
         return;
       }
 
-      const delta = clock.getDelta();
+      const delta = Math.min(clock.getDelta(), 1 / 24);
 
       if (previewSkeleton && character) {
         if (modeRef.current === "clip") {
@@ -327,6 +339,11 @@ export function AnimationPreviewPanel(props: {
         >
           {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
+        {mode === "graph" && graphPreview.error ? (
+          <div className="absolute right-3 bottom-3 z-10 max-w-[min(22rem,calc(100%-1.5rem))] rounded-2xl bg-black/70 px-3 py-2 text-[11px] leading-5 text-amber-100 ring-1 ring-amber-400/20 backdrop-blur">
+            {animatorRef.current ? `Preview is running the last valid graph. ${graphPreview.error}` : graphPreview.error}
+          </div>
+        ) : null}
       </div>
 
       <div className="shrink-0 space-y-3">

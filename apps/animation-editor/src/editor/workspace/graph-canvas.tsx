@@ -4,11 +4,15 @@ import {
   MiniMap,
   type Connection,
   type Edge,
+  type EdgeMouseHandler,
   MarkerType,
+  type Node as FlowNode,
   Position,
   ReactFlow,
   type ReactFlowInstance,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
 } from "@xyflow/react";
 import type { EditorGraphNode } from "@ggez/anim-schema";
 import { Boxes, Film, Layers3, SlidersHorizontal, Workflow } from "lucide-react";
@@ -34,6 +38,42 @@ function areStringArraysEqual(left: string[], right: string[]): boolean {
 
   return left.every((value, index) => value === right[index]);
 }
+
+function areCanvasNodesEqual(left: FlowNode[], right: FlowNode[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((node, index) => {
+    const candidate = right[index];
+    return (
+      candidate &&
+      node.id === candidate.id &&
+      node.selected === candidate.selected &&
+      node.position.x === candidate.position.x &&
+      node.position.y === candidate.position.y
+    );
+  });
+}
+
+function areCanvasEdgesEqual(left: Edge[], right: Edge[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((edge, index) => {
+    const candidate = right[index];
+    return (
+      candidate &&
+      edge.id === candidate.id &&
+      edge.source === candidate.source &&
+      edge.target === candidate.target &&
+      edge.label === candidate.label &&
+      edge.className === candidate.className
+    );
+  });
+}
+
 function toCanvasNode(node: EditorGraphNode, selected = false) {
   return {
     id: node.id,
@@ -53,7 +93,13 @@ function toCanvasNode(node: EditorGraphNode, selected = false) {
   };
 }
 
-function buildCanvasEdges(nodes: EditorGraphNode[], graphEdges: { id: string; sourceNodeId: string; targetNodeId: string }[]) {
+type CanvasNode = ReturnType<typeof toCanvasNode>;
+
+function buildCanvasEdges(
+  nodes: EditorGraphNode[],
+  graphEdges: { id: string; sourceNodeId: string; targetNodeId: string }[],
+  selectedEdgeIds: string[]
+) {
   const edges: Edge[] = [...graphEdges.map((edge) => ({ id: edge.id, source: edge.sourceNodeId, target: edge.targetNodeId }))];
 
   nodes.forEach((node) => {
@@ -85,7 +131,7 @@ function buildCanvasEdges(nodes: EditorGraphNode[], graphEdges: { id: string; so
     deduped.set(edge.id, {
       ...edge,
       type: "smoothstep",
-      className: "animation-flow__edge",
+      className: cn("animation-flow__edge", selectedEdgeIds.includes(edge.id) && "selected"),
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 18,
@@ -105,20 +151,45 @@ export function GraphCanvas(props: {
   onSelectionChange: (nodeIds: string[]) => void;
   onNodeDragStop: (nodeId: string, position: { x: number; y: number }) => void;
   onAddNode: (kind: NodeActionKind, position: { x: number; y: number }) => void;
+  onDeleteNodes: () => void;
+  onDeleteEdges: (edgeIds: string[]) => void;
 }) {
   const lastSelectedNodeIdsRef = useRef(props.selectedNodeIds);
+  const lastSelectedEdgeIdsRef = useRef<string[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const commandRef = useRef<HTMLDivElement | null>(null);
   const previousGraphIdRef = useRef(props.graph.id);
-  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const [menuState, setMenuState] = useState<{ x: number; y: number; flowPosition: { x: number; y: number } } | null>(null);
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
 
-  const nodes = useMemo(
+  const computedNodes = useMemo<CanvasNode[]>(
     () => props.graph.nodes.map((node) => toCanvasNode(node, props.selectedNodeIds.includes(node.id))),
     [props.graph.nodes, props.selectedNodeIds]
   );
 
-  const edges = useMemo(() => buildCanvasEdges(props.graph.nodes, props.graph.edges), [props.graph.edges, props.graph.nodes]);
+  const computedEdges = useMemo(
+    () => buildCanvasEdges(props.graph.nodes, props.graph.edges, selectedEdgeIds),
+    [props.graph.edges, props.graph.nodes, selectedEdgeIds]
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(computedNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(computedEdges);
+
+  useEffect(() => {
+    setNodes((current) => (areCanvasNodesEqual(current, computedNodes) ? current : computedNodes));
+  }, [computedNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges((current) => (areCanvasEdgesEqual(current, computedEdges) ? current : computedEdges));
+  }, [computedEdges, setEdges]);
+
+  useEffect(() => {
+    lastSelectedNodeIdsRef.current = props.selectedNodeIds;
+  }, [props.selectedNodeIds]);
+
+  useEffect(() => {
+    lastSelectedEdgeIdsRef.current = selectedEdgeIds;
+  }, [selectedEdgeIds]);
 
   useEffect(() => {
     if (!reactFlowInstance) {
@@ -127,11 +198,50 @@ export function GraphCanvas(props: {
 
     if (previousGraphIdRef.current !== props.graph.id) {
       previousGraphIdRef.current = props.graph.id;
+      if (lastSelectedEdgeIdsRef.current.length > 0) {
+        lastSelectedEdgeIdsRef.current = [];
+        setSelectedEdgeIds([]);
+      }
       window.requestAnimationFrame(() => {
         reactFlowInstance.fitView({ padding: 0.18, duration: 180 });
       });
     }
   }, [props.graph.id, reactFlowInstance]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        Boolean(target?.isContentEditable);
+
+      if (isTypingTarget || (event.key !== "Backspace" && event.key !== "Delete")) {
+        return;
+      }
+
+      if (selectedEdgeIds.length === 0 && props.selectedNodeIds.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (selectedEdgeIds.length > 0) {
+        props.onDeleteEdges(selectedEdgeIds);
+        lastSelectedEdgeIdsRef.current = [];
+        setSelectedEdgeIds([]);
+        return;
+      }
+
+      props.onDeleteNodes();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [props, selectedEdgeIds]);
 
   useEffect(() => {
     if (!menuState) {
@@ -191,6 +301,18 @@ export function GraphCanvas(props: {
     setMenuState(null);
   }
 
+  const handleEdgeClick: EdgeMouseHandler = (_, edge) => {
+    if (!areStringArraysEqual(lastSelectedEdgeIdsRef.current, [edge.id])) {
+      lastSelectedEdgeIdsRef.current = [edge.id];
+      setSelectedEdgeIds([edge.id]);
+    }
+    if (lastSelectedNodeIdsRef.current.length > 0) {
+      lastSelectedNodeIdsRef.current = [];
+      setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+      props.onSelectionChange([]);
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative flex h-full min-h-0 flex-col bg-[#0d1012]" onContextMenu={handleOpenContextMenu}>
       <div className="min-h-0 flex-1">
@@ -201,6 +323,8 @@ export function GraphCanvas(props: {
             className="animation-flow"
             colorMode="dark"
             onInit={setReactFlowInstance}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
             defaultEdgeOptions={{
               type: "smoothstep",
               markerEnd: {
@@ -210,18 +334,38 @@ export function GraphCanvas(props: {
                 color: "#71717a",
               },
             }}
-            onSelectionChange={(selection) => {
-              const nextNodeIds = (selection.nodes ?? []).map((node) => node.id);
-
-              if (!areStringArraysEqual(lastSelectedNodeIdsRef.current, nextNodeIds)) {
-                lastSelectedNodeIdsRef.current = nextNodeIds;
-                props.onSelectionChange(nextNodeIds);
+            onNodeClick={(_, node) => {
+              if (lastSelectedEdgeIdsRef.current.length > 0) {
+                lastSelectedEdgeIdsRef.current = [];
+                setSelectedEdgeIds([]);
+              }
+              setNodes((current) =>
+                current.map((entry) => ({
+                  ...entry,
+                  selected: entry.id === node.id,
+                }))
+              );
+              if (!areStringArraysEqual(lastSelectedNodeIdsRef.current, [node.id])) {
+                lastSelectedNodeIdsRef.current = [node.id];
+                props.onSelectionChange([node.id]);
               }
             }}
+            onEdgeClick={handleEdgeClick}
             onNodeDragStop={(_, draggedNode) => {
               props.onNodeDragStop(draggedNode.id, draggedNode.position);
             }}
-            onPaneClick={() => setMenuState(null)}
+            onPaneClick={() => {
+              setMenuState(null);
+              if (lastSelectedEdgeIdsRef.current.length > 0) {
+                lastSelectedEdgeIdsRef.current = [];
+                setSelectedEdgeIds([]);
+              }
+              setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+              if (lastSelectedNodeIdsRef.current.length > 0) {
+                lastSelectedNodeIdsRef.current = [];
+                props.onSelectionChange([]);
+              }
+            }}
             onPaneContextMenu={handleOpenContextMenu}
             onConnect={props.onConnect}
           >

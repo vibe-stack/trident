@@ -140,6 +140,45 @@ function detectSubgraphCycles(document: AnimationEditorDocument, diagnostics: Co
   document.graphs.forEach((graph) => visit(graph.id));
 }
 
+function collectReachableNodeIds(graph: AnimationEditorDocument["graphs"][number]): Set<string> {
+  const reachable = new Set<string>();
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  function visit(nodeId: string | undefined): void {
+    if (!nodeId || reachable.has(nodeId)) {
+      return;
+    }
+
+    const node = nodeById.get(nodeId);
+    if (!node) {
+      return;
+    }
+
+    reachable.add(nodeId);
+
+    if (node.kind === "blend1d" || node.kind === "blend2d") {
+      node.children.forEach((child) => visit(child.nodeId));
+      return;
+    }
+
+    if (node.kind === "stateMachine") {
+      node.states.forEach((state) => visit(state.motionNodeId));
+    }
+  }
+
+  const outputNode = graph.nodes.find(
+    (node): node is Extract<AnimationEditorDocument["graphs"][number]["nodes"][number], { kind: "output" }> =>
+      node.id === graph.outputNodeId && node.kind === "output"
+  );
+  const outputSourceNodeId =
+    outputNode?.sourceNodeId ??
+    graph.edges.find((edge) => edge.targetNodeId === graph.outputNodeId)?.sourceNodeId;
+
+  visit(outputSourceNodeId);
+
+  return reachable;
+}
+
 export function compileAnimationEditorDocument(input: unknown): CompileResult {
   const diagnostics: CompileDiagnostic[] = [];
   const parsed = animationEditorDocumentSchema.safeParse(input);
@@ -164,8 +203,9 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
   let machineIndexCounter = 0;
 
   const compiledGraphs: CompiledMotionGraph[] = document.graphs.map((graph, graphIndex) => {
+    const reachableNodeIds = collectReachableNodeIds(graph);
     const nodeIdToCompiledIndex = new Map<string, number>();
-    const motionNodes = graph.nodes.filter((node) => node.kind !== "output");
+    const motionNodes = graph.nodes.filter((node) => node.kind !== "output" && reachableNodeIds.has(node.id));
     motionNodes.forEach((node, index) => {
       nodeIdToCompiledIndex.set(node.id, index);
     });
@@ -356,6 +396,16 @@ export function compileAnimationEditorDocument(input: unknown): CompileResult {
     const rootNodeIndex = outputSourceNodeId ? nodeIdToCompiledIndex.get(outputSourceNodeId) : undefined;
     if (rootNodeIndex === undefined) {
       diagnostics.push(error(`Graph "${graph.name}" output points to an invalid node.`, `graphs.${graphIndex}.outputNodeId`));
+    }
+
+    const unreachableMotionNodes = graph.nodes.filter((node) => node.kind !== "output" && !reachableNodeIds.has(node.id));
+    if (unreachableMotionNodes.length > 0) {
+      diagnostics.push(
+        warning(
+          `Graph "${graph.name}" has ${unreachableMotionNodes.length} disconnected node${unreachableMotionNodes.length === 1 ? "" : "s"} that will be ignored until connected to the output.`,
+          `graphs.${graphIndex}.nodes`
+        )
+      );
     }
 
     return {

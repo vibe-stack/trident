@@ -363,11 +363,13 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
             const nodeId = store.addNode(graph.id, kind);
             store.moveNodes(graph.id, { [nodeId]: position });
           }}
+          onDeleteNodes={() => store.deleteSelectedNodes()}
+          onDeleteEdges={(edgeIds) => store.deleteEdges(graph.id, edgeIds)}
         />
 
         <div className="pointer-events-none absolute inset-0">
           <div className="pointer-events-auto absolute top-4 left-4 z-20 h-[min(68vh,720px)] w-[320px] max-w-[calc(100vw-2rem)]">
-            <LeftSidebar store={store} state={state} />
+            <LeftSidebar store={store} state={state} characterFileName={character?.fileName} />
           </div>
 
           <div className="pointer-events-auto absolute top-4 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]">

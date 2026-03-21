@@ -100,4 +100,47 @@ describe("@ggez/anim-compiler", () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes("missing clip"))).toBe(true);
     expect(result.diagnostics.some((diagnostic) => diagnostic.message.includes("Entry graph"))).toBe(true);
   });
+
+  it("ignores disconnected invalid draft nodes during compilation", () => {
+    const result = compileAnimationEditorDocument({
+      version: 1,
+      name: "Draft",
+      entryGraphId: "graph-main",
+      parameters: [
+        { id: "speed", name: "speed", type: "float", defaultValue: 0 }
+      ],
+      clips: [
+        { id: "idle", name: "Idle", duration: 1 }
+      ],
+      masks: [],
+      graphs: [
+        {
+          id: "graph-main",
+          name: "Main",
+          outputNodeId: "out",
+          edges: [],
+          nodes: [
+            { id: "clip-idle", name: "Idle", kind: "clip", clipId: "idle", speed: 1, loop: true, position: { x: 0, y: 0 } },
+            { id: "blend-draft", name: "Draft Blend", kind: "blend1d", parameterId: "", children: [], position: { x: 240, y: 0 } },
+            { id: "out", name: "Output", kind: "output", sourceNodeId: "clip-idle", position: { x: 160, y: 0 } }
+          ]
+        }
+      ],
+      layers: [
+        {
+          id: "layer-base",
+          name: "Base",
+          graphId: "graph-main",
+          weight: 1,
+          blendMode: "override",
+          rootMotionMode: "none",
+          enabled: true
+        }
+      ]
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.graph?.graphs[0]?.nodes).toHaveLength(1);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.severity === "warning" && diagnostic.message.includes("disconnected"))).toBe(true);
+  });
 });

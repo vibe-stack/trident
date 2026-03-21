@@ -84,7 +84,7 @@ const graphNodeBaseSchema = z.object({
 
 export const clipNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("clip"),
-  clipId: z.string().min(1),
+  clipId: z.string(),
   speed: z.number().default(1),
   loop: z.boolean().default(true)
 });
@@ -97,8 +97,8 @@ export const blend1DChildSchema = z.object({
 
 export const blend1DNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("blend1d"),
-  parameterId: z.string().min(1),
-  children: z.array(blend1DChildSchema).min(1)
+  parameterId: z.string(),
+  children: z.array(blend1DChildSchema).default([])
 });
 
 export const blend2DChildSchema = z.object({
@@ -110,9 +110,9 @@ export const blend2DChildSchema = z.object({
 
 export const blend2DNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("blend2d"),
-  xParameterId: z.string().min(1),
-  yParameterId: z.string().min(1),
-  children: z.array(blend2DChildSchema).min(1)
+  xParameterId: z.string(),
+  yParameterId: z.string(),
+  children: z.array(blend2DChildSchema).default([])
 });
 
 export const transitionConditionSchema = z.object({
@@ -124,15 +124,15 @@ export const transitionConditionSchema = z.object({
 export const stateMachineStateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  motionNodeId: z.string().min(1),
+  motionNodeId: z.string(),
   speed: z.number().default(1),
   cycleOffset: z.number().default(0)
 });
 
 export const stateMachineTransitionSchema = z.object({
   id: z.string().min(1),
-  fromStateId: z.string().min(1).optional(),
-  toStateId: z.string().min(1),
+  fromStateId: z.string().optional(),
+  toStateId: z.string(),
   duration: z.number().nonnegative().default(0.15),
   hasExitTime: z.boolean().default(false),
   exitTime: z.number().min(0).max(1).optional(),
@@ -142,20 +142,20 @@ export const stateMachineTransitionSchema = z.object({
 
 export const stateMachineNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("stateMachine"),
-  entryStateId: z.string().min(1),
-  states: z.array(stateMachineStateSchema).min(1),
+  entryStateId: z.string(),
+  states: z.array(stateMachineStateSchema).default([]),
   transitions: z.array(stateMachineTransitionSchema).default([]),
   anyStateTransitions: z.array(stateMachineTransitionSchema).default([])
 });
 
 export const subgraphNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("subgraph"),
-  graphId: z.string().min(1)
+  graphId: z.string()
 });
 
 export const outputNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("output"),
-  sourceNodeId: z.string().min(1).optional()
+  sourceNodeId: z.string().optional()
 });
 
 export const graphNodeSchema = z.discriminatedUnion("kind", [

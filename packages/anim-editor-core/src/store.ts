@@ -57,6 +57,7 @@ export interface AnimationEditorStore {
   moveNodes(graphId: string, positions: Record<string, { x: number; y: number }>): void;
   connectNodes(graphId: string, sourceNodeId: string, targetNodeId: string): void;
   deleteSelectedNodes(): void;
+  deleteEdges(graphId: string, edgeIds: string[]): void;
   duplicateSelection(): void;
   copySelection(): void;
   pasteSelection(): void;
@@ -86,6 +87,77 @@ function replaceNode(graph: EditorGraph, nodeId: string, nextNode: EditorGraphNo
   return {
     ...graph,
     nodes: graph.nodes.map((node) => (node.id === nodeId ? nextNode : node))
+  };
+}
+
+function disconnectSourceFromTarget(graph: EditorGraph, sourceNodeId: string, targetNodeId: string): EditorGraph {
+  const targetNode = graph.nodes.find((node) => node.id === targetNodeId);
+  if (!targetNode) {
+    return graph;
+  }
+
+  if (targetNode.kind === "output" && targetNode.sourceNodeId === sourceNodeId) {
+    return replaceNode(graph, targetNode.id, {
+      ...targetNode,
+      sourceNodeId: undefined
+    });
+  }
+
+  if (targetNode.kind === "blend1d") {
+    return replaceNode(graph, targetNode.id, {
+      ...targetNode,
+      children: targetNode.children.filter((child) => child.nodeId !== sourceNodeId)
+    });
+  }
+
+  if (targetNode.kind === "blend2d") {
+    return replaceNode(graph, targetNode.id, {
+      ...targetNode,
+      children: targetNode.children.filter((child) => child.nodeId !== sourceNodeId)
+    });
+  }
+
+  return graph;
+}
+
+function removeNodeReferences(graph: EditorGraph, removedNodeIds: Set<string>): EditorGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node.kind === "output") {
+        return removedNodeIds.has(node.sourceNodeId ?? "") ? { ...node, sourceNodeId: undefined } : node;
+      }
+
+      if (node.kind === "blend1d") {
+        return {
+          ...node,
+          children: node.children.filter((child) => !removedNodeIds.has(child.nodeId))
+        };
+      }
+
+      if (node.kind === "blend2d") {
+        return {
+          ...node,
+          children: node.children.filter((child) => !removedNodeIds.has(child.nodeId))
+        };
+      }
+
+      if (node.kind === "stateMachine") {
+        return {
+          ...node,
+          states: node.states.map((state) =>
+            removedNodeIds.has(state.motionNodeId)
+              ? {
+                  ...state,
+                  motionNodeId: ""
+                }
+              : state
+          )
+        };
+      }
+
+      return node;
+    })
   };
 }
 
@@ -307,12 +379,47 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
       }
 
       commit(deriveGraphTopics(graphId, nodeIds), () => {
-        updateGraph(graphId, (graph) => ({
-          ...graph,
-          nodes: graph.nodes.filter((node) => !nodeIds.includes(node.id)),
-          edges: graph.edges.filter((edge) => !nodeIds.includes(edge.sourceNodeId) && !nodeIds.includes(edge.targetNodeId))
-        }));
+        updateGraph(graphId, (graph) => {
+          const protectedNodeIds = new Set(
+            graph.nodes
+              .filter((node) => node.kind === "output" || node.id === graph.outputNodeId)
+              .map((node) => node.id)
+          );
+          const removableNodeIds = nodeIds.filter((nodeId) => !protectedNodeIds.has(nodeId));
+          const removedNodeIdSet = new Set(removableNodeIds);
+          const nextGraph = removeNodeReferences(
+            {
+              ...graph,
+              nodes: graph.nodes.filter((node) => !removedNodeIdSet.has(node.id)),
+              edges: graph.edges.filter((edge) => !removedNodeIdSet.has(edge.sourceNodeId) && !removedNodeIdSet.has(edge.targetNodeId))
+            },
+            removedNodeIdSet
+          );
+
+          return nextGraph;
+        });
         state.selection = { graphId, nodeIds: [] };
+      });
+    },
+    deleteEdges(graphId, edgeIds) {
+      if (edgeIds.length === 0) {
+        return;
+      }
+
+      commit(deriveGraphTopics(graphId), () => {
+        updateGraph(graphId, (graph) => {
+          const edgesToDelete = graph.edges.filter((edge) => edgeIds.includes(edge.id));
+          let nextGraph: EditorGraph = {
+            ...graph,
+            edges: graph.edges.filter((edge) => !edgeIds.includes(edge.id))
+          };
+
+          edgesToDelete.forEach((edge) => {
+            nextGraph = disconnectSourceFromTarget(nextGraph, edge.sourceNodeId, edge.targetNodeId);
+          });
+
+          return nextGraph;
+        });
       });
     },
     duplicateSelection() {
