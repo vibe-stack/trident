@@ -46,6 +46,7 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
             id: initialStateId,
             name: "State 1",
             motionNodeId: "unassigned-motion",
+            position: { x: 220, y: 160 },
             speed: 1,
             cycleOffset: 0,
           },

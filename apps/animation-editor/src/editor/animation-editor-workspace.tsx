@@ -12,6 +12,7 @@ import { EditorMenubar } from "./workspace/editor-menubar";
 import { GraphCanvas } from "./workspace/graph-canvas";
 import { LeftSidebar } from "./workspace/left-sidebar";
 import { RightSidebar } from "./workspace/right-sidebar";
+import { StateMachineCanvas } from "./workspace/state-machine-canvas";
 import { useSelectedGraph } from "./workspace/use-selected-graph";
 
 function normalizeClipKey(value: string): string {
@@ -149,6 +150,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
   const [importedClips, setImportedClips] = useState<ImportedPreviewClip[]>([]);
   const [assetStatus, setAssetStatus] = useState("Import a rigged character to unlock preview and rig-aware compilation.");
   const [assetError, setAssetError] = useState<string | null>(null);
+  const [openedStateMachineNodeId, setOpenedStateMachineNodeId] = useState<string | null>(null);
   const characterInputRef = useRef<HTMLInputElement | null>(null);
   const animationInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
@@ -259,6 +261,22 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
     updatePreviewBounds();
   }, [updatePreviewBounds]);
 
+  const openedStateMachineNode =
+    openedStateMachineNodeId
+      ? graph.nodes.find((node): node is Extract<EditorGraphNode, { kind: "stateMachine" }> => node.id === openedStateMachineNodeId && node.kind === "stateMachine") ?? null
+      : null;
+
+  useEffect(() => {
+    if (!openedStateMachineNodeId) {
+      return;
+    }
+
+    const existsInGraph = graph.nodes.some((node) => node.id === openedStateMachineNodeId && node.kind === "stateMachine");
+    if (!existsInGraph) {
+      setOpenedStateMachineNodeId(null);
+    }
+  }, [graph.nodes, openedStateMachineNodeId]);
+
   useEffect(() => {
     const element = workspaceRef.current;
     if (!element) {
@@ -349,30 +367,41 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
       <input ref={animationInputRef} type="file" accept=".glb,.gltf,.fbx" multiple hidden onChange={handleAnimationImport} />
 
       <div ref={workspaceRef} className="relative min-h-0 flex-1 overflow-hidden">
-        <GraphCanvas
-          graph={graph}
-          selectedNodeIds={state.selection.nodeIds}
-          onConnect={handleConnect}
-          onSelectionChange={(nodeIds) => store.selectNodes(nodeIds)}
-          onNodeDragStop={(nodeId, position) =>
-            store.moveNodes(graph.id, {
-              [nodeId]: position,
-            })
-          }
-          onAddNode={(kind, position) => {
-            const nodeId = store.addNode(graph.id, kind);
-            store.moveNodes(graph.id, { [nodeId]: position });
-          }}
-          onDeleteNodes={() => store.deleteSelectedNodes()}
-          onDeleteEdges={(edgeIds) => store.deleteEdges(graph.id, edgeIds)}
-        />
+        {openedStateMachineNode ? (
+          <StateMachineCanvas
+            store={store}
+            graph={graph}
+            node={openedStateMachineNode}
+            parameters={state.document.parameters}
+            onExit={() => setOpenedStateMachineNodeId(null)}
+          />
+        ) : (
+          <GraphCanvas
+            graph={graph}
+            selectedNodeIds={state.selection.nodeIds}
+            onConnect={handleConnect}
+            onSelectionChange={(nodeIds) => store.selectNodes(nodeIds)}
+            onOpenStateMachine={(nodeId) => setOpenedStateMachineNodeId(nodeId)}
+            onNodeDragStop={(nodeId, position) =>
+              store.moveNodes(graph.id, {
+                [nodeId]: position,
+              })
+            }
+            onAddNode={(kind, position) => {
+              const nodeId = store.addNode(graph.id, kind);
+              store.moveNodes(graph.id, { [nodeId]: position });
+            }}
+            onDeleteNodes={() => store.deleteSelectedNodes()}
+            onDeleteEdges={(edgeIds) => store.deleteEdges(graph.id, edgeIds)}
+          />
+        )}
 
         <div className="pointer-events-none absolute inset-0">
-          <div className="pointer-events-auto absolute top-4 left-4 z-20 h-[min(68vh,720px)] w-[320px] max-w-[calc(100vw-2rem)]">
+          <div className="pointer-events-auto absolute top-12 left-4 z-20 h-[min(68vh,720px)] w-[320px] max-w-[calc(100vw-2rem)]">
             <LeftSidebar store={store} state={state} characterFileName={character?.fileName} />
           </div>
 
-          <div className="pointer-events-auto absolute top-4 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]">
+          <div className="pointer-events-auto absolute top-12 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]">
             <RightSidebar store={store} />
           </div>
 
@@ -386,7 +415,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
             }}
           >
             <div
-              className="flex h-11 shrink-0 items-center justify-between px-4 text-[12px] font-medium text-zinc-400 cursor-move"
+              className="flex h-11 shrink-0 items-center justify-between px-4 text-[12px] font-medium text-zinc-400 cursor-move pb-6"
               onPointerDown={(event) => beginPreviewInteraction("move", event)}
             >
               <span>Preview</span>
@@ -405,7 +434,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
 
             <button
               type="button"
-              className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full bg-white/4 text-zinc-500 hover:bg-white/8 hover:text-zinc-300"
+              className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full bg-transparent text-zinc-500 hover:bg-white/8 hover:text-zinc-300"
               onPointerDown={(event) => beginPreviewInteraction("resize", event)}
               aria-label="Resize preview panel"
             >

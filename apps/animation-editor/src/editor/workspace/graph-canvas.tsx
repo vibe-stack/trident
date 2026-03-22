@@ -154,6 +154,7 @@ export function GraphCanvas(props: {
   selectedNodeIds: string[];
   onConnect: (connection: Connection) => void;
   onSelectionChange: (nodeIds: string[]) => void;
+  onOpenStateMachine?: (nodeId: string) => void;
   onNodeDragStop: (nodeId: string, position: { x: number; y: number }) => void;
   onAddNode: (kind: NodeActionKind, position: { x: number; y: number }) => void;
   onDeleteNodes: () => void;
@@ -353,6 +354,11 @@ export function GraphCanvas(props: {
               if (!areStringArraysEqual(lastSelectedNodeIdsRef.current, [node.id])) {
                 lastSelectedNodeIdsRef.current = [node.id];
                 props.onSelectionChange([node.id]);
+              }
+            }}
+            onNodeDoubleClick={(_, node) => {
+              if ((node.data as { kind?: string }).kind === "stateMachine") {
+                props.onOpenStateMachine?.(node.id);
               }
             }}
             onEdgeClick={handleEdgeClick}

@@ -25,7 +25,7 @@ export function LeftSidebar(props: { store: AnimationEditorStore; state: EditorS
   }, [selectedMask, selectedMaskId]);
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] bg-[#091012]/78 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.42)] ring-1 ring-white/7 backdrop-blur-2xl">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] bg-[#091012]/40 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.42)] ring-1 ring-white/7 backdrop-blur-md pb-16">
       <div className="mb-3 flex items-center justify-between px-1">
         <div>
           <div className="text-[10px] font-medium tracking-[0.04em] text-zinc-500">Document</div>

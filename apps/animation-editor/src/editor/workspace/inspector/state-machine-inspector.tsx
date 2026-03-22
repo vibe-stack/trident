@@ -359,6 +359,7 @@ function StatesEditor(props: {
               id: createStableId("state"),
               name: `State ${props.node.states.length + 1}`,
               motionNodeId: motionOptions[0]?.value ?? "unassigned-motion",
+              position: { x: 220 + props.node.states.length * 56, y: 160 + props.node.states.length * 32 },
               speed: 1,
               cycleOffset: 0,
             };

@@ -126,6 +126,7 @@ export const stateMachineStateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   motionNodeId: z.string(),
+  position: vec2Schema.optional(),
   speed: z.number().default(1),
   cycleOffset: z.number().default(0)
 });
