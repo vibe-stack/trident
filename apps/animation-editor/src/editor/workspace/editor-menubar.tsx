@@ -1,4 +1,5 @@
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
+import { Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Menubar,
@@ -13,9 +14,13 @@ import {
 export function EditorMenubar(props: {
   store: AnimationEditorStore;
   onCompile: () => void;
+  onSaveProject: () => void;
+  onLoadProject: () => void;
   onImportCharacter: () => void;
   onImportAnimations: () => void;
   onAddNode: (kind: "clip" | "blend1d" | "blend2d" | "stateMachine" | "subgraph") => void;
+  onToggleCopilot: () => void;
+  copilotOpen: boolean;
 }) {
   const { store } = props;
 
@@ -29,6 +34,14 @@ export function EditorMenubar(props: {
             File
           </MenubarTrigger>
           <MenubarContent className="border border-white/10 bg-[#161a1f] shadow-2xl shadow-black/45">
+            <MenubarItem onClick={props.onSaveProject}>
+              Save Project
+              <MenubarShortcut>Cmd+S</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onClick={props.onLoadProject}>
+              Load Project
+            </MenubarItem>
+            <MenubarSeparator />
             <MenubarItem onClick={props.onCompile}>
               Compile
               <MenubarShortcut>Cmd+B</MenubarShortcut>
@@ -89,6 +102,10 @@ export function EditorMenubar(props: {
       </Menubar>
 
       <div className="ml-auto flex items-center gap-1.5">
+        <Button variant="ghost" size="xs" className={`h-7 gap-1.5 px-2 text-[11px] ${props.copilotOpen ? "text-emerald-300" : "text-zinc-300"}`} onClick={props.onToggleCopilot}>
+          <Bot className="size-3.5" />
+          Codex
+        </Button>
         <Button variant="ghost" size="xs" className="h-7 px-2 text-[11px] text-zinc-300" onClick={props.onImportCharacter}>
           Character
         </Button>

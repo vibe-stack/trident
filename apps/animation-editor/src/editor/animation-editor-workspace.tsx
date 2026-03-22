@@ -1,12 +1,15 @@
 import "@xyflow/react/dist/style.css";
 import type { AnimationEditorStore } from "@ggez/anim-editor-core";
-import type { ClipReference, EditorGraphNode, SerializableRig } from "@ggez/anim-schema";
+import { parseAnimationEditorDocument, type ClipReference, type EditorGraphNode, type SerializableRig } from "@ggez/anim-schema";
 import type { ChangeEvent } from "react";
 import { ArrowDownRight, GripHorizontal } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CopilotPanel } from "./copilot/CopilotPanel";
+import { useCopilot } from "./hooks/use-copilot";
 import { AnimationPreviewPanel } from "./animation-preview-panel";
 import { importAnimationFiles, importCharacterFile, type ImportedCharacterAsset, type ImportedPreviewClip } from "./preview-assets";
+import { createProjectBundleJson, parseProjectBundleJson } from "./project-bundle";
 import { useEditorStoreValue } from "./use-editor-store-value";
 import { EditorMenubar } from "./workspace/editor-menubar";
 import { GraphCanvas } from "./workspace/graph-canvas";
@@ -144,15 +147,19 @@ function clampPreviewRect(rect: PreviewRect, bounds: { width: number; height: nu
 
 export function AnimationEditorWorkspace(props: { store: AnimationEditorStore }) {
   const { store } = props;
+  const copilot = useCopilot(store);
   const state = useEditorStoreValue(store, () => store.getState(), ["document", "selection", "compile", "clipboard"]);
   const graph = useSelectedGraph(store);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [character, setCharacter] = useState<ImportedCharacterAsset | null>(null);
   const [importedClips, setImportedClips] = useState<ImportedPreviewClip[]>([]);
+  const [characterSourceFile, setCharacterSourceFile] = useState<File | null>(null);
   const [assetStatus, setAssetStatus] = useState("Import a rigged character to unlock preview and rig-aware compilation.");
   const [assetError, setAssetError] = useState<string | null>(null);
   const [openedStateMachineNodeId, setOpenedStateMachineNodeId] = useState<string | null>(null);
   const characterInputRef = useRef<HTMLInputElement | null>(null);
   const animationInputRef = useRef<HTMLInputElement | null>(null);
+  const projectInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const previewDragRef = useRef<
     | {
@@ -195,6 +202,7 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
         ...nextCharacter,
         clips: reconciledClips,
       });
+      setCharacterSourceFile(file);
       setImportedClips(reconciledClips);
       applyImportedRig(store, nextCharacter.documentRig);
       upsertClipReferences(store, reconciledClips.map((clip) => clip.reference));
@@ -242,6 +250,94 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
       const message = error instanceof Error ? error.message : "Failed to import animation files.";
       setAssetError(message);
       setAssetStatus("Animation import failed.");
+    }
+  }
+
+  async function handleSaveProject() {
+    try {
+      setAssetError(null);
+      setAssetStatus("Saving project bundle...");
+      const editorDocument = parseAnimationEditorDocument(store.getState().document);
+      const json = await createProjectBundleJson({
+        document: editorDocument,
+        characterFile: characterSourceFile,
+        clips: importedClips.map((clip) => clip.asset)
+      });
+      const fileName = `${editorDocument.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "animation-graph"}.ggezanimproj.json`;
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setAssetStatus(`Saved project bundle as "${fileName}".`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save project bundle.";
+      setAssetError(message);
+      setAssetStatus("Project save failed.");
+    }
+  }
+
+  async function handleProjectLoad(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setAssetError(null);
+      setAssetStatus(`Loading project "${file.name}"...`);
+      const loaded = await parseProjectBundleJson(await file.text());
+      store.setDocument(loaded.document);
+
+      const clipReferencesById = new Map(loaded.document.clips.map((clip) => [clip.id, clip]));
+      let nextCharacter: ImportedCharacterAsset | null = null;
+
+      if (loaded.characterFile) {
+        const importedCharacter = await importCharacterFile(loaded.characterFile, []);
+        nextCharacter = {
+          ...importedCharacter,
+          documentRig: loaded.document.rig ?? importedCharacter.documentRig,
+          clips: []
+        };
+      }
+
+      const restoredClips: ImportedPreviewClip[] = loaded.clips.map((asset) => {
+        const reference = clipReferencesById.get(asset.id) ?? {
+          id: asset.id,
+          name: asset.name,
+          duration: asset.duration,
+          source: undefined
+        };
+
+        return {
+          id: asset.id,
+          name: reference.name,
+          duration: reference.duration,
+          source: reference.source ?? "project-bundle",
+          asset,
+          reference
+        };
+      });
+
+      if (nextCharacter) {
+        nextCharacter = {
+          ...nextCharacter,
+          clips: restoredClips
+        };
+      }
+
+      setCharacter(nextCharacter);
+      setCharacterSourceFile(loaded.characterFile);
+      setImportedClips(restoredClips);
+      setAssetStatus(`Loaded project "${file.name}" with ${loaded.document.graphs.length} graph(s) and ${restoredClips.length} clip asset(s).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load project bundle.";
+      setAssetError(message);
+      setAssetStatus("Project load failed.");
     }
   }
 
@@ -358,11 +454,16 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
       <EditorMenubar
         store={store}
         onCompile={handleCompile}
+        onSaveProject={() => void handleSaveProject()}
+        onLoadProject={() => projectInputRef.current?.click()}
         onImportCharacter={() => characterInputRef.current?.click()}
         onImportAnimations={() => animationInputRef.current?.click()}
         onAddNode={(kind) => store.addNode(graph.id, kind)}
+        onToggleCopilot={() => setCopilotOpen((current) => !current)}
+        copilotOpen={copilotOpen}
       />
 
+      <input ref={projectInputRef} type="file" accept=".json,.ggezanimproj.json" hidden onChange={handleProjectLoad} />
       <input ref={characterInputRef} type="file" accept=".glb,.gltf,.fbx" hidden onChange={handleCharacterImport} />
       <input ref={animationInputRef} type="file" accept=".glb,.gltf,.fbx" multiple hidden onChange={handleAnimationImport} />
 
@@ -401,7 +502,21 @@ export function AnimationEditorWorkspace(props: { store: AnimationEditorStore })
             <LeftSidebar store={store} state={state} characterFileName={character?.fileName} />
           </div>
 
-          <div className="pointer-events-auto absolute top-12 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]">
+          {copilotOpen ? (
+            <div className="pointer-events-auto absolute top-12 right-4 z-20 h-[min(72vh,760px)] w-88 max-w-[calc(100vw-2rem)]">
+              <CopilotPanel
+                onClose={() => setCopilotOpen(false)}
+                onSendMessage={(prompt) => void copilot.sendMessage(prompt)}
+                onAbort={copilot.abort}
+                onClearHistory={copilot.clearHistory}
+                onSettingsChanged={copilot.refreshConfigured}
+                session={copilot.session}
+                isConfigured={copilot.isConfigured}
+              />
+            </div>
+          ) : null}
+
+          <div className="pointer-events-auto absolute top-12 right-4 z-20 h-[min(72vh,760px)] w-72 max-w-[calc(100vw-2rem)]" style={copilotOpen ? { right: "calc(22rem + 2rem)" } : undefined}>
             <RightSidebar store={store} />
           </div>
 

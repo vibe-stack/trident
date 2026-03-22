@@ -363,19 +363,19 @@ export function AnimationPreviewPanel(props: {
         >
           {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
-        {mode === "graph" && graphPreview.error ? (
+        {/* {mode === "graph" && graphPreview.error ? (
           <div className="absolute right-3 bottom-3 z-10 max-w-[min(22rem,calc(100%-1.5rem))] rounded-2xl bg-black/70 px-3 py-2 text-[11px] leading-5 text-amber-100 ring-1 ring-amber-400/20 backdrop-blur">
             {animatorRef.current ? `Preview is running the last valid graph. ${graphPreview.error}` : graphPreview.error}
           </div>
-        ) : null}
+        ) : null} */}
       </div>
 
       <div className="shrink-0 space-y-3">
-        {assetStatus || assetError ? (
+        {/* {assetStatus || assetError ? (
           <div className={assetError ? "rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-100" : "rounded-2xl border border-emerald-400/12 bg-emerald-500/8 px-3 py-2 text-[11px] leading-5 text-emerald-100"}>
             {assetError ?? assetStatus}
           </div>
-        ) : null}
+        ) : null} */}
 
         <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
           <PropertyField label="Speed">

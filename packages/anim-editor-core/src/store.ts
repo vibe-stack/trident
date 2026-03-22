@@ -48,8 +48,10 @@ export interface AnimationEditorStore {
   getState(): Readonly<AnimationEditorState>;
   getRevision(): number;
   subscribe(listener: () => void, topics?: EditorTopic[]): Unsubscribe;
+  setDocument(document: AnimationEditorDocument): void;
   selectGraph(graphId: string): void;
   selectNodes(nodeIds: string[]): void;
+  setEntryGraph(graphId: string): void;
   addGraph(name?: string): string;
   renameGraph(graphId: string, name: string): void;
   addNode(graphId: string, kind: EditorGraphNode["kind"]): string;
@@ -225,6 +227,18 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
         }
       });
     },
+    setDocument(document) {
+      commit(["document", "selection", "graphs", "parameters", "layers", "masks", "compile", "clipboard"], () => {
+        state.document = structuredClone(document);
+        state.selection = {
+          graphId: document.entryGraphId,
+          nodeIds: []
+        };
+        state.diagnostics = [];
+        state.compileResult = undefined;
+        state.clipboard = undefined;
+      });
+    },
     selectGraph(graphId) {
       state.selection = { graphId, nodeIds: [] };
       notify(["selection", "graphs", `graph:${graphId}`]);
@@ -235,6 +249,14 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
         nodeIds
       };
       notify(["selection", `graph:${state.selection.graphId}`, ...nodeIds.map((nodeId) => `node:${nodeId}` as const)]);
+    },
+    setEntryGraph(graphId) {
+      commit(["document", "graphs", `graph:${graphId}`], () => {
+        state.document = {
+          ...state.document,
+          entryGraphId: graphId
+        };
+      });
     },
     addGraph(name = "New Graph") {
       const outputNode = createDefaultNode("output", "Output");
