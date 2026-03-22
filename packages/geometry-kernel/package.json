@@ -1,6 +1,6 @@
 {
   "name": "@ggez/geometry-kernel",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Brush, polygon, and editable mesh operations for Web Hammer.",
   "license": "MIT",
   "type": "module",

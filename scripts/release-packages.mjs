@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -10,6 +10,7 @@ const dryRun = process.argv.includes("--dry-run");
 
 const packages = loadPackages();
 const orderedPackages = sortPackages(packages);
+const packageVersions = new Map(packages.map((pkg) => [pkg.name, pkg.version]));
 
 switch (command) {
   case "build": {
@@ -39,7 +40,9 @@ switch (command) {
         args.push("--access", "public");
       }
 
-      run("npm", args, pkg.dir);
+      withPublishManifest(pkg, packageVersions, () => {
+        run("npm", args, pkg.dir);
+      });
     }
     break;
   }
@@ -72,6 +75,7 @@ function loadPackages() {
       return {
         dependencies: collectInternalDependencies(manifest),
         dir,
+        manifestPath,
         name: manifest.name,
         version: manifest.version
       };
@@ -132,4 +136,52 @@ function run(binary, args, cwd) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function withPublishManifest(pkg, packageVersions, callback) {
+  const originalManifestText = readFileSync(pkg.manifestPath, "utf8");
+  const manifest = JSON.parse(originalManifestText);
+  const rewrittenManifest = rewriteWorkspaceProtocols(manifest, packageVersions);
+  const nextManifestText = `${JSON.stringify(rewrittenManifest, null, 2)}\n`;
+
+  if (nextManifestText === originalManifestText) {
+    callback();
+    return;
+  }
+
+  writeFileSync(pkg.manifestPath, nextManifestText);
+
+  try {
+    callback();
+  } finally {
+    writeFileSync(pkg.manifestPath, originalManifestText);
+  }
+}
+
+function rewriteWorkspaceProtocols(manifest, packageVersions) {
+  const nextManifest = structuredClone(manifest);
+
+  for (const sectionName of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+    const section = nextManifest[sectionName];
+
+    if (!section) {
+      continue;
+    }
+
+    for (const [dependencyName, dependencyVersion] of Object.entries(section)) {
+      if (!dependencyVersion.startsWith("workspace:")) {
+        continue;
+      }
+
+      const publishedVersion = packageVersions.get(dependencyName);
+
+      if (!publishedVersion) {
+        throw new Error(`Missing version for internal dependency ${dependencyName} in ${manifest.name}`);
+      }
+
+      section[dependencyName] = publishedVersion;
+    }
+  }
+
+  return nextManifest;
 }
