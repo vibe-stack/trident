@@ -3,6 +3,86 @@ import type { AnimationClipAsset, AnimationTrack, PoseBuffer, RigDefinition } fr
 import { extractRootMotionDelta, type RootMotionMode } from "./root-motion";
 import { copyPose, copyRigBindPose } from "./pose-buffer";
 
+function getBoneDepth(rig: RigDefinition, boneIndex: number): number {
+  let depth = 0;
+  let current = boneIndex;
+
+  while (current >= 0) {
+    current = rig.parentIndices[current] ?? -1;
+    if (current >= 0) {
+      depth += 1;
+    }
+  }
+
+  return depth;
+}
+
+function scoreRootMotionBoneName(name: string): number {
+  const normalized = name.toLowerCase();
+
+  if (normalized.includes("hips")) {
+    return 400;
+  }
+  if (normalized.includes("pelvis")) {
+    return 320;
+  }
+  if (normalized === "root") {
+    return 240;
+  }
+  if (normalized.includes("root")) {
+    return 180;
+  }
+  if (normalized.includes("armature")) {
+    return 60;
+  }
+  return 0;
+}
+
+function estimateTranslationTravel(values: Float32Array | undefined): number {
+  if (!values || values.length < 6) {
+    return 0;
+  }
+
+  let maxDistance = 0;
+  const startX = values[0] ?? 0;
+  const startY = values[1] ?? 0;
+  const startZ = values[2] ?? 0;
+
+  for (let index = 3; index < values.length; index += 3) {
+    const dx = (values[index] ?? 0) - startX;
+    const dy = (values[index + 1] ?? 0) - startY;
+    const dz = (values[index + 2] ?? 0) - startZ;
+    maxDistance = Math.max(maxDistance, Math.hypot(dx, dy, dz));
+  }
+
+  return maxDistance;
+}
+
+function inferMotionRootBoneIndex(clip: AnimationClipAsset, rig: RigDefinition): number {
+  const candidates = clip.tracks
+    .filter((track) => track.translationTimes && track.translationValues && track.translationValues.length >= 3)
+    .map((track) => ({
+      boneIndex: track.boneIndex,
+      nameScore: scoreRootMotionBoneName(rig.boneNames[track.boneIndex] ?? ""),
+      travel: estimateTranslationTravel(track.translationValues),
+      depth: getBoneDepth(rig, track.boneIndex)
+    }))
+    .sort((left, right) => {
+      if (left.nameScore !== right.nameScore) {
+        return right.nameScore - left.nameScore;
+      }
+      if (left.travel !== right.travel) {
+        return right.travel - left.travel;
+      }
+      if (left.depth !== right.depth) {
+        return left.depth - right.depth;
+      }
+      return left.boneIndex - right.boneIndex;
+    });
+
+  return candidates[0]?.boneIndex ?? rig.rootBoneIndex;
+}
+
 function findKeyframeIndex(times: Float32Array, time: number): number {
   if (times.length <= 1) {
     return 0;
@@ -176,9 +256,26 @@ export function sampleClipRootMotionDelta(
   nextTime: number,
   mode: RootMotionMode
 ) {
-  const rootBoneIndex = clip.rootBoneIndex ?? rig.rootBoneIndex;
+  if (mode === "none" || clip.duration <= 0 || previousTime === nextTime) {
+    return extractRootMotionDelta(
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0, w: 1 },
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0, w: 1 },
+      mode
+    );
+  }
+
+  const rootBoneIndex = clip.rootBoneIndex ?? inferMotionRootBoneIndex(clip, rig);
   const tempA = new Float32Array(4);
   const tempB = new Float32Array(4);
+  const accumulated = extractRootMotionDelta(
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0, w: 1 },
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0, w: 1 },
+    mode
+  );
   const prevPose = {
     translations: new Float32Array(rig.boneNames.length * 3),
     rotations: new Float32Array(rig.boneNames.length * 4),
@@ -191,40 +288,63 @@ export function sampleClipRootMotionDelta(
     scales: new Float32Array(rig.boneNames.length * 3),
     boneCount: rig.boneNames.length
   };
-  sampleClipPose(clip, rig, previousTime, prevPose);
-  sampleClipPose(clip, rig, nextTime, nextPose);
+  let segmentStart = previousTime;
+  let remaining = nextTime - previousTime;
 
-  const prevTranslationOffset = rootBoneIndex * 3;
-  const nextTranslationOffset = rootBoneIndex * 3;
-  const prevRotationOffset = rootBoneIndex * 4;
-  const nextRotationOffset = rootBoneIndex * 4;
+  while (remaining > 1e-6) {
+    const normalizedStart = normalizeClipTime(clip, segmentStart, true);
+    const untilWrap = normalizedStart >= clip.duration ? clip.duration : clip.duration - normalizedStart;
+    const segmentDelta = Math.min(remaining, Math.max(untilWrap, 1e-6));
+    const segmentEnd = segmentStart + segmentDelta;
 
-  tempA.set(prevPose.rotations.subarray(prevRotationOffset, prevRotationOffset + 4));
-  tempB.set(nextPose.rotations.subarray(nextRotationOffset, nextRotationOffset + 4));
+    // Sample with loop=false and pre-normalized times so the clip-end sample stays at
+    // the final keyframe instead of wrapping back to t=0 at the loop boundary.
+    const normalizedEnd = Math.min(normalizedStart + segmentDelta, clip.duration);
+    sampleClipPose(clip, rig, normalizedStart, prevPose, false);
+    sampleClipPose(clip, rig, normalizedEnd, nextPose, false);
 
-  return extractRootMotionDelta(
-    {
-      x: prevPose.translations[prevTranslationOffset]!,
-      y: prevPose.translations[prevTranslationOffset + 1]!,
-      z: prevPose.translations[prevTranslationOffset + 2]!
-    },
-    {
-      x: tempA[0]!,
-      y: tempA[1]!,
-      z: tempA[2]!,
-      w: tempA[3]!
-    },
-    {
-      x: nextPose.translations[nextTranslationOffset]!,
-      y: nextPose.translations[nextTranslationOffset + 1]!,
-      z: nextPose.translations[nextTranslationOffset + 2]!
-    },
-    {
-      x: tempB[0]!,
-      y: tempB[1]!,
-      z: tempB[2]!,
-      w: tempB[3]!
-    },
-    mode
-  );
+    const prevTranslationOffset = rootBoneIndex * 3;
+    const nextTranslationOffset = rootBoneIndex * 3;
+    const prevRotationOffset = rootBoneIndex * 4;
+    const nextRotationOffset = rootBoneIndex * 4;
+
+    tempA.set(prevPose.rotations.subarray(prevRotationOffset, prevRotationOffset + 4));
+    tempB.set(nextPose.rotations.subarray(nextRotationOffset, nextRotationOffset + 4));
+
+    const segmentMotion = extractRootMotionDelta(
+      {
+        x: prevPose.translations[prevTranslationOffset]!,
+        y: prevPose.translations[prevTranslationOffset + 1]!,
+        z: prevPose.translations[prevTranslationOffset + 2]!
+      },
+      {
+        x: tempA[0]!,
+        y: tempA[1]!,
+        z: tempA[2]!,
+        w: tempA[3]!
+      },
+      {
+        x: nextPose.translations[nextTranslationOffset]!,
+        y: nextPose.translations[nextTranslationOffset + 1]!,
+        z: nextPose.translations[nextTranslationOffset + 2]!
+      },
+      {
+        x: tempB[0]!,
+        y: tempB[1]!,
+        z: tempB[2]!,
+        w: tempB[3]!
+      },
+      mode
+    );
+
+    accumulated.translation[0] += segmentMotion.translation[0]!;
+    accumulated.translation[1] += segmentMotion.translation[1]!;
+    accumulated.translation[2] += segmentMotion.translation[2]!;
+    accumulated.yaw += segmentMotion.yaw;
+
+    segmentStart = segmentEnd;
+    remaining -= segmentDelta;
+  }
+
+  return accumulated;
 }

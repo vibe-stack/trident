@@ -122,6 +122,16 @@ export function DeflateIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function SmoothBrushIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M5 9c1.5-2 3.5-3 7-3s5.5 1 7 3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      <path d="M5 15c1.5 2 3.5 3 7 3s5.5-1 7-3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      <path d="M12 6v12" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
 export function RaiseTopIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg fill="none" viewBox="0 0 24 24" {...props}>
@@ -136,6 +146,44 @@ export function LowerTopIcon(props: SVGProps<SVGSVGElement>) {
     <svg fill="none" viewBox="0 0 24 24" {...props}>
       <path d="M7 5h10v5H7z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
       <path d="M12 19v-8m0 8-3-3m3 3 3-3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+export function WireframeRenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5v-7Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <path d="M12 5v14M6 8.5 12 12l6-3.5M6 15.5 12 12l6 3.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+export function SolidRenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5v-7Z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <path d="M12 5v14M6 8.5 12 12l6-3.5" opacity="0.45" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+export function PreviewRenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5v-7Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <path d="M12 5v14" opacity="0.4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+      <path d="M7.8 11.3 12 9l4.2 2.3v4.7L12 18.3 7.8 16v-4.7Z" fill="currentColor" fillOpacity="0.22" />
+    </svg>
+  );
+}
+
+export function FullRenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5v-7Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <path d="M12 3.8v1.6M18.4 7.5l1.2-.8M18.5 15.9l1.4.7M12 18.8v1.6M5.4 16.6l1.2-.7M4.5 8.2l1.3.8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+      <path d="M12 8.4 15.6 10.4v3.9L12 16.3l-3.6-2v-3.9L12 8.4Z" fill="currentColor" fillOpacity="0.26" />
     </svg>
   );
 }
@@ -231,6 +279,16 @@ export function CubePrimitiveIcon(props: SVGProps<SVGSVGElement>) {
     <svg fill="none" viewBox="0 0 24 24" {...props}>
       <path d="M6 8.5 12 5l6 3.5v7L12 19l-6-3.5v-7Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
       <path d="M12 12v7M6 8.5 12 12l6-3.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+export function PlanePrimitiveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" {...props}>
+      <path d="M5.5 9 12 6l6.5 3-6.5 3-6.5-3Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <path d="M5.5 9v6l6.5 3 6.5-3V9" opacity="0.3" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
+      <path d="M8 13.2h8" opacity="0.55" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
     </svg>
   );
 }

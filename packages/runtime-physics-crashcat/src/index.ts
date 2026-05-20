@@ -1,0 +1,473 @@
+import {
+  MotionQuality,
+  MotionType,
+  addBroadphaseLayer,
+  addObjectLayer,
+  box,
+  capsule,
+  castRay,
+  convexHull,
+  createClosestCastRayCollector,
+  createDefaultCastRaySettings,
+  createWorld,
+  createWorldSettings,
+  cylinder,
+  dof,
+  enableCollision,
+  filter,
+  registerAll,
+  rigidBody,
+  sphere,
+  transformed,
+  triangleMesh,
+  updateWorld,
+  type RigidBody,
+  type Shape,
+  type World
+} from "crashcat";
+import { debugRenderer } from "crashcat/three";
+import { createShapeHelper } from "crashcat/three";
+import { createAuthoredColliderShape } from "./authored-collider-shapes";
+import { buildAutoColliderShapeFromObject } from "./object-auto-collider";
+import { createTriangleMeshShape } from "./triangle-mesh-shape";
+import type { DerivedRenderMesh } from "@ggez/render-pipeline";
+import { getRuntimePhysicsDescriptors, type RuntimePhysicsDescriptor } from "@ggez/runtime-format";
+import { resolveTransformPivot, toTuple, type SceneSettings } from "@ggez/shared";
+import {
+  Box3,
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  Euler,
+  Float32BufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  Object3D,
+  Quaternion,
+  SphereGeometry,
+  Vector3
+} from "three";
+
+export {
+  CastRayStatus,
+  MotionQuality,
+  MotionType,
+  capsule,
+  castRay,
+  createClosestCastRayCollector,
+  createDefaultCastRaySettings,
+  cylinder,
+  dof,
+  filter,
+  rigidBody
+} from "crashcat";
+export type { ClosestCastRayCollector, RigidBody as CrashcatRigidBody, World as CrashcatPhysicsWorld } from "crashcat";
+export type CrashcatDebugRendererOptions = Parameters<typeof debugRenderer.init>[0];
+export type CrashcatDebugRendererState = ReturnType<typeof debugRenderer.init>;
+export { createAuthoredColliderShape };
+
+let crashcatReady = false;
+
+export const CRASHCAT_BROADPHASE_LAYER_MOVING = 0;
+export const CRASHCAT_BROADPHASE_LAYER_STATIC = 1;
+export const CRASHCAT_OBJECT_LAYER_MOVING = 0;
+export const CRASHCAT_OBJECT_LAYER_STATIC = 1;
+
+export async function ensureCrashcatRuntimePhysics() {
+  if (crashcatReady) {
+    return;
+  }
+
+  registerAll();
+  crashcatReady = true;
+}
+
+export function createCrashcatPhysicsWorld(settings: Pick<SceneSettings, "world">) {
+  const worldSettings = createWorldSettings();
+  worldSettings.gravity = toTuple(settings.world.gravity);
+  const movingBroadphaseLayer = addBroadphaseLayer(worldSettings);
+  const staticBroadphaseLayer = addBroadphaseLayer(worldSettings);
+  const movingObjectLayer = addObjectLayer(worldSettings, movingBroadphaseLayer);
+  const staticObjectLayer = addObjectLayer(worldSettings, staticBroadphaseLayer);
+  enableCollision(worldSettings, movingObjectLayer, movingObjectLayer);
+  enableCollision(worldSettings, movingObjectLayer, staticObjectLayer);
+  return createWorld(worldSettings);
+}
+
+export function stepCrashcatPhysicsWorld(world: World, deltaSeconds: number) {
+  updateWorld(world, undefined, deltaSeconds);
+}
+
+export function createCrashcatDebugRenderer(options?: CrashcatDebugRendererOptions) {
+  return debugRenderer.init(options);
+}
+
+export function updateCrashcatDebugRenderer(state: CrashcatDebugRendererState, world: World) {
+  debugRenderer.update(state, world);
+}
+
+export function clearCrashcatDebugRenderer(state: CrashcatDebugRendererState) {
+  debugRenderer.clear(state);
+}
+
+export function createDefaultCrashcatDebugRendererOptions() {
+  return debugRenderer.createDefaultOptions();
+}
+
+export function createCrashcatShapeHelper(...args: Parameters<typeof createShapeHelper>) {
+  return createShapeHelper(...args);
+}
+
+export function createStaticRigidBody(world: World, mesh: DerivedRenderMesh) {
+  return rigidBody.create(world, {
+    friction: mesh.physics?.friction ?? 0.5,
+    motionType: MotionType.STATIC,
+    objectLayer: CRASHCAT_OBJECT_LAYER_STATIC,
+    position: toTuple(mesh.position),
+    quaternion: createCrashcatQuaternion(mesh.rotation),
+    restitution: mesh.physics?.restitution ?? 0,
+    sensor: mesh.physics?.sensor ?? false,
+    shape: createCrashcatShape(mesh)
+  });
+}
+
+export function createStaticRigidBodyFromObject(
+  world: World,
+  mesh: DerivedRenderMesh,
+  object: Object3D,
+  instanceNodeId?: string
+) {
+  return rigidBody.create(world, {
+    friction: mesh.physics?.friction ?? 0.5,
+    motionType: MotionType.STATIC,
+    objectLayer: CRASHCAT_OBJECT_LAYER_STATIC,
+    position: toTuple(mesh.position),
+    quaternion: createCrashcatQuaternion(mesh.rotation),
+    restitution: mesh.physics?.restitution ?? 0,
+    sensor: mesh.physics?.sensor ?? false,
+    shape: createCrashcatShapeFromObject(mesh, object, instanceNodeId) ?? createCrashcatShape(mesh)
+  });
+}
+
+export function createDynamicRigidBody(world: World, mesh: DerivedRenderMesh) {
+  const physics = mesh.physics;
+  const motionType = resolveMotionType(physics?.bodyType ?? "dynamic");
+
+  return rigidBody.create(world, {
+    allowSleeping: physics?.canSleep ?? true,
+    allowedDegreesOfFreedom: dof(
+      !(physics?.lockTranslations ?? false),
+      !(physics?.lockTranslations ?? false),
+      !(physics?.lockTranslations ?? false),
+      !(physics?.lockRotations ?? false),
+      !(physics?.lockRotations ?? false),
+      !(physics?.lockRotations ?? false)
+    ),
+    angularDamping: physics?.angularDamping ?? 0,
+    friction: physics?.friction ?? 0.5,
+    gravityFactor: physics?.gravityScale ?? 1,
+    linearDamping: physics?.linearDamping ?? 0,
+    mass: physics?.mass,
+    motionQuality: physics?.ccd ? MotionQuality.LINEAR_CAST : MotionQuality.DISCRETE,
+    motionType,
+    objectLayer: motionType === MotionType.STATIC ? CRASHCAT_OBJECT_LAYER_STATIC : CRASHCAT_OBJECT_LAYER_MOVING,
+    position: toTuple(mesh.position),
+    quaternion: createCrashcatQuaternion(mesh.rotation),
+    restitution: physics?.restitution ?? 0,
+    sensor: physics?.sensor ?? false,
+    shape: createCrashcatShape(mesh)
+  });
+}
+
+export function createRuntimePhysicsDescriptors(scene: Parameters<typeof getRuntimePhysicsDescriptors>[0]) {
+  return getRuntimePhysicsDescriptors(scene);
+}
+
+export function createCrashcatShapeFromRuntimePhysics(descriptor: RuntimePhysicsDescriptor) {
+  const node = descriptor.node;
+
+  if (node.kind !== "primitive") {
+    return undefined;
+  }
+
+  const mesh: Pick<DerivedRenderMesh, "physics" | "pivot" | "position" | "primitive" | "rotation" | "scale"> = {
+    physics: descriptor.physics,
+    pivot: node.transform.pivot,
+    position: node.transform.position,
+    primitive: toDerivedPrimitive(node),
+    rotation: node.transform.rotation,
+    scale: node.transform.scale
+  };
+
+  return createCrashcatShape(mesh as DerivedRenderMesh);
+}
+
+export function createCrashcatQuaternion(rotation: DerivedRenderMesh["rotation"]): [number, number, number, number] {
+  const quaternion = new Quaternion().setFromEuler(new Euler(rotation.x, rotation.y, rotation.z));
+  return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+}
+
+function createCrashcatShape(mesh: DerivedRenderMesh) {
+  const physics = mesh.physics;
+
+  if (physics?.colliderDefinitions?.length) {
+    const authoredShape = createAuthoredColliderShape(mesh);
+
+    if (authoredShape) {
+      return authoredShape;
+    }
+  }
+
+  const primitiveShape = createPrimitiveShape(mesh);
+
+  if (primitiveShape) {
+    return applyPivotOffset(mesh, primitiveShape);
+  }
+
+  const geometry = createRenderableGeometry(mesh);
+
+  if (!geometry) {
+    return box.create({
+      density: physics?.density,
+      halfExtents: [0.5, 0.5, 0.5]
+    });
+  }
+
+  if (physics?.colliderShape === "capsule") {
+    return createCapsuleFromGeometry(geometry, mesh, physics.density);
+  }
+
+  const pivot = resolveMeshPivot(mesh);
+  const position = geometry.getAttribute("position");
+  const scaledVertices: number[] = new Array(position.count * 3);
+
+  for (let vertexIndex = 0; vertexIndex < position.count; vertexIndex += 1) {
+    scaledVertices[vertexIndex * 3] = position.getX(vertexIndex) * mesh.scale.x - pivot.x;
+    scaledVertices[vertexIndex * 3 + 1] = position.getY(vertexIndex) * mesh.scale.y - pivot.y;
+    scaledVertices[vertexIndex * 3 + 2] = position.getZ(vertexIndex) * mesh.scale.z - pivot.z;
+  }
+
+  if (physics?.colliderShape === "trimesh") {
+    const index = geometry.getIndex();
+    const indices = index
+      ? Array.from(index.array as ArrayLike<number>)
+      : Array.from({ length: position.count }, (_, value) => value);
+    geometry.dispose();
+    return createTriangleMeshShape({ indices, positions: scaledVertices });
+  }
+
+  const index = geometry.getIndex();
+  const indices = index
+    ? Array.from(index.array as ArrayLike<number>)
+    : Array.from({ length: position.count }, (_, value) => value);
+  geometry.dispose();
+
+  return convexHull.create({ density: physics?.density, positions: scaledVertices });
+}
+
+function createCrashcatShapeFromObject(mesh: DerivedRenderMesh, object: Object3D, instanceNodeId?: string) {
+  return buildAutoColliderShapeFromObject(mesh, object, instanceNodeId);
+}
+
+function createCapsuleFromGeometry(
+  geometry: BufferGeometry,
+  mesh: Pick<DerivedRenderMesh, "physics" | "pivot" | "position" | "rotation" | "scale">,
+  density?: number
+) {
+  const bb = geometry.boundingBox ?? new Box3().setFromBufferAttribute(
+    geometry.getAttribute("position") as BufferAttribute
+  );
+  const size = new Vector3();
+  bb.getSize(size);
+  const center = new Vector3();
+  bb.getCenter(center);
+
+  const scaledHalfExtentX = Math.abs(size.x * mesh.scale.x) * 0.5;
+  const scaledHalfExtentY = Math.abs(size.y * mesh.scale.y) * 0.5;
+  const scaledHalfExtentZ = Math.abs(size.z * mesh.scale.z) * 0.5;
+
+  const radius = Math.max(scaledHalfExtentX, scaledHalfExtentZ);
+  const halfHeight = Math.max(0, scaledHalfExtentY - radius);
+
+  const shape = capsule.create({ density, halfHeightOfCylinder: halfHeight, radius });
+
+  geometry.dispose();
+
+  const pivot = resolveMeshPivot(mesh);
+  const offsetY = center.y * mesh.scale.y - pivot.y;
+
+  if (offsetY === 0 && pivot.x === 0 && pivot.z === 0) {
+    return shape;
+  }
+
+  return transformed.create({
+    position: [-pivot.x, offsetY, -pivot.z],
+    quaternion: [0, 0, 0, 1],
+    shape
+  });
+}
+
+function createPrimitiveShape(mesh: DerivedRenderMesh) {
+  const physics = mesh.physics;
+
+  if (mesh.primitive && physics) {
+    if (physics.colliderShape === "ball" && mesh.primitive.kind === "sphere") {
+      return sphere.create({
+        density: physics.density,
+        radius: mesh.primitive.radius * maxAxisScale(mesh.scale)
+      });
+    }
+
+    if (physics.colliderShape === "cuboid" && mesh.primitive.kind === "box") {
+      return box.create({
+        density: physics.density,
+        halfExtents: [
+          Math.abs(mesh.primitive.size.x * mesh.scale.x) * 0.5,
+          Math.abs(mesh.primitive.size.y * mesh.scale.y) * 0.5,
+          Math.abs(mesh.primitive.size.z * mesh.scale.z) * 0.5
+        ]
+      });
+    }
+
+    if (physics.colliderShape === "cylinder" && mesh.primitive.kind === "cylinder") {
+      return cylinder.create({
+        density: physics.density,
+        halfHeight: Math.abs(mesh.primitive.height * mesh.scale.y) * 0.5,
+        radius: Math.max(
+          Math.abs(mesh.primitive.radiusTop * mesh.scale.x),
+          Math.abs(mesh.primitive.radiusBottom * mesh.scale.z)
+        )
+      });
+    }
+  }
+
+  return undefined;
+}
+
+function applyPivotOffset(mesh: Pick<DerivedRenderMesh, "pivot" | "position" | "rotation" | "scale">, shape: Shape) {
+  const pivot = resolveMeshPivot(mesh);
+
+  if (pivot.x === 0 && pivot.y === 0 && pivot.z === 0) {
+    return shape;
+  }
+
+  return transformed.create({
+    position: [-pivot.x, -pivot.y, -pivot.z],
+    quaternion: [0, 0, 0, 1],
+    shape
+  });
+}
+
+function resolveMotionType(bodyType: NonNullable<DerivedRenderMesh["physics"]>["bodyType"]) {
+  switch (bodyType) {
+    case "fixed":
+      return MotionType.STATIC;
+    case "kinematicPosition":
+      return MotionType.KINEMATIC;
+    default:
+      return MotionType.DYNAMIC;
+  }
+}
+
+function createRenderableGeometry(mesh: DerivedRenderMesh) {
+  let geometry: BufferGeometry | undefined;
+
+  if (mesh.surface) {
+    geometry = createIndexedGeometry(mesh.surface.positions, mesh.surface.indices, mesh.surface.uvs, mesh.surface.groups);
+  } else if (mesh.primitive?.kind === "box") {
+    geometry = new BoxGeometry(mesh.primitive.size.x, mesh.primitive.size.y, mesh.primitive.size.z);
+  } else if (mesh.primitive?.kind === "sphere") {
+    geometry = new SphereGeometry(mesh.primitive.radius, mesh.primitive.widthSegments, mesh.primitive.heightSegments);
+  } else if (mesh.primitive?.kind === "cylinder") {
+    geometry = new CylinderGeometry(
+      mesh.primitive.radiusTop,
+      mesh.primitive.radiusBottom,
+      mesh.primitive.height,
+      mesh.primitive.radialSegments
+    );
+  } else if (mesh.primitive?.kind === "cone") {
+    geometry = new ConeGeometry(mesh.primitive.radius, mesh.primitive.height, mesh.primitive.radialSegments);
+  }
+
+  if (!geometry) {
+    return undefined;
+  }
+
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createIndexedGeometry(
+  positions: number[],
+  indices?: number[],
+  uvs?: number[],
+  groups?: Array<{ count: number; materialIndex: number; start: number }>
+) {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+
+  if (uvs) {
+    geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  }
+
+  if (indices) {
+    geometry.setIndex(indices);
+  }
+
+  geometry.clearGroups();
+  groups?.forEach((group) => {
+    geometry.addGroup(group.start, group.count, group.materialIndex);
+  });
+
+  return geometry;
+}
+
+function resolveMeshPivot(mesh: Pick<DerivedRenderMesh, "pivot" | "position" | "rotation" | "scale">) {
+  return resolveTransformPivot({
+    pivot: mesh.pivot,
+    position: mesh.position,
+    rotation: mesh.rotation,
+    scale: mesh.scale
+  });
+}
+
+function maxAxisScale(scale: DerivedRenderMesh["scale"]) {
+  return Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
+}
+
+function toDerivedPrimitive(node: Extract<RuntimePhysicsDescriptor["node"], { kind: "primitive" }>): DerivedRenderMesh["primitive"] {
+  switch (node.data.shape) {
+    case "sphere":
+      return {
+        heightSegments: Math.max(8, Math.floor((node.data.radialSegments ?? 24) * 0.75)),
+        kind: "sphere",
+        radius: Math.max(Math.abs(node.data.size.x), Math.abs(node.data.size.z)) * 0.5,
+        widthSegments: node.data.radialSegments ?? 24
+      };
+    case "cylinder":
+      return {
+        height: Math.abs(node.data.size.y),
+        kind: "cylinder",
+        radialSegments: node.data.radialSegments ?? 24,
+        radiusBottom: Math.max(Math.abs(node.data.size.x), Math.abs(node.data.size.z)) * 0.5,
+        radiusTop: Math.max(Math.abs(node.data.size.x), Math.abs(node.data.size.z)) * 0.5
+      };
+    case "cone":
+      return {
+        height: Math.abs(node.data.size.y),
+        kind: "cone",
+        radialSegments: node.data.radialSegments ?? 24,
+        radius: Math.max(Math.abs(node.data.size.x), Math.abs(node.data.size.z)) * 0.5
+      };
+    default:
+      return {
+        kind: "box",
+        size: node.data.size
+      };
+  }
+}

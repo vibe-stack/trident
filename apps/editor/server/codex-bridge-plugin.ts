@@ -20,10 +20,11 @@ export function createCodexBridgePlugin(): Plugin {
     name: "codex-bridge",
     configureServer(server) {
       registerCodexStatusApi(server);
-      registerCodexWebSocket(server as ViteDevServer);
+      registerCodexWebSocket(server);
     },
     configurePreviewServer(server) {
       registerCodexStatusApi(server);
+      registerCodexWebSocket(server);
     }
   };
 }
@@ -102,12 +103,20 @@ function getCodexModels(): { models: string[]; error?: string } {
 
 // ── WebSocket bridge ──────────────────────────────────────────
 
-function registerCodexWebSocket(server: ViteDevServer) {
+function registerCodexWebSocket(server: Pick<ViteDevServer, "httpServer"> | Pick<PreviewServer, "httpServer">) {
   if (!server.httpServer) return;
+
+  const httpServer = server.httpServer;
+
+  if ((httpServer as { __ggezCodexBridgeRegistered?: boolean }).__ggezCodexBridgeRegistered) {
+    return;
+  }
+
+  (httpServer as { __ggezCodexBridgeRegistered?: boolean }).__ggezCodexBridgeRegistered = true;
 
   const wss = new WebSocketServer({ noServer: true });
 
-  server.httpServer.on("upgrade", (request, socket, head) => {
+  httpServer.on("upgrade", (request, socket, head) => {
     if (request.url === "/ws/codex") {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit("connection", ws, request);

@@ -1,9 +1,9 @@
 import { proxy } from "valtio";
 import type { ViewportState } from "@ggez/render-pipeline";
-import { createEditorViewports, type ViewModeId, type ViewportPaneId } from "@/viewport/viewports";
+import { createEditorViewports, type ViewModeId, type ViewportPaneId, type ViewportRenderMode } from "@/viewport/viewports";
 
 export type ViewportQuality = 0.5 | 0.75 | 1 | 1.5;
-export type RightPanelId = "events" | "hooks" | "inspector" | "materials" | "player" | "scene" | "world";
+export type RightPanelId = "assets" | "events" | "hooks" | "inspector" | "materials" | "player" | "scene" | "world";
 
 type UiStore = {
   activeViewportId: ViewportPaneId;
@@ -12,6 +12,7 @@ type UiStore = {
   logicViewerOpen: boolean;
   projectPath: string | null;
   rightPanel: RightPanelId | null;
+  renderMode: ViewportRenderMode;
   selectedAssetId: string;
   selectedMaterialId: string;
   terminalOpen: boolean;
@@ -28,7 +29,8 @@ export const uiStore = proxy<UiStore>({
   logicViewerOpen: false,
   projectPath: null,
   rightPanel: null,
-  selectedAssetId: "asset:model:crate",
+  renderMode: "preview",
+  selectedAssetId: "",
   selectedMaterialId: "material:blockout:concrete",
   terminalOpen: false,
   pendingTerminalCommands: [],

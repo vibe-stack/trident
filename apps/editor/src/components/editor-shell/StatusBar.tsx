@@ -12,6 +12,7 @@ type StatusBarProps = {
   gridSnapValues: readonly GridSnapValue[];
   jobs: WorkerJob[];
   meshEditMode: MeshEditMode;
+  runtimeSyncDebugLabel: string;
   selectedNode?: GeometryNode;
   viewModeLabel: string;
   viewport: ViewportState;
@@ -24,6 +25,7 @@ export function StatusBar({
   gridSnapValues,
   jobs,
   meshEditMode,
+  runtimeSyncDebugLabel,
   selectedNode,
   viewModeLabel,
   viewport
@@ -54,6 +56,9 @@ export function StatusBar({
           </>
         ) : null}
       </div>
+      <div className="absolute left-1/2 max-w-[50vw] -translate-x-1/2 truncate rounded-full border border-white/8 bg-black/35 px-2.5 py-1 text-center text-[10px] tracking-[0.12em] text-foreground/68">
+        {runtimeSyncDebugLabel}
+      </div>
       <JobStatus jobs={jobs} />
     </div>
   );
@@ -62,6 +67,10 @@ export function StatusBar({
 function resolveBrushInteractionHint(shape: BrushShape) {
   if (shape === "custom-polygon") {
     return "click plane / click points / Enter close / move extrude / click commit / Esc cancel";
+  }
+
+  if (shape === "plane") {
+    return "click anchor / move for base / click commit / Esc cancel";
   }
 
   if (shape === "stairs") {

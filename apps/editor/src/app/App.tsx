@@ -1,47 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSnapshot } from "valtio";
 import {
-  analyzeSceneSpatialLayout,
-  axisDelta,
-  createAssignMaterialCommand,
-  createDeleteMaterialCommand,
-  createUpsertAssetCommand,
-  createDeleteTextureCommand,
-  createDeleteSelectionCommand,
-  createExtrudeBrushNodesCommand,
-  createDuplicateNodesCommand,
-  createInstanceNodesCommand,
-  createEditorCore,
-  createGroupSelectionCommand,
-  createPlaceLightNodeCommand,
-  createPlaceBlockoutPlatformCommand,
-  createPlaceBlockoutRoomCommand,
-  createPlaceBlockoutStairCommand,
   createReplaceNodesCommand,
-  createPlacePrimitiveNodeCommand,
-  createSetBrushDataCommand,
-  createSetEntityCommand,
-  createSetMeshDataCommand,
-  createSetNodeCommand,
-  createSetNodeTransformCommand,
-  createPlaceEntityCommand,
-  createMeshRaiseTopCommand,
-  createMirrorNodesCommand,
-  createPlaceBrushNodeCommand,
-  createPlaceMeshNodeCommand,
-  createPlaceModelNodeCommand,
+  createSceneEditorAdapter,
+  createSceneDocumentSnapshot,
   createSeedSceneDocument,
-  createSetUvOffsetCommand,
-  createSetUvScaleCommand,
-  createSplitBrushNodeAtCoordinateCommand,
-  createSplitBrushNodesCommand,
-  createSetSceneSettingsCommand,
-  createTranslateNodesCommand,
-  createUpsertMaterialCommand,
-  createUpsertTextureCommand,
-  type TransformAxis
+  createWorldEditorCore,
+  type SceneSpatialAnalysis,
+  type WorldPersistenceBundle
 } from "@ggez/editor-core";
-import { convertBrushToEditableMesh, invertEditableMeshNormals } from "@ggez/geometry-kernel";
+import { createDerivedRenderSceneCache, deriveRenderSceneCached } from "@ggez/render-pipeline";
 import {
   createDerivedRenderSceneCache,
   deriveRenderSceneCached,
@@ -817,515 +785,327 @@ export function App() {
 
     return vec3(snappedTarget.x, Math.max(size.y * 0.5, snappedTarget.y), snappedTarget.z);
   };
+  isModelNode,
+  isPrimitiveNode,
+  type Asset,
+  type GeometryNode,
+  type TextureRecord,
+} from "@ggez/shared";
+import { createWorkerTaskManager, type WorkerJob } from "@ggez/workers";
+import { slugifyProjectName } from "@ggez/dev-sync";
+import { WorldEditorShell } from "@/components/WorldEditorShell";
+import { EditorActionDomainsProvider } from "@/app/editor-action-domains";
+import { useAppHotkeys } from "@/app/hooks/useAppHotkeys";
+import { useAssetMaterialActions } from "@/app/hooks/useAssetMaterialActions";
+import { useCopilot } from "@/app/hooks/useCopilot";
+import { useEditorSubscriptions } from "@/app/hooks/useEditorSubscriptions";
+import { useExportWorker } from "@/app/hooks/useExportWorker";
+import { useGameConnection } from "@/app/hooks/useGameConnection";
+import { useProjectTransferActions } from "@/app/hooks/useProjectTransferActions";
+import { useSceneDraftPersistence } from "@/app/hooks/useSceneDraftPersistence";
+import { useSceneMutationActions } from "@/app/hooks/useSceneMutationActions";
+import { useWorldDocumentManagement } from "@/app/hooks/useWorldDocumentManagement";
+import { GameConnectionControl } from "@/components/editor-shell/GameConnectionControl";
+import { convertPrimitiveNodeToMeshNode } from "@/lib/primitive-to-mesh";
+import { buildModelAssetLibrary } from "@/lib/model-assets";
+import { resolveEffectiveSceneItemIds } from "@/lib/scene-hierarchy";
+import { uiStore } from "@/state/ui-store";
+import { projectSessionStore } from "@/state/project-session-store";
+import { sceneSessionStore } from "@/state/scene-session-store";
+import { toolSessionStore } from "@/state/tool-session-store";
 
-  const resolvePlacementTarget = () => {
-    const activeViewportState = resolveActiveViewportState();
-    return snapVec3(activeViewportState.camera.target, resolveViewportSnapSize(activeViewportState));
-  };
+const EMPTY_SCENE_SPATIAL_ANALYSIS: SceneSpatialAnalysis = {
+  connectorValidations: [],
+  elevationBands: [],
+  groups: [],
+  issues: [],
+  nodes: [],
+  walkableSurfaces: []
+};
 
-  const handleArmAiModelPlacement = () => {
-    if (aiModelDraft?.nodeId && editor.scene.getNode(aiModelDraft.nodeId)) {
-      editor.select([aiModelDraft.nodeId], "object");
-      setActiveToolId("transform");
-      setTransformMode("scale");
-      setAiModelPlacementArmed(false);
-      return;
+const MODEL_ASSET_LIBRARY_NEUTRAL_REASONS = new Set([
+  "command:assign material",
+  "command:create material",
+  "command:create texture",
+  "command:delete material",
+  "command:delete texture",
+  "command:group selection",
+  "command:paint instances",
+  "command:set brush",
+  "command:set entity",
+  "command:set mesh",
+  "command:set mesh material layers",
+  "command:set scene settings",
+  "command:set transform",
+  "command:translate selection",
+  "command:update material",
+  "command:update texture"
+]);
+
+function isModelAssetLibraryNeutralChange(reason: string) {
+  if (MODEL_ASSET_LIBRARY_NEUTRAL_REASONS.has(reason)) {
+    return true;
+  }
+
+  if (reason.startsWith("command:clip ") || reason.startsWith("command:extrude ") || reason.startsWith("command:mirror ")) {
+    return true;
+  }
+
+  return reason.startsWith("command:place ") && reason !== "command:place asset";
+}
+
+function createModelAssetLibrarySignature(assets: Iterable<Asset>, nodes: Iterable<GeometryNode>) {
+  const parts: string[] = [];
+
+  for (const asset of assets) {
+    if (asset.type !== "model") {
+      continue;
     }
 
-    setAiModelPlacementArmed(true);
-    setAiModelDraft((current) =>
-      current
-        ? {
-            ...current,
-            error: undefined
-          }
-        : current
+    parts.push(
+      asset.id,
+      asset.path,
+      typeof asset.metadata.modelFiles === "string" ? asset.metadata.modelFiles : "",
+      typeof asset.metadata.modelFormat === "string" ? asset.metadata.modelFormat : "",
+      typeof asset.metadata.name === "string" ? asset.metadata.name : "",
+      typeof asset.metadata.source === "string" ? asset.metadata.source : ""
     );
-    setActiveToolId("brush");
-  };
+  }
 
-  const handleCancelAiModelPlacement = () => {
-    setAiModelPlacementArmed(false);
-    setAiModelDraft(null);
-  };
+  parts.push("\u0000");
 
-  const handleUpdateAiModelPrompt = (prompt: string) => {
-    setAiModelDraft((current) =>
-      current
-        ? {
-            ...current,
-            error: undefined,
-            prompt
-          }
-        : current
-    );
-  };
-
-  const handlePlaceAiModelPlaceholder = (position: Vec3) => {
-    const placeholder = createAiModelPlaceholder(position);
-    const { command, nodeId } = createPlacePrimitiveNodeCommand(editor.scene, placeholder.transform, {
-      data: placeholder.data,
-      name: placeholder.name
-    });
-
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    setAiModelPlacementArmed(false);
-    setActiveToolId("transform");
-    setTransformMode("scale");
-    setAiModelDraft((current) => ({
-      error: undefined,
-      nodeId,
-      prompt: current?.prompt ?? ""
-    }));
-    enqueueWorkerJob("AI proxy placement", { task: "triangulation", worker: "geometryWorker" }, 500);
-  };
-
-  const handleGenerateAiModel = async () => {
-    if (!aiModelDraft || aiModelDraft.prompt.trim().length === 0) {
-      return;
+  for (const node of nodes) {
+    if (!isModelNode(node)) {
+      continue;
     }
 
-    const { nodeId, prompt } = aiModelDraft;
-    const node = editor.scene.getNode(nodeId);
+    parts.push(node.id, node.data.assetId);
+  }
 
-    if (!node || !isPrimitiveNode(node)) {
-      setAiModelDraft((current) =>
-        current
-          ? {
-              ...current,
-              error: "Proxy cube is missing."
-            }
-          : current
-      );
-      return;
-    }
+  return parts.join("\u0001");
+}
 
-    setAiModelDraft(null);
-    setAiModelPlacementArmed(false);
-    void queueAiModelGeneration(nodeId, prompt.trim());
-  };
+export function App() {
+  const [worldEditor] = useState(() => createWorldEditorCore(createSceneDocumentSnapshot(createSeedSceneDocument())));
+  const [editor] = useState(() => createSceneEditorAdapter(worldEditor));
+  const [workerManager] = useState(() => createWorkerTaskManager());
+  const [workerJobs, setWorkerJobs] = useState<WorkerJob[]>([]);
+  const [committedSceneRevision, setCommittedSceneRevision] = useState(0);
+  const [modelAssetRevision, setModelAssetRevision] = useState(0);
+  const [sceneRevision, setSceneRevision] = useState(0);
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  const [worldRevision, setWorldRevision] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sceneDocumentInputRef = useRef<HTMLInputElement | null>(null);
+  const glbImportInputRef = useRef<HTMLInputElement | null>(null);
+  const modelLodInputRef = useRef<HTMLInputElement | null>(null);
+  const renderSceneCacheRef = useRef(createDerivedRenderSceneCache());
+  const modelAssetSignatureRef = useRef("");
+  const toolSessionSnapshot = useSnapshot(toolSessionStore);
+  const projectSessionSnapshot = useSnapshot(projectSessionStore);
+  const sceneSessionSnapshot = useSnapshot(sceneSessionStore);
+  const activeToolId = toolSessionSnapshot.activeToolId;
+  const aiModelDraft = toolSessionSnapshot.aiModelDraft;
+  const physicsPlayback = toolSessionSnapshot.physicsPlayback;
+  const projectName = projectSessionSnapshot.projectName;
+  const projectSlug = projectSessionSnapshot.projectSlug;
+  const projectSlugDirty = projectSessionSnapshot.projectSlugDirty;
+  const hiddenSceneItemIds = sceneSessionSnapshot.hiddenSceneItemIds;
+  const lockedSceneItemIds = sceneSessionSnapshot.lockedSceneItemIds;
+  const selectedScenePathId = sceneSessionSnapshot.selectedScenePathId;
+  const { downloadBinaryFile, downloadTextFile, exportJobs, runWorkerRequest } = useExportWorker();
+  const gameConnection = useGameConnection();
+  const workingSet = useMemo(() => worldEditor.getWorkingSet(), [worldEditor, worldRevision]);
+  const activeWorldDocumentId = workingSet.activeDocumentId;
+  const flattenedWorldSnapshot = useMemo(
+    () =>
+      workingSet.mode === "world"
+        ? worldEditor.getFlattenedSceneSnapshot({
+            activeDocumentId: activeWorldDocumentId,
+            activeDocumentOverride: editor.scene,
+            includeLoadedOnly: true
+          })
+        : null,
+    [activeWorldDocumentId, editor, sceneRevision, worldEditor, workingSet.mode, worldRevision]
+  );
+  const renderScene = useMemo(
+    () =>
+      deriveRenderSceneCached(
+        workingSet.mode === "world" && flattenedWorldSnapshot
+          ? flattenedWorldSnapshot.nodes
+          : editor.scene.nodes.values(),
+        workingSet.mode === "world" && flattenedWorldSnapshot
+          ? flattenedWorldSnapshot.entities
+          : editor.scene.entities.values(),
+        workingSet.mode === "world" && flattenedWorldSnapshot
+          ? flattenedWorldSnapshot.materials
+          : editor.scene.materials.values(),
+        workingSet.mode === "world" && flattenedWorldSnapshot
+          ? flattenedWorldSnapshot.assets
+          : editor.scene.assets.values(),
+        renderSceneCacheRef.current,
+        workingSet.mode === "world" && flattenedWorldSnapshot
+          ? flattenedWorldSnapshot.textures
+          : editor.scene.textures.values()
+      ),
+    [editor, flattenedWorldSnapshot, sceneRevision, workingSet.mode]
+  );
+  const spatialAnalysis = EMPTY_SCENE_SPATIAL_ANALYSIS;
+  const sceneNodes = useMemo(() => Array.from(editor.scene.nodes.values()), [editor, committedSceneRevision]);
+  const sceneEntities = useMemo(() => Array.from(editor.scene.entities.values()), [editor, committedSceneRevision]);
+  const modelAssets = useMemo(
+    () => buildModelAssetLibrary(editor.scene.assets.values(), editor.scene.nodes.values()),
+    [editor, modelAssetRevision]
+  );
+  const sceneItemIdSet = useMemo(
+    () => new Set<string>([...sceneNodes.map((node) => node.id), ...sceneEntities.map((entity) => entity.id)]),
+    [sceneEntities, sceneNodes]
+  );
+  const effectiveHiddenSceneItemIds = useMemo(
+    () => resolveEffectiveSceneItemIds(sceneNodes, sceneEntities, hiddenSceneItemIds),
+    [hiddenSceneItemIds, sceneEntities, sceneNodes]
+  );
+  const effectiveLockedSceneItemIds = useMemo(
+    () => resolveEffectiveSceneItemIds(sceneNodes, sceneEntities, lockedSceneItemIds),
+    [lockedSceneItemIds, sceneEntities, sceneNodes]
+  );
+  const blockedSceneItemIdSet = useMemo(
+    () => new Set<string>([...effectiveHiddenSceneItemIds, ...effectiveLockedSceneItemIds]),
+    [effectiveHiddenSceneItemIds, effectiveLockedSceneItemIds]
+  );
+  const resolvedProjectName = projectName.trim() || "Untitled Scene";
+  const resolvedProjectSlug = slugifyProjectName(projectSlug.trim() || resolvedProjectName);
+  const texturesRef = useRef<TextureRecord[]>([]);
 
-  const queueAiModelGeneration = async (nodeId: string, prompt: string) => {
-    try {
-      const payload = await runWorkerRequest(
-        {
-          kind: "ai-model-generate",
-          prompt
-        },
-        "Generate AI 3D"
-      );
+  if (modelAssetSignatureRef.current.length === 0) {
+    modelAssetSignatureRef.current = createModelAssetLibrarySignature(editor.scene.assets.values(), editor.scene.nodes.values());
+  }
 
-      if (typeof payload !== "string") {
-        throw new Error("Invalid AI model response.");
-      }
+  useEditorSubscriptions(editor, setSceneRevision, setCommittedSceneRevision, setSelectionRevision);
 
-      const parsed = JSON.parse(payload) as ObjectGenerationResponse;
-
-      if (!parsed.asset) {
-        throw new Error("Missing AI model payload.");
-      }
-
-      const generated = parsed.asset;
-      const bounds = await analyzeModelSource({
-        format: "obj",
-        path: generated.modelDataUrl
-      });
-      const asset = createModelAsset({
-        center: bounds.center,
-        format: "obj",
-        materialMtlText: generated.materialMtlText,
-        name: generated.name,
-        path: generated.modelDataUrl,
-        prompt: generated.prompt,
-        size: bounds.size,
-        source: "ai",
-        texturePath: generated.textureDataUrl
-      });
-      const latestNode = editor.scene.getNode(nodeId);
-
-      if (!latestNode || !isPrimitiveNode(latestNode)) {
+  useEffect(() => {
+    const unsubscribeScene = editor.events.on("scene:changed", ({ reason }) => {
+      if (isModelAssetLibraryNeutralChange(reason)) {
         return;
       }
 
-      const targetBounds = resolvePrimitiveNodeBounds(latestNode) ?? vec3(2, 2, 2);
-      const fitScale = resolveModelFitScale(targetBounds, bounds);
-      const replacement: ModelNode = {
-        id: latestNode.id,
-        kind: "model",
-        name: generated.name,
-        transform: {
-          ...structuredClone(latestNode.transform),
-          scale: vec3(fitScale, fitScale, fitScale)
-        },
-        data: {
-          assetId: asset.id,
-          path: asset.path
-        }
-      };
+      const nextSignature = createModelAssetLibrarySignature(editor.scene.assets.values(), editor.scene.nodes.values());
 
-      editor.execute(createUpsertAssetCommand(editor.scene, asset));
-      editor.execute(createReplaceNodesCommand(editor.scene, [replacement], "generate ai model"));
-      if (editor.selection.ids.includes(replacement.id)) {
-        editor.select([replacement.id], "object");
+      if (nextSignature === modelAssetSignatureRef.current) {
+        return;
       }
-      uiStore.selectedAssetId = asset.id;
-      enqueueWorkerJob("AI model generation", { task: "triangulation", worker: "geometryWorker" }, 700);
-    } catch (error) {
-      setAiModelDraft({
-        error: error instanceof Error ? error.message : "Failed to generate model.",
-        nodeId,
-        prompt
-      });
-    }
-  };
 
-  const handlePlaceBlockoutPlatform = () => {
-    const target = resolvePlacementTarget();
-    const { command, nodeId } = createPlaceBlockoutPlatformCommand(editor.scene, {
-      name: "Open Platform",
-      position: vec3(target.x, target.y + 0.25, target.z),
-      size: vec3(8, 0.5, 8),
-      tags: ["play-space", "open-area"]
+      modelAssetSignatureRef.current = nextSignature;
+      setModelAssetRevision((revision) => revision + 1);
     });
 
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    enqueueWorkerJob("Blockout platform", { task: "brush-rebuild", worker: "geometryWorker" }, 650);
-  };
+    return unsubscribeScene;
+  }, [editor]);
 
-  const handlePlaceBlockoutRoom = (openSides: Array<"east" | "north" | "south" | "top" | "west"> = []) => {
-    const target = resolvePlacementTarget();
-    const { command, nodeIds } = createPlaceBlockoutRoomCommand(editor.scene, {
-      name: openSides.length > 0 ? "Open Room" : "Closed Room",
-      openSides,
-      position: vec3(target.x, target.y, target.z),
-      size: vec3(10, 4, 10),
-      tags: [openSides.length > 0 ? "open-room" : "closed-room", "play-space"]
-    });
+  useEffect(() => workerManager.subscribe(setWorkerJobs), [workerManager]);
 
-    editor.execute(command);
-    editor.select(nodeIds, "object");
-    enqueueWorkerJob("Blockout room", { task: "brush-rebuild", worker: "geometryWorker" }, 800);
-  };
+  useEffect(() => worldEditor.events.on("world:changed", () => setWorldRevision((revision) => revision + 1)), [worldEditor]);
 
-  const handlePlaceBlockoutStairs = () => {
-    const target = resolvePlacementTarget();
-    const { command, nodeIds } = createPlaceBlockoutStairCommand(editor.scene, {
-      direction: "north",
-      name: "Blockout Stairs",
-      position: vec3(target.x, target.y + 0.1, target.z),
-      stepCount: 10,
-      stepHeight: 0.2,
-      tags: ["vertical-connector"],
-      treadDepth: 0.6,
-      width: 3
-    });
+  useEffect(() => {
+    const filterValidIds = (currentIds: string[]) => {
+      const nextIds = currentIds.filter((id) => sceneItemIdSet.has(id));
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    };
 
-    editor.execute(command);
-    editor.select(nodeIds, "object");
-    enqueueWorkerJob("Blockout stairs", { task: "brush-rebuild", worker: "geometryWorker" }, 850);
-  };
+    sceneSessionStore.hiddenSceneItemIds = filterValidIds(sceneSessionStore.hiddenSceneItemIds);
+    sceneSessionStore.lockedSceneItemIds = filterValidIds(sceneSessionStore.lockedSceneItemIds);
+  }, [sceneItemIdSet]);
 
-  const handleCreateBrush = () => {
-    if (activeBrushShape === "custom-polygon" || activeBrushShape === "stairs" || activeBrushShape === "ramp") {
-      setActiveToolId("brush");
-      return;
-    }
-
-    const data = createPrimitiveNodeData("brush", activeBrushShape);
-    handlePlaceMeshNode(
-      createEditableMeshFromPrimitiveData(data, `brush:${activeBrushShape}`),
-      createDefaultPrimitiveTransform(resolvePlacementPosition(data.size)),
-      createPrimitiveNodeLabel("brush", activeBrushShape)
-    );
-  };
-
-  const handlePlaceBrush = (brush: Brush, transform: Transform) => {
-    const { command, nodeId } = createPlaceBrushNodeCommand(editor.scene, transform, {
-      data: brush,
-      name: "Blockout Brush"
-    });
-
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    enqueueWorkerJob("Brush creation", { task: "brush-rebuild", worker: "geometryWorker" }, 700);
-  };
-
-  const handlePlaceMeshNode = (mesh: EditableMesh, transform: Transform, name: string) => {
-    const { command, nodeId } = createPlaceMeshNodeCommand(editor.scene, transform, {
-      data: mesh,
-      name
-    });
-
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    enqueueWorkerJob("Mesh creation", { task: "triangulation", worker: "geometryWorker" }, 700);
-  };
-
-  const handlePlacePrimitiveNode = (data: PrimitiveNodeData, transform: Transform, name: string) => {
-    const { command, nodeId } = createPlacePrimitiveNodeCommand(editor.scene, transform, {
-      data,
-      name
-    });
-
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    enqueueWorkerJob(
-      `${data.role === "brush" ? "Brush" : "Prop"} placement`,
-      { task: "triangulation", worker: "geometryWorker" },
-      650
-    );
-  };
-
-  const handlePlaceProp = (shape: PrimitiveShape) => {
-    const data = createPrimitiveNodeData("prop", shape);
-    const transform = createDefaultPrimitiveTransform(
-      resolvePlacementPosition(data.size)
-    );
-    const meshData = convertPrimitiveNodeToMeshNode({
-      id: `node:prop:${shape}:${crypto.randomUUID()}`,
-      kind: "primitive",
-      name: createPrimitiveNodeLabel("prop", shape),
-      transform,
-      data
-    }).data;
-
-    handlePlaceMeshNode(
-      meshData,
-      transform,
-      createPrimitiveNodeLabel("prop", shape)
-    );
-  };
-
-  const handlePlaceLight = (type: LightType) => {
-    const activeViewportState = resolveActiveViewportState();
-    const snappedTarget = snapVec3(activeViewportState.camera.target, resolveViewportSnapSize(activeViewportState));
-    const position = vec3(snappedTarget.x, type === "ambient" ? 0 : 3, snappedTarget.z);
-    const { command, nodeId } = createPlaceLightNodeCommand(editor.scene, makeTransform(position), {
-      data: createDefaultLightData(type),
-      name: createLightNodeLabel(type)
-    });
-
-    editor.execute(command);
-    editor.select([nodeId], "object");
-    enqueueWorkerJob("Light authoring", { task: "triangulation", worker: "geometryWorker" }, 500);
-  };
-
-  const handleCommitMeshTopology = (nodeId: string, mesh: EditableMesh) => {
-    const node = editor.scene.getNode(nodeId);
-
-    if (!node) {
-      return;
-    }
-
-    if (isMeshNode(node)) {
-      editor.execute(
-        createSetMeshDataCommand(
-          editor.scene,
-          nodeId,
-          preserveMeshMetadata(mesh, node.data),
-          node.data
-        )
-      );
-    } else if (isBrushNode(node)) {
-      const replacement: MeshNode = {
-        id: node.id,
-        kind: "mesh",
-        name: node.name,
-        transform: structuredClone(node.transform),
-        data: structuredClone(mesh)
-      };
-
-      editor.execute(createReplaceNodesCommand(editor.scene, [replacement], "promote brush to mesh"));
-    }
-
-    enqueueWorkerJob("Topology edit", { task: "triangulation", worker: "meshWorker" }, 850);
-  };
-
-  const handleInvertSelectionNormals = () => {
-    const replacements: GeometryNode[] = editor.selection.ids
-      .map((nodeId) => editor.scene.getNode(nodeId))
-      .filter((node): node is GeometryNode => Boolean(node))
-      .flatMap((node) => {
-        if (isMeshNode(node)) {
-          return [
-            {
-              ...structuredClone(node),
-              data: invertEditableMeshNormals(node.data)
-            } satisfies MeshNode
-          ];
-        }
-
-        if (isBrushNode(node)) {
-          const converted = convertBrushToEditableMesh(node.data);
-
-          if (!converted) {
-            return [];
-          }
-
-          return [
-            {
-              id: node.id,
-              kind: "mesh" as const,
-              name: node.name,
-              transform: structuredClone(node.transform),
-              data: invertEditableMeshNormals(converted)
-            } satisfies MeshNode
-          ];
-        }
-
-        return [];
-      });
-
-    if (replacements.length === 0) {
-      return;
-    }
-
-    editor.execute(createReplaceNodesCommand(editor.scene, replacements, "invert normals"));
-    enqueueWorkerJob("Invert normals", { task: "triangulation", worker: "meshWorker" }, 650);
-  };
-
-  const handleApplyMaterial = (materialId: string, scope: "faces" | "object", faceIds: string[]) => {
+  useEffect(() => {
     if (editor.selection.ids.length === 0) {
       return;
     }
 
-    uiStore.selectedMaterialId = materialId;
-    const targets =
-      scope === "faces" && faceIds.length > 0
-        ? editor.selection.ids.slice(0, 1).map((nodeId) => ({ faceIds, nodeId }))
-        : editor.selection.ids.map((nodeId) => ({ nodeId }));
+    const nextSelection = editor.selection.ids.filter((id) => !blockedSceneItemIdSet.has(id));
 
-    editor.execute(createAssignMaterialCommand(editor.scene, targets, materialId));
-    enqueueWorkerJob("Material preview rebuild", { task: "triangulation", worker: "geometryWorker" }, 600);
-  };
-
-  const handleSetMaterialUvScale = (scope: "faces" | "object", faceIds: string[], uvScale: Vec2) => {
-    if (editor.selection.ids.length === 0) {
+    if (nextSelection.length === editor.selection.ids.length) {
       return;
     }
 
-    const targets =
-      scope === "faces" && faceIds.length > 0
-        ? editor.selection.ids.slice(0, 1).map((nodeId) => ({ faceIds, nodeId }))
-        : editor.selection.ids.map((nodeId) => ({ nodeId }));
+    editor.select(nextSelection, "object");
+  }, [blockedSceneItemIdSet, editor, selectionRevision]);
 
-    editor.execute(createSetUvScaleCommand(editor.scene, targets, vec2(uvScale.x, uvScale.y)));
-    enqueueWorkerJob("UV update", { task: "triangulation", worker: "geometryWorker" }, 450);
-  };
-
-  const handleSetMaterialUvOffset = (scope: "faces" | "object", faceIds: string[], uvOffset: Vec2) => {
-    if (editor.selection.ids.length === 0) {
+  useEffect(() => {
+    if (!aiModelDraft) {
       return;
     }
 
-    const targets =
-      scope === "faces" && faceIds.length > 0
-        ? editor.selection.ids.slice(0, 1).map((nodeId) => ({ faceIds, nodeId }))
-        : editor.selection.ids.map((nodeId) => ({ nodeId }));
+    const node = editor.scene.getNode(aiModelDraft.nodeId);
 
-    editor.execute(createSetUvOffsetCommand(editor.scene, targets, vec2(uvOffset.x, uvOffset.y)));
-    enqueueWorkerJob("UV update", { task: "triangulation", worker: "geometryWorker" }, 450);
-  };
-
-  const handleUpsertMaterial = (material: Material) => {
-    editor.execute(createUpsertMaterialCommand(editor.scene, material));
-    uiStore.selectedMaterialId = material.id;
-    enqueueWorkerJob("Material library update", { task: "triangulation", worker: "geometryWorker" }, 350);
-  };
-
-  const handleUpsertTexture = (texture: TextureRecord) => {
-    editor.execute(createUpsertTextureCommand(editor.scene, texture));
-  };
-
-  const handleDeleteTexture = (textureId: string) => {
-    editor.execute(createDeleteTextureCommand(editor.scene, textureId));
-    enqueueWorkerJob("Texture library update", { task: "triangulation", worker: "geometryWorker" }, 250);
-  };
-
-  const handleDeleteMaterial = (materialId: string) => {
-    const fallbackMaterial = Array.from(editor.scene.materials.values()).find((material) => material.id !== materialId);
-
-    if (!fallbackMaterial) {
+    if (node && !isModelNode(node)) {
       return;
     }
 
-    editor.execute(createDeleteMaterialCommand(editor.scene, materialId, fallbackMaterial.id));
+    toolSessionStore.aiModelDraft = null;
+    toolSessionStore.aiModelPlacementArmed = false;
+  }, [aiModelDraft, committedSceneRevision, editor]);
 
-    if (uiStore.selectedMaterialId === materialId) {
-      uiStore.selectedMaterialId = fallbackMaterial.id;
+  useEffect(() => {
+    if (uiStore.selectedAssetId && !editor.scene.assets.has(uiStore.selectedAssetId)) {
+      uiStore.selectedAssetId = "";
     }
+  }, [committedSceneRevision, editor]);
 
-    enqueueWorkerJob("Material library update", { task: "triangulation", worker: "geometryWorker" }, 350);
-  };
+  useEffect(() => {
+    const scenePaths = editor.scene.settings.paths ?? [];
 
-  const handleSelectAsset = (assetId: string) => {
-    uiStore.selectedAssetId = assetId;
-  };
-
-  const handleSelectMaterial = (materialId: string) => {
-    uiStore.selectedMaterialId = materialId;
-  };
-
-  const handlePlaceEntity = (type: EntityType) => {
-    const activeViewportState = resolveActiveViewportState();
-    const position = vec3(activeViewportState.camera.target.x, 1, activeViewportState.camera.target.z);
-    const entity = createDefaultEntity(type, position, editor.scene.entities.size + 1);
-    editor.execute(createPlaceEntityCommand(entity));
-    editor.select([entity.id], "object");
-    enqueueWorkerJob("Entity authoring", { task: "navmesh", worker: "navWorker" }, 800);
-  };
-
-  const handleUpdateNodeData = (nodeId: string, data: PrimitiveNodeData | LightNodeData) => {
-    const node = editor.scene.getNode(nodeId);
-
-    if (!node) {
+    if (scenePaths.length === 0) {
+      sceneSessionStore.selectedScenePathId = undefined;
       return;
     }
 
-    if (isPrimitiveNode(node)) {
-      const replacement = {
-        ...structuredClone(node),
-        data: structuredClone(data as PrimitiveNodeData)
-      };
+    if (!selectedScenePathId || !scenePaths.some((pathDefinition) => pathDefinition.id === selectedScenePathId)) {
+      sceneSessionStore.selectedScenePathId = scenePaths[0]?.id;
+    }
+  }, [committedSceneRevision, editor, selectedScenePathId]);
 
-      editor.execute(createReplaceNodesCommand(editor.scene, [replacement], "update primitive"));
-      enqueueWorkerJob("Primitive update", { task: "triangulation", worker: "geometryWorker" }, 500);
+  const syncEditorFromWorld = (reason: string) => {
+    editor.syncFromWorld(reason);
+    const nextModelAssetSignature = createModelAssetLibrarySignature(editor.scene.assets.values(), editor.scene.nodes.values());
+
+    if (nextModelAssetSignature !== modelAssetSignatureRef.current) {
+      modelAssetSignatureRef.current = nextModelAssetSignature;
+      setModelAssetRevision((revision) => revision + 1);
+    }
+
+    setWorldRevision((revision) => revision + 1);
+    setSceneRevision((revision) => revision + 1);
+    setCommittedSceneRevision((revision) => revision + 1);
+    setSelectionRevision((revision) => revision + 1);
+  };
+
+  const enqueueWorkerJob = (label: string, task: WorkerJob["task"], durationMs?: number) => {
+    workerManager.enqueue(task, label, durationMs);
+  };
+
+  useEffect(() => {
+    if (activeToolId !== "mesh-edit") {
+      toolSessionStore.sculptMode = null;
       return;
     }
 
-    if (isLightNode(node)) {
-      const replacement = {
-        ...structuredClone(node),
-        data: structuredClone(data as LightNodeData)
-      };
+    const selectedNodeId = editor.selection.ids[0];
+    const selectedNode = selectedNodeId ? editor.scene.getNode(selectedNodeId) : undefined;
 
-      editor.execute(createReplaceNodesCommand(editor.scene, [replacement], "update light"));
-      enqueueWorkerJob("Light update", { task: "triangulation", worker: "geometryWorker" }, 500);
+    if (!selectedNode || !isPrimitiveNode(selectedNode) || selectedNode.data.role !== "prop") {
+      return;
     }
-  };
 
-  const handleUpdateSceneSettings = (settings: SceneSettings, beforeSettings?: SceneSettings) => {
-    editor.execute(createSetSceneSettingsCommand(editor.scene, settings, beforeSettings));
-    enqueueWorkerJob("Scene settings", { task: "triangulation", worker: "geometryWorker" }, 300);
-  };
+    editor.execute(
+      createReplaceNodesCommand(
+        editor.scene,
+        [convertPrimitiveNodeToMeshNode(selectedNode)],
+        "promote prop to mesh"
+      )
+    );
+  }, [activeToolId, committedSceneRevision, editor, selectionRevision]);
 
-  const handlePlayPhysics = () => {
-    editor.clearSelection();
-    setPhysicsPlayback("running");
-  };
-
-  const handlePausePhysics = () => {
-    setPhysicsPlayback((current) => (current === "stopped" ? "stopped" : "paused"));
-  };
-
-  const handleStopPhysics = () => {
-    setPhysicsPlayback("stopped");
-    setPhysicsRevision((current) => current + 1);
-  };
-
-  const buildEditorSnapshot = () => ({
+  const buildActiveSceneSnapshot = () => ({
     ...editor.exportSnapshot(),
     metadata: {
       projectName: resolvedProjectName,
@@ -1428,30 +1208,78 @@ export function App() {
     }
 
     event.target.value = "";
+  const buildWorldBundle = (): WorldPersistenceBundle => {
+    const bundle = worldEditor.getBundleRef();
+
+    return {
+      ...bundle,
+      manifest: {
+        ...bundle.manifest,
+        activeDocumentId: worldEditor.getWorkingSet().activeDocumentId,
+        metadata: {
+          projectName: resolvedProjectName,
+          projectSlug: resolvedProjectSlug
+        }
+      }
+    };
   };
 
-  const handleExportGltf = async () => {
-    const payload = await runWorkerRequest(
-      {
-        kind: "gltf-export",
-        snapshot: buildEditorSnapshot()
-      },
-      "Export glTF"
-    );
+  const buildSceneDraftPayload = () => ({
+    projectName: resolvedProjectName,
+    projectSlug: resolvedProjectSlug,
+    projectSlugDirty,
+    snapshot: buildWorldBundle(),
+    updatedAt: Date.now(),
+    version: 2 as const
+  });
 
-    if (typeof payload === "string") {
-      downloadTextFile(`${resolvedProjectSlug}.gltf`, payload, "model/gltf+json");
-    }
-  };
+  const draftHydrated = useSceneDraftPersistence({
+    buildDraft: buildSceneDraftPayload,
+    onRestoreDraft: (draft) => {
+      worldEditor.importBundle(draft.snapshot, "world:restore-draft");
+      syncEditorFromWorld("world:restore-draft");
+      projectSessionStore.projectName = draft.projectName || "Untitled Scene";
+      projectSessionStore.projectSlug = slugifyProjectName(draft.projectSlug || draft.projectName || "Untitled Scene");
+      projectSessionStore.projectSlugDirty = draft.projectSlugDirty;
+    },
+    saveKey: `${committedSceneRevision}:${projectSlugDirty ? 1 : 0}:${resolvedProjectName}:${resolvedProjectSlug}`
+  }).draftHydrated;
 
-  const handleExportEngine = async () => {
-    const payload = await runWorkerRequest(
-      {
-        kind: "engine-export",
-        snapshot: buildEditorSnapshot()
-      },
-      "Export runtime scene"
-    );
+  const {
+    createBrush,
+    instanceSelection,
+    physicsActions,
+    placementActions: scenePlacementActions,
+    sceneActions,
+    selectionActions
+  } = useSceneMutationActions({
+    activeWorldDocumentId,
+    blockedSceneItemIdSet,
+    bumpSceneRevision: () => {
+      setSceneRevision((revision) => revision + 1);
+    },
+    editor,
+    enqueueWorkerJob,
+    renderScene,
+    syncEditorFromWorld,
+    workingSet,
+    worldEditor
+  });
+
+  const {
+    aiActions,
+    assetActions,
+    fileInputHandlers: assetFileInputHandlers,
+    placementActions: assetPlacementActions
+  } = useAssetMaterialActions({
+    editor,
+    enqueueWorkerJob,
+    focusNode: selectionActions.focusNode,
+    glbImportInputRef,
+    modelAssets,
+    modelLodInputRef,
+    runWorkerRequest
+  });
 
     if (isWebHammerEngineBundle(payload)) {
       const electronAPI = (window as any).electronAPI;
@@ -1487,6 +1315,27 @@ export function App() {
       downloadBinaryFile(`${resolvedProjectSlug}.runtime.zip`, zip, "application/zip");
     }
   };
+  const {
+    fileActions: baseFileActions,
+    fileInputHandlers: projectFileInputHandlers,
+    gameSyncActions
+  } = useProjectTransferActions({
+    buildActiveSceneSnapshot,
+    buildWorldBundle,
+    createBrush,
+    downloadBinaryFile,
+    downloadTextFile,
+    editor,
+    fileInputRef,
+    gameConnection,
+    resolvedProjectName,
+    resolvedProjectSlug,
+    runWorkerRequest,
+    sceneDocumentInputRef,
+    syncEditorFromWorld,
+    workingSet,
+    worldEditor
+  });
 
   const handleUndo = () => {
     editor.undo();
@@ -1496,64 +1345,23 @@ export function App() {
     editor.redo();
   };
 
-  const handlePushSceneToGame = async (options?: {
-    forceSwitch?: boolean;
-    gameId?: string;
-    projectName?: string;
-    projectSlug?: string;
-  }) => {
-    const nextProjectName = options?.projectName?.trim() || resolvedProjectName;
-    const nextProjectSlug = slugifyProjectName(
-      options?.projectSlug?.trim() || options?.projectName?.trim() || resolvedProjectSlug || nextProjectName
-    );
-
-    if (options?.projectName) {
-      setProjectName(nextProjectName);
-      if (!options.projectSlug) {
-        setProjectSlug(nextProjectSlug);
-        setProjectSlugDirty(false);
-      }
-    }
-
-    if (options?.projectSlug) {
-      setProjectSlug(nextProjectSlug);
-      setProjectSlugDirty(true);
-    }
-
-    const exportPayload = await runWorkerRequest(
-      {
-        kind: "engine-export",
-        snapshot: {
-          ...editor.exportSnapshot(),
-          metadata: {
-            projectName: nextProjectName,
-            projectSlug: nextProjectSlug
-          }
-        }
-      },
-      "Push runtime scene"
-    );
-
-    if (!isWebHammerEngineBundle(exportPayload)) {
-      throw new Error("Failed to export a runtime bundle for editor sync.");
-    }
-
-    return gameConnection.pushScene({
-      bundle: serializeRuntimeBundleForSync(exportPayload),
-      forceSwitch: options?.forceSwitch,
-      gameId: options?.gameId ?? gameConnection.activeGame?.id,
-      metadata: {
-        projectName: nextProjectName,
-        projectSlug: nextProjectSlug
-      }
-    });
-  };
-
-  const copilot = useCopilot(editor, {
-    requestScenePush: (options) => {
-      void handlePushSceneToGame(options).catch(() => {});
-    }
+  const requestScenePush = useEventCallback((options?: Parameters<typeof gameSyncActions.handlePushSceneToGame>[0]) => {
+    void gameSyncActions.handlePushSceneToGame(options).catch(() => {});
   });
+  const handleProjectNameChange = useEventCallback(gameSyncActions.handleProjectNameChange);
+  const handleProjectSlugChange = useEventCallback(gameSyncActions.handleProjectSlugChange);
+  const handleRefreshGames = useEventCallback(gameConnection.refresh);
+  const handleSelectGame = useEventCallback(gameConnection.setSelectedGameId);
+  const handlePushScene = useCallback((forceSwitch?: boolean) => {
+    requestScenePush({ forceSwitch });
+  }, [requestScenePush]);
+  const copilotToolContext = useMemo(
+    () => ({
+      requestScenePush
+    }),
+    [requestScenePush]
+  );
+  const copilot = useCopilot(editor, copilotToolContext);
 
   const handleToggleCopilot = () => {
     uiStore.copilotPanelOpen = !uiStore.copilotPanelOpen;
@@ -1563,24 +1371,138 @@ export function App() {
     uiStore.logicViewerOpen = !uiStore.logicViewerOpen;
   };
 
+  const {
+    handleCreateWorldDocument,
+    handleLoadWorldDocument,
+    handlePinWorldDocument,
+    handleSetActiveWorldDocument,
+    handleSetWorldDocumentPosition,
+    handleSetWorldMode,
+    handleUnloadWorldDocument,
+    handleUnpinWorldDocument,
+    worldDocuments
+  } = useWorldDocumentManagement({
+    buildWorldBundle,
+    syncEditorFromWorld,
+    workingSet,
+    worldEditor,
+    worldRevision
+  });
+
   useAppHotkeys({
     activeToolId,
     editor,
     enabled: physicsPlayback === "stopped",
-    handleDeleteSelection,
-    handleDuplicateSelection,
-    handleInstanceSelection,
-    handleGroupSelection,
-    handleInvertSelectionNormals,
+    handleDeleteSelection: selectionActions.deleteSelection,
+    handleDuplicateSelection: selectionActions.duplicateSelection,
+    handleInstanceSelection: instanceSelection,
+    handleGroupSelection: selectionActions.groupSelection,
+    handleInvertSelectionNormals: selectionActions.invertSelectionNormals,
     handleRedo,
     handleToggleCopilot,
     handleToggleLogicViewer,
-    handleTranslateSelection,
+    handleTranslateSelection: selectionActions.translateSelection,
     handleUndo,
-    setActiveToolId: handleSetToolId,
-    setMeshEditMode,
-    setTransformMode
+    setActiveToolId: (toolId) => {
+      toolSessionStore.activeToolId = toolId;
+    },
+    setMeshEditMode: (mode) => {
+      toolSessionStore.meshEditMode = mode;
+    },
+    setTransformMode: (mode) => {
+      toolSessionStore.transformMode = mode;
+    }
   });
+
+  const history = {
+    canRedo: editor.commands.canRedo(),
+    canUndo: editor.commands.canUndo(),
+    redo: handleRedo,
+    undo: handleUndo
+  };
+  const placementActions = {
+    ...scenePlacementActions,
+    ...assetPlacementActions
+  };
+  const fileActions = {
+    ...baseFileActions,
+    importGlb: assetActions.importAsset
+  };
+  const actionDomains = useMemo(
+    () => ({
+      aiActions,
+      assetActions,
+      fileActions,
+      history,
+      physicsActions,
+      placementActions,
+      sceneActions,
+      selectionActions
+    }),
+    [aiActions, assetActions, fileActions, history, physicsActions, placementActions, sceneActions, selectionActions]
+  );
+  const jobs = useMemo(() => [...workerJobs, ...exportJobs], [exportJobs, workerJobs]);
+  const textures = useMemo(() => {
+    const nextTextures = Array.from(editor.scene.textures.values());
+    const previousTextures = texturesRef.current;
+
+    if (areTextureArraysEqual(previousTextures, nextTextures)) {
+      return previousTextures;
+    }
+
+    texturesRef.current = nextTextures;
+    return nextTextures;
+  }, [committedSceneRevision, editor]);
+  const gameConnectionControl = useMemo(
+    () => (
+      <GameConnectionControl
+        activeGame={gameConnection.activeGame}
+        error={gameConnection.error}
+        games={gameConnection.games}
+        isLoading={gameConnection.isLoading}
+        isPushing={gameConnection.isPushing}
+        lastPush={gameConnection.lastPush}
+        onProjectNameChange={handleProjectNameChange}
+        onProjectSlugChange={handleProjectSlugChange}
+        onPushScene={handlePushScene}
+        onRefresh={handleRefreshGames}
+        onSelectGame={handleSelectGame}
+        projectName={projectName}
+        projectSlug={resolvedProjectSlug}
+        selectedGameId={gameConnection.selectedGameId}
+      />
+    ),
+    [
+      gameConnection.activeGame,
+      gameConnection.error,
+      gameConnection.games,
+      gameConnection.isLoading,
+      gameConnection.isPushing,
+      gameConnection.lastPush,
+      gameConnection.selectedGameId,
+      handleProjectNameChange,
+      handleProjectSlugChange,
+      handlePushScene,
+      handleRefreshGames,
+      handleSelectGame,
+      projectName,
+      resolvedProjectSlug
+    ]
+  );
+  const world = {
+    actions: {
+      createDocument: handleCreateWorldDocument,
+      loadDocument: handleLoadWorldDocument,
+      pinDocument: handlePinWorldDocument,
+      setActiveDocument: handleSetActiveWorldDocument,
+      setDocumentPosition: handleSetWorldDocumentPosition,
+      setWorldMode: handleSetWorldMode,
+      unloadDocument: handleUnloadWorldDocument,
+      unpinDocument: handleUnpinWorldDocument
+    },
+    documents: worldDocuments,
+    validationIssues: worldEditor.world.validation
+  };
 
   return (
     <>
@@ -1725,41 +1647,91 @@ export function App() {
         viewportQuality={ui.viewportQuality}
         viewports={ui.viewports}
       />
+      <EditorActionDomainsProvider value={actionDomains}>
+        <WorldEditorShell
+          analysis={spatialAnalysis}
+          copilot={copilot}
+          gameConnectionControl={gameConnectionControl}
+          effectiveHiddenSceneItemIds={effectiveHiddenSceneItemIds}
+          effectiveLockedSceneItemIds={effectiveLockedSceneItemIds}
+          editor={editor}
+          jobs={jobs}
+          modelAssets={modelAssets}
+          renderScene={renderScene}
+          sceneSettings={editor.scene.settings}
+          textures={textures}
+          workingSet={workingSet}
+          world={world}
+        />
+      </EditorActionDomainsProvider>
       <input
         accept=".whmap,.json"
         hidden
-        onChange={handleWhmapFileChange}
+        onChange={projectFileInputHandlers.handleWhmapFileChange}
         ref={fileInputRef}
         type="file"
       />
       <input
-        accept=".glb,model/gltf-binary"
+        accept=".whdoc,.json"
         hidden
-        onChange={handleGlbFileChange}
+        multiple
+        onChange={projectFileInputHandlers.handleSceneDocumentFileChange}
+        ref={sceneDocumentInputRef}
+        type="file"
+      />
+      <input
+        accept=".glb,.gltf,.obj,model/gltf-binary,model/gltf+json"
+        hidden
+        multiple
+        onChange={assetFileInputHandlers.handleGlbFileChange}
         ref={glbImportInputRef}
+        type="file"
+      />
+      <input
+        accept=".glb,.gltf,.obj,model/gltf-binary,model/gltf+json"
+        hidden
+        onChange={assetFileInputHandlers.handleAssetLodFileChange}
+        ref={modelLodInputRef}
         type="file"
       />
     </>
   );
 }
 
-function preserveMeshMetadata(mesh: EditableMesh, existingMesh?: EditableMesh) {
-  return existingMesh?.role === "prop" || existingMesh?.physics
-    ? {
-        ...structuredClone(mesh),
-        physics: structuredClone(mesh.physics ?? existingMesh.physics),
-        role: mesh.role ?? existingMesh.role
-      }
-    : structuredClone(mesh);
+function useEventCallback<T extends (...args: any[]) => unknown>(callback: T): T {
+  const callbackRef = useRef(callback);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  return useCallback(((...args: Parameters<T>) => callbackRef.current(...args)) as T, []);
 }
 
-function serializeRuntimeBundleForSync(bundle: Parameters<typeof createWebHammerEngineBundleZip>[0]) {
-  return {
-    files: bundle.files.map((file) => ({
-      bytes: Array.from(file.bytes),
-      mimeType: file.mimeType,
-      path: file.path
-    })),
-    manifest: bundle.manifest
-  };
+function areTextureArraysEqual(previous: TextureRecord[], next: TextureRecord[]) {
+  if (previous === next) {
+    return true;
+  }
+
+  if (previous.length !== next.length) {
+    return false;
+  }
+
+  return previous.every((texture, index) => {
+    const nextTexture = next[index];
+
+    return (
+      texture === nextTexture ||
+      (texture.id === nextTexture.id &&
+        texture.name === nextTexture.name &&
+        texture.kind === nextTexture.kind &&
+        texture.dataUrl === nextTexture.dataUrl &&
+        texture.mimeType === nextTexture.mimeType &&
+        texture.source === nextTexture.source &&
+        texture.prompt === nextTexture.prompt &&
+        texture.model === nextTexture.model &&
+        texture.createdAt === nextTexture.createdAt &&
+        texture.size === nextTexture.size)
+    );
+  });
 }

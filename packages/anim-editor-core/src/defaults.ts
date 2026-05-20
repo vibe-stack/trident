@@ -18,14 +18,16 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
         clipId: "",
         speed: 1,
         loop: true,
-        inPlace: false
+        inPlace: false,
+        syncGroup: undefined
       };
     case "blend1d":
       return {
         ...base,
         kind,
         parameterId: "",
-        children: []
+        children: [],
+        syncGroup: undefined
       };
     case "blend2d":
       return {
@@ -33,7 +35,61 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
         kind,
         xParameterId: "",
         yParameterId: "",
-        children: []
+        children: [],
+        syncGroup: undefined
+      };
+    case "selector":
+      return {
+        ...base,
+        kind,
+        parameterId: "",
+        children: [],
+        syncGroup: undefined
+      };
+    case "orientationWarp":
+      return {
+        ...base,
+        kind,
+        sourceNodeId: undefined,
+        angleParameterId: "",
+        maxAngle: Math.PI / 2,
+        weight: 1,
+        hipBoneName: undefined,
+        hipWeight: 0.35,
+        spineBoneNames: [],
+        legs: []
+      };
+    case "strideWarp":
+      return {
+        ...base,
+        kind,
+        sourceNodeId: undefined,
+        evaluationMode: "graph",
+        locomotionSpeedParameterId: "",
+        strideDirection: { x: 0, y: 1 },
+        manualStrideScale: 1,
+        minLocomotionSpeedThreshold: 0.01,
+        pelvisBoneName: undefined,
+        pelvisWeight: 0.35,
+        clampResult: false,
+        minStrideScale: 0.5,
+        maxStrideScale: 2,
+        interpResult: false,
+        interpSpeedIncreasing: 6,
+        interpSpeedDecreasing: 6,
+        legs: []
+      };
+    case "secondaryDynamics":
+      return {
+        ...base,
+        kind,
+        sourceNodeId: undefined,
+        profileId: "",
+        weight: 1,
+        dampingScale: 1,
+        stiffnessScale: 1,
+        gravityScale: 1,
+        iterations: 4
       };
     case "stateMachine":
       const initialStateId = createStableId("state");
@@ -49,6 +105,7 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
             position: { x: 220, y: 160 },
             speed: 1,
             cycleOffset: 0,
+            syncGroup: undefined,
           },
         ],
         transitions: [],
@@ -58,7 +115,8 @@ export function createDefaultNode(kind: EditorGraphNode["kind"], name?: string):
       return {
         ...base,
         kind,
-        graphId: ""
+        graphId: "",
+        syncGroup: undefined
       };
     case "output":
       return {
@@ -87,6 +145,7 @@ export function createDefaultAnimationEditorDocument(): AnimationEditorDocument 
     ],
     clips: [],
     masks: [],
+    dynamicsProfiles: [],
     graphs: [
       {
         id: graphId,

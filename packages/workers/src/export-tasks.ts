@@ -1,5 +1,12 @@
 import { getFaceVertices, reconstructBrushFaces, triangulateMeshFace } from "@ggez/geometry-kernel";
-import type { SceneDocumentSnapshot } from "@ggez/editor-core";
+import {
+  createWorldBundleFromLegacyScene,
+  flattenWorldBundle,
+  parseWorldPersistenceBundle,
+  serializeWorldPersistenceBundle,
+  type SceneDocumentSnapshot,
+  type WorldPersistenceBundle
+} from "@ggez/editor-core";
 import {
   createBlockoutTextureDataUri,
   crossVec3,
@@ -23,10 +30,14 @@ import {
 import {
   buildRuntimeBundleFromSnapshot,
   buildRuntimeSceneFromSnapshot,
+  buildRuntimeWorldBundleFromWorld,
+  createRuntimeWorldBundleZip,
+  createWebHammerEngineBundleZip,
   serializeRuntimeScene,
   type WebHammerEngineBundle
 } from "@ggez/runtime-build";
 import {
+  type RuntimeWorldBundle,
   type WebHammerEngineScene,
   type WebHammerExportGeometry,
   type WebHammerExportGeometryLod,
@@ -59,13 +70,19 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 
-export type WorkerExportKind = "whmap-load" | "whmap-save" | "engine-export" | "gltf-export" | "ai-model-generate";
+export type WorkerArchivePayload = {
+  bytes: Uint8Array;
+  fileExtension: "runtime.zip" | "world.runtime.zip";
+  mimeType: "application/zip";
+};
+
+export type WorkerExportKind = "whmap-load" | "whmap-save" | "engine-export" | "engine-export-archive" | "gltf-export" | "ai-model-generate";
 
 export type WorkerRequest =
   | {
       id: string;
       kind: "whmap-save";
-      snapshot: SceneDocumentSnapshot;
+      snapshot: SceneDocumentSnapshot | WorldPersistenceBundle;
     }
   | {
       id: string;
@@ -74,8 +91,8 @@ export type WorkerRequest =
     }
   | {
       id: string;
-      kind: "engine-export" | "gltf-export";
-      snapshot: SceneDocumentSnapshot;
+      kind: "engine-export" | "engine-export-archive" | "gltf-export";
+      snapshot: SceneDocumentSnapshot | WorldPersistenceBundle;
     }
   | {
       id: string;
@@ -88,7 +105,7 @@ export type WorkerResponse =
       id: string;
       kind: WorkerExportKind;
       ok: true;
-      payload: string | SceneDocumentSnapshot | WebHammerEngineBundle;
+      payload: string | SceneDocumentSnapshot | WebHammerEngineBundle | WorldPersistenceBundle | RuntimeWorldBundle | WorkerArchivePayload;
     }
   | {
       id: string;
@@ -101,6 +118,11 @@ const gltfLoader = new GLTFLoader();
 const gltfExporter = new GLTFExporter();
 const mtlLoader = new MTLLoader();
 const modelTextureLoader = new TextureLoader();
+
+function logWorkerTiming(label: string, startedAt: number, details?: string) {
+  const suffix = details ? ` ${details}` : "";
+  console.info(`[export-worker] ${label} completed in ${formatDuration(now() - startedAt)}${suffix}`);
+}
 
 export async function executeWorkerRequest(request: WorkerRequest): Promise<WorkerResponse> {
   try {
@@ -131,6 +153,15 @@ export async function executeWorkerRequest(request: WorkerRequest): Promise<Work
       };
     }
 
+    if (request.kind === "engine-export-archive") {
+      return {
+        id: request.id,
+        kind: request.kind,
+        ok: true,
+        payload: await exportEngineArchive(request.snapshot)
+      };
+    }
+
     if (request.kind === "ai-model-generate") {
       return {
         id: request.id,
@@ -147,11 +178,17 @@ export async function executeWorkerRequest(request: WorkerRequest): Promise<Work
       payload: await serializeGltfScene(request.snapshot)
     };
   } catch (error) {
+    const message = error instanceof Error
+      ? error.stack && error.stack.length > 0
+        ? error.stack
+        : error.message
+      : "Unknown worker error.";
+
     return {
       id: request.id,
       kind: request.kind,
       ok: false,
-      error: error instanceof Error ? error.message : "Unknown worker error."
+      error: message
     };
   }
 }
@@ -179,45 +216,83 @@ async function generateAiModel(prompt: string): Promise<string> {
   return payload;
 }
 
-export function serializeWhmap(snapshot: SceneDocumentSnapshot): string {
-  return JSON.stringify(
-    {
-      format: "whmap",
-      version: 1,
-      scene: snapshot
-    },
-    null,
-    2
-  );
+export function serializeWhmap(snapshot: SceneDocumentSnapshot | WorldPersistenceBundle): string {
+  return serializeWorldPersistenceBundle("documents" in snapshot ? snapshot : createWorldBundleFromLegacyScene(snapshot));
 }
 
-export function parseWhmap(text: string): SceneDocumentSnapshot {
-  const parsed = JSON.parse(text) as {
-    format?: string;
-    scene?: SceneDocumentSnapshot;
-    version?: number;
-  };
+export function parseWhmap(text: string): SceneDocumentSnapshot | WorldPersistenceBundle {
+  return parseWorldPersistenceBundle(text);
+}
 
-  if (parsed.format !== "whmap" || !parsed.scene) {
-    throw new Error("Invalid .whmap file.");
+export async function serializeEngineScene(snapshot: SceneDocumentSnapshot | WorldPersistenceBundle): Promise<string> {
+  if ("documents" in snapshot) {
+    return JSON.stringify((await buildRuntimeWorldBundleFromWorld(snapshot)).index);
   }
 
-  return parsed.scene;
-}
-
-export async function serializeEngineScene(snapshot: SceneDocumentSnapshot): Promise<string> {
   return serializeRuntimeScene(snapshot);
 }
 
-export async function exportEngineBundle(snapshot: SceneDocumentSnapshot): Promise<WebHammerEngineBundle> {
-  return buildRuntimeBundleFromSnapshot(snapshot);
+export async function exportEngineBundle(snapshot: SceneDocumentSnapshot | WorldPersistenceBundle): Promise<WebHammerEngineBundle | RuntimeWorldBundle> {
+  const startedAt = now();
+  if ("documents" in snapshot) {
+    const bundle = await buildRuntimeWorldBundleFromWorld(snapshot);
+    logWorkerTiming("buildRuntimeWorldBundleFromWorld", startedAt, `(files=${bundle.files.length}, bytes=${formatBytes(sumRuntimeBundleBytes(bundle.files))})`);
+    return bundle;
+  }
+
+  const bundle = await buildRuntimeBundleFromSnapshot(snapshot);
+  logWorkerTiming("buildRuntimeBundleFromSnapshot", startedAt, `(files=${bundle.files.length}, bytes=${formatBytes(sumRuntimeBundleBytes(bundle.files))})`);
+  return bundle;
+}
+
+export async function exportEngineArchive(snapshot: SceneDocumentSnapshot | WorldPersistenceBundle): Promise<WorkerArchivePayload> {
+  const startedAt = now();
+  const bundle = await exportEngineBundle(snapshot);
+  const bundledAt = now();
+
+  if ("index" in bundle) {
+    const bytes = createRuntimeWorldBundleZip(bundle, "world.runtime.json", 0);
+    console.info(
+      `[export-worker] createRuntimeWorldBundleZip completed in ${formatDuration(now() - bundledAt)} ` +
+        `(archive=${formatBytes(bytes.byteLength)}, sourceFiles=${bundle.files.length}, sourceBytes=${formatBytes(sumRuntimeBundleBytes(bundle.files))})`
+    );
+    logWorkerTiming("exportEngineArchive", startedAt, "(world)");
+    return {
+      bytes,
+      fileExtension: "world.runtime.zip",
+      mimeType: "application/zip"
+    };
+  }
+
+  const bytes = createWebHammerEngineBundleZip(bundle, { compressionLevel: 0 });
+  console.info(
+    `[export-worker] createWebHammerEngineBundleZip completed in ${formatDuration(now() - bundledAt)} ` +
+      `(archive=${formatBytes(bytes.byteLength)}, sourceFiles=${bundle.files.length}, sourceBytes=${formatBytes(sumRuntimeBundleBytes(bundle.files))})`
+  );
+  logWorkerTiming("exportEngineArchive", startedAt, "(scene)");
+  return {
+    bytes,
+    fileExtension: "runtime.zip",
+    mimeType: "application/zip"
+  };
 }
 
 async function buildEngineScene(snapshot: SceneDocumentSnapshot): Promise<WebHammerEngineScene> {
   return buildRuntimeSceneFromSnapshot(snapshot);
 }
 
-export async function serializeGltfScene(snapshot: SceneDocumentSnapshot): Promise<string> {
+function flattenWorldForGltf(bundle: WorldPersistenceBundle) {
+  return flattenWorldBundle(bundle, {
+    includeDocumentIds: Object.keys(bundle.documents)
+  });
+}
+
+export async function serializeGltfScene(snapshot: SceneDocumentSnapshot | WorldPersistenceBundle): Promise<string> {
+  if ("documents" in snapshot) {
+    const flattened = flattenWorldForGltf(snapshot);
+    return serializeGltfScene(flattened);
+  }
+
   const materialsById = new Map(snapshot.materials.map((material) => [material.id, material]));
   const assetsById = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
   const exportedNodes: Array<{
@@ -611,12 +686,13 @@ async function buildExportGeometry(
     normal: Vec3;
     triangleIndices: number[];
     uvOffset?: Vec2;
+    uvRotation?: number;
     uvScale?: Vec2;
     uvs?: Vec2[];
     vertices: Vec3[];
   }) => {
     const material = params.faceMaterialId ? await resolveExportMaterial(materialsById.get(params.faceMaterialId)) : fallbackMaterial;
-    const primitive = primitiveByMaterial.get(material.id) ?? {
+    const primitive: WebHammerExportGeometry["primitives"][number] = primitiveByMaterial.get(material.id) ?? {
       indices: [],
       material,
       normals: [],
@@ -626,7 +702,7 @@ async function buildExportGeometry(
     const vertexOffset = primitive.positions.length / 3;
     const uvs = params.uvs && params.uvs.length === params.vertices.length
       ? params.uvs.flatMap((uv) => [uv.x, uv.y])
-      : projectPlanarUvs(params.vertices, params.normal, params.uvScale, params.uvOffset);
+      : projectPlanarUvs(params.vertices, params.normal, params.uvScale, params.uvOffset, params.uvRotation);
 
     params.vertices.forEach((vertex) => {
       primitive.positions.push(vertex.x, vertex.y, vertex.z);
@@ -652,6 +728,7 @@ async function buildExportGeometry(
         normal: face.normal,
         triangleIndices: face.triangleIndices,
         uvOffset: face.uvOffset,
+        uvRotation: face.uvRotation,
         uvScale: face.uvScale,
         vertices: face.vertices.map((vertex) => vertex.position)
       });
@@ -671,6 +748,7 @@ async function buildExportGeometry(
         normal: triangulated.normal,
         triangleIndices: triangulated.indices,
         uvOffset: face.uvOffset,
+        uvRotation: face.uvRotation,
         uvScale: face.uvScale,
         uvs: face.uvs,
         vertices: getFaceVertices(node.data, face.id).map((vertex) => vertex.position)
@@ -700,14 +778,14 @@ async function buildExportGeometry(
 
 async function buildGeometryLods(
   geometry: WebHammerExportGeometry,
-  settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
+  _settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
 ): Promise<WebHammerExportGeometryLod[] | undefined> {
   if (!geometry.primitives.length) {
     return undefined;
   }
 
-  const midGeometry = simplifyExportGeometry(geometry, settings.midDetailRatio);
-  const lowGeometry = simplifyExportGeometry(geometry, settings.lowDetailRatio);
+  const midGeometry = simplifyExportGeometry(geometry, 0.52);
+  const lowGeometry = simplifyExportGeometry(geometry, 0.22);
   const lods: WebHammerExportGeometryLod[] = [];
 
   if (midGeometry) {
@@ -731,7 +809,7 @@ async function buildModelLods(
   name: string,
   asset: Asset | undefined,
   nodeId: string,
-  settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
+  _settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
 ): Promise<{ assets: Asset[]; lods?: WebHammerExportModelLod[] }> {
   if (!asset?.path) {
     return { assets: [], lods: undefined };
@@ -741,8 +819,8 @@ async function buildModelLods(
   const bakedLevels: Array<{ asset: Asset; level: WebHammerExportModelLod["level"] }> = [];
 
   for (const [level, ratio] of [
-    ["mid", settings.midDetailRatio],
-    ["low", settings.lowDetailRatio]
+    ["mid", 0.52],
+    ["low", 0.22]
   ] as const) {
     const simplified = simplifyModelSceneForRatio(source, ratio);
 
@@ -762,7 +840,9 @@ async function buildModelLods(
     lods: bakedLevels.length
       ? bakedLevels.map((entry) => ({
           assetId: entry.asset.id,
-          level: entry.level
+          format: "glb",
+          level: entry.level,
+          path: entry.asset.path
         }))
       : undefined
   };
@@ -1105,6 +1185,38 @@ function patchMtlTextureReferences(mtlText: string, texturePath?: string) {
   return hasDiffuseMap ? normalized : `${normalized.trim()}\nmap_Kd ${texturePath}\n`;
 }
 
+function sumRuntimeBundleBytes(files: Array<{ bytes: Uint8Array }>) {
+  return files.reduce((total, file) => total + file.bytes.byteLength, 0);
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatDuration(milliseconds: number) {
+  if (milliseconds < 1000) {
+    return `${milliseconds.toFixed(1)} ms`;
+  }
+
+  return `${(milliseconds / 1000).toFixed(2)} s`;
+}
+
+function now() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
 function slugify(value: string) {
   const normalized = value
     .trim()
@@ -1383,17 +1495,27 @@ function buildPrimitiveGeometry(shape: "cone" | "cube" | "cylinder" | "sphere", 
 }
 
 async function resolveExportMaterial(material?: Material) {
-  const resolved = material ?? {
+  const resolved = (material ?? {
     color: "#ffffff",
+    emissiveColor: "#000000",
+    emissiveIntensity: 0,
     id: "material:fallback:default",
     metalness: 0.05,
     name: "Default Material",
+    opacity: 1,
     roughness: 0.8
+  }) as Material & {
+    textureVariation?: {
+      enabled: boolean;
+      scale: number;
+    };
   };
 
   return {
     baseColorTexture: await resolveEmbeddedTextureUri(resolved.colorTexture ?? resolveGeneratedBlockoutTexture(resolved)),
     color: resolved.color,
+    emissiveColor: resolved.emissiveColor ?? "#000000",
+    emissiveIntensity: Math.max(0, resolved.emissiveIntensity ?? 0),
     id: resolved.id,
     metallicFactor: resolved.metalness ?? 0,
     metallicRoughnessTexture: await createMetallicRoughnessTextureDataUri(
@@ -1404,8 +1526,16 @@ async function resolveExportMaterial(material?: Material) {
     ),
     name: resolved.name,
     normalTexture: await resolveEmbeddedTextureUri(resolved.normalTexture),
+    opacity: clamp01(resolved.opacity ?? 1),
     roughnessFactor: resolved.roughness ?? 0.8,
-    side: resolved.side
+    side: resolved.side,
+    textureVariation: resolved.textureVariation
+      ? {
+          enabled: resolved.textureVariation.enabled,
+          scale: resolved.textureVariation.scale
+        }
+      : undefined,
+    transparent: resolved.transparent ?? false
   } satisfies WebHammerExportMaterial;
 }
 
@@ -1441,6 +1571,8 @@ async function ensureGltfMaterial(
     : undefined;
 
   materials.push({
+    ...(material.transparent ? { alphaMode: "BLEND" } : {}),
+    ...(material.emissiveColor ? { emissiveFactor: hexToRgb(material.emissiveColor, material.emissiveIntensity ?? 1) } : {}),
     name: material.name,
     normalTexture: normalTextureIndex !== undefined ? { index: normalTextureIndex } : undefined,
     pbrMetallicRoughness: {
@@ -1448,7 +1580,7 @@ async function ensureGltfMaterial(
       ...(metallicRoughnessTextureIndex !== undefined
         ? { metallicRoughnessTexture: { index: metallicRoughnessTextureIndex } }
         : {}),
-      baseColorFactor: hexToRgba(material.color),
+      baseColorFactor: hexToRgba(material.color, material.transparent ? material.opacity ?? 1 : 1),
       metallicFactor: material.metallicFactor,
       roughnessFactor: material.roughnessFactor
     }
@@ -1485,17 +1617,25 @@ function ensureGltfTexture(
   return textureIndex;
 }
 
-function projectPlanarUvs(vertices: Vec3[], normal: Vec3, uvScale?: Vec2, uvOffset?: Vec2) {
+function projectPlanarUvs(vertices: Vec3[], normal: Vec3, uvScale?: Vec2, uvOffset?: Vec2, uvRotation?: number) {
   const basis = createFacePlaneBasis(normal);
   const origin = vertices[0] ?? vec3(0, 0, 0);
   const scaleX = Math.abs(uvScale?.x ?? 1) <= 0.0001 ? 1 : uvScale?.x ?? 1;
   const scaleY = Math.abs(uvScale?.y ?? 1) <= 0.0001 ? 1 : uvScale?.y ?? 1;
   const offsetX = uvOffset?.x ?? 0;
   const offsetY = uvOffset?.y ?? 0;
+  const rotation = uvRotation ?? 0;
+  const cosRotation = Math.cos(rotation);
+  const sinRotation = Math.sin(rotation);
 
   return vertices.flatMap((vertex) => {
     const offset = subVec3(vertex, origin);
-    return [dotVec3(offset, basis.u) * scaleX + offsetX, dotVec3(offset, basis.v) * scaleY + offsetY];
+    const localU = dotVec3(offset, basis.u);
+    const localV = dotVec3(offset, basis.v);
+    const rotatedU = localU * cosRotation - localV * sinRotation;
+    const rotatedV = localU * sinRotation + localV * cosRotation;
+
+    return [rotatedU * scaleX + offsetX, rotatedV * scaleY + offsetY];
   });
 }
 
@@ -1541,6 +1681,11 @@ async function createMetallicRoughnessTextureDataUri(
     loadImagePixels(metalnessSource),
     loadImagePixels(roughnessSource)
   ]);
+
+  if (!metalness && !roughness) {
+    return undefined;
+  }
+
   const width = Math.max(metalness?.width ?? 1, roughness?.width ?? 1);
   const height = Math.max(metalness?.height ?? 1, roughness?.height ?? 1);
   const canvas = new OffscreenCanvas(width, height);
@@ -1572,26 +1717,46 @@ async function loadImagePixels(source?: string) {
     return undefined;
   }
 
-  const response = await fetch(source);
-  const blob = await response.blob();
-  const bitmap = await createImageBitmap(blob);
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const context = canvas.getContext("2d", { willReadFrequently: true });
+  let bitmap: ImageBitmap | undefined;
 
-  if (!context) {
-    bitmap.close();
+  try {
+    const response = await fetch(source);
+    const blob = await response.blob();
+
+    if (blob.size <= 0) {
+      return undefined;
+    }
+
+    bitmap = await createImageBitmap(blob);
+
+    if (bitmap.width <= 0 || bitmap.height <= 0) {
+      return undefined;
+    }
+
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!context) {
+      return undefined;
+    }
+
+    context.drawImage(bitmap, 0, 0);
+    const imageData = context.getImageData(0, 0, bitmap.width, bitmap.height);
+
+    if (imageData.width <= 0 || imageData.height <= 0) {
+      return undefined;
+    }
+
+    return {
+      height: imageData.height,
+      pixels: imageData.data,
+      width: imageData.width
+    };
+  } catch {
     return undefined;
+  } finally {
+    bitmap?.close();
   }
-
-  context.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  const imageData = context.getImageData(0, 0, bitmap.width, bitmap.height);
-
-  return {
-    height: imageData.height,
-    pixels: imageData.data,
-    width: imageData.width
-  };
 }
 
 function computePrimitiveNormals(positions: number[], indices: number[]) {
@@ -1693,8 +1858,25 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function hexToRgba(hex: string): [number, number, number, number] {
+function hexToRgb(hex: string, intensity = 1): [number, number, number] {
   const normalized = hex.replace("#", "");
-  const parsed = Number.parseInt(normalized, 16);
-  return [((parsed >> 16) & 255) / 255, ((parsed >> 8) & 255) / 255, (parsed & 255) / 255, 1];
+  const expanded = normalized.length === 3
+    ? normalized
+        .split("")
+        .map((character) => `${character}${character}`)
+        .join("")
+    : normalized.padEnd(6, "0").slice(0, 6);
+  const parsed = Number.parseInt(expanded, 16);
+  const scale = Math.max(0, intensity);
+
+  return [
+    (((parsed >> 16) & 255) / 255) * scale,
+    (((parsed >> 8) & 255) / 255) * scale,
+    ((parsed & 255) / 255) * scale
+  ];
+}
+
+function hexToRgba(hex: string, alpha = 1): [number, number, number, number] {
+  const [red, green, blue] = hexToRgb(hex);
+  return [red, green, blue, clamp01(alpha)];
 }

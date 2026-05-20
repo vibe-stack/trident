@@ -1,6 +1,6 @@
 {
   "name": "@ggez/shared",
-  "version": "0.1.4",
+  "version": "0.1.12",
   "description": "Shared scene types and utilities used across Web Hammer packages.",
   "license": "MIT",
   "type": "module",
@@ -37,6 +37,6 @@
     "@types/three": "^0.181.0"
   },
   "dependencies": {
-    "three": "^0.181.1"
+    "three": "^0.184.0"
   }
 }

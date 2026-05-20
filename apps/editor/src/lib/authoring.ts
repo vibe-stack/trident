@@ -18,6 +18,7 @@ import {
 export const BRUSH_SHAPES: Array<{ label: string; shape: BrushShape }> = [
   { label: "Cube", shape: "cube" },
   { label: "Custom Polygon", shape: "custom-polygon" },
+  { label: "Plane", shape: "plane" },
   { label: "Ramp", shape: "ramp" },
   { label: "Sphere", shape: "sphere" },
   { label: "Stairs", shape: "stairs" },
@@ -35,7 +36,8 @@ export const PROP_PRESETS: Array<{ label: string; shape: PrimitiveShape }> = [
 export const ENTITY_PRESETS: Array<{ label: string; type: EntityType }> = [
   { label: "Player Spawn", type: "player-spawn" },
   { label: "NPC Spawn", type: "npc-spawn" },
-  { label: "Smart Object", type: "smart-object" }
+  { label: "Smart Object", type: "smart-object" },
+  { label: "VFX Object", type: "vfx-object" }
 ];
 
 export const LIGHT_PRESETS: Array<{ label: string; type: LightType }> = [
@@ -52,7 +54,7 @@ export function createPrimitiveNodeData(
   size = createDefaultPrimitiveSize(shape)
 ): PrimitiveNodeData {
   return {
-    materialId: role === "brush" ? "material:blockout:orange" : "material:flat:steel",
+    materialId: role === "brush" ? "material:blockout:concrete" : "material:flat:steel",
     physics: role === "prop" ? createDefaultPropPhysics(shape) : undefined,
     radialSegments: shape === "cube" ? undefined : 24,
     role,
@@ -95,6 +97,7 @@ export function createDefaultPropPhysics(shape: PrimitiveShape): PropPhysics {
     bodyType: "fixed",
     canSleep: true,
     ccd: false,
+    colliderDefinitions: [],
     colliderShape: resolveDefaultColliderShape(shape),
     contactSkin: 0,
     density: undefined,
@@ -126,6 +129,12 @@ export function createDefaultLightData(type: LightType): LightNodeData {
         color: "#fff3cf",
         enabled: true,
         intensity: 1.25,
+        shadowBias: -0.00015,
+        shadowBlurRadius: 1.25,
+        shadowBlurSamples: 4,
+        shadowMapSize: 1536,
+        shadowNormalBias: 0.03,
+        shadowRadius: 64,
         type
       };
     case "hemisphere":
@@ -147,6 +156,11 @@ export function createDefaultLightData(type: LightType): LightNodeData {
         enabled: true,
         intensity: 28,
         penumbra: 0.35,
+        shadowBias: -0.00015,
+        shadowBlurRadius: 4,
+        shadowBlurSamples: 8,
+        shadowMapSize: 512,
+        shadowNormalBias: 0.03,
         type
       };
     case "point":
@@ -158,6 +172,11 @@ export function createDefaultLightData(type: LightType): LightNodeData {
         distance: 18,
         enabled: true,
         intensity: 18,
+        shadowBias: -0.00015,
+        shadowBlurRadius: 4,
+        shadowBlurSamples: 8,
+        shadowMapSize: 256,
+        shadowNormalBias: 0.03,
         type
       };
   }
@@ -179,6 +198,8 @@ export function createDefaultEntity(type: EntityType, position: Vec3, index: num
         ? { enabled: true, team: "player" }
         : type === "npc-spawn"
           ? { enabled: true, faction: "neutral" }
+          : type === "vfx-object"
+              ? { autoplay: true, enabled: true, vfxBundleDataUrl: "", vfxBundleFileName: "", vfxDurationSeconds: 4, vfxLoop: true, vfxPlaybackRate: 1 }
           : { enabled: true, reusable: true },
     transform: makeTransform(position),
     type
@@ -192,6 +213,9 @@ export function createEntityLabel(type: EntityType) {
     case "npc-spawn":
       return "NPC Spawn";
     case "smart-object":
+      return "Smart Object";
+    case "vfx-object":
+      return "VFX Object";
     default:
       return "Smart Object";
   }

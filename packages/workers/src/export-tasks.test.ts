@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { exportEngineBundle, serializeGltfScene } from "./export-tasks";
-import { makeTransform, vec3, type SceneSettings } from "@ggez/shared";
-import type { SceneDocumentSnapshot } from "@ggez/editor-core";
+import { createWorldBundleFromLegacyScene, type SceneDocumentSnapshot } from "@ggez/editor-core";
+import { exportEngineArchive, exportEngineBundle, serializeGltfScene } from "./export-tasks";
+import { createSerializedModelAssetFiles, makeTransform, vec3, type SceneSettings } from "@ggez/shared";
 import { buildRuntimeBundleFromSnapshot, buildRuntimeSceneFromSnapshot } from "@ggez/runtime-build";
+import { CURRENT_RUNTIME_SCENE_VERSION } from "@ggez/runtime-format";
 
 const settings: SceneSettings = {
   player: {
@@ -26,10 +27,11 @@ const settings: SceneSettings = {
     fogNear: 10,
     gravity: vec3(0, -9.81, 0),
     lod: {
-      bakedAt: "",
-      enabled: false,
-      lowDetailRatio: 0.22,
-      midDetailRatio: 0.52
+      enabled: true,
+      levels: [
+        { distance: 24, id: "mid", label: "Mid" },
+        { distance: 64, id: "low", label: "Low" }
+      ]
     },
     physicsEnabled: true,
     skybox: {
@@ -46,6 +48,133 @@ const settings: SceneSettings = {
 };
 
 describe("exportEngineBundle", () => {
+  test("ignores zero-sized uploaded metallic-roughness maps instead of crashing", async () => {
+    const globals = globalThis as typeof globalThis & {
+      OffscreenCanvas?: typeof OffscreenCanvas;
+      createImageBitmap?: typeof createImageBitmap;
+    };
+    const originalOffscreenCanvas = globals.OffscreenCanvas;
+    const originalCreateImageBitmap = globals.createImageBitmap;
+
+    class MockOffscreenCanvas {
+      constructor(_width: number, _height: number) {}
+
+      getContext() {
+        return null;
+      }
+
+      async convertToBlob() {
+        return new Blob();
+      }
+    }
+
+    globals.OffscreenCanvas = MockOffscreenCanvas as unknown as typeof OffscreenCanvas;
+    globals.createImageBitmap = (async () => ({
+      close() {},
+      height: 0,
+      width: 0
+    })) as typeof createImageBitmap;
+
+    try {
+      const snapshot: SceneDocumentSnapshot = {
+        assets: [],
+        entities: [],
+        layers: [],
+        materials: [
+          {
+            color: "#ffffff",
+            id: "material:test",
+            metalness: 0.35,
+            metalnessTexture:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sotW5kAAAAASUVORK5CYII=",
+            name: "Test Material",
+            roughness: 0.65,
+            roughnessTexture:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sotW5kAAAAASUVORK5CYII="
+          }
+        ],
+        nodes: [],
+        settings,
+        textures: []
+      };
+
+      const scene = await buildRuntimeSceneFromSnapshot(snapshot);
+
+      expect(scene.materials[0]?.metallicRoughnessTexture).toBeUndefined();
+      expect(scene.materials[0]?.metallicFactor).toBe(0.35);
+      expect(scene.materials[0]?.roughnessFactor).toBe(0.65);
+    } finally {
+      globals.OffscreenCanvas = originalOffscreenCanvas;
+      globals.createImageBitmap = originalCreateImageBitmap;
+    }
+  });
+
+  test("ignores worker readback failures from uploaded metallic-roughness maps", async () => {
+    const globals = globalThis as typeof globalThis & {
+      OffscreenCanvas?: typeof OffscreenCanvas;
+      createImageBitmap?: typeof createImageBitmap;
+    };
+    const originalOffscreenCanvas = globals.OffscreenCanvas;
+    const originalCreateImageBitmap = globals.createImageBitmap;
+
+    class MockOffscreenCanvas {
+      constructor(_width: number, _height: number) {}
+
+      getContext() {
+        return {
+          drawImage() {},
+          getImageData() {
+            throw new Error("Failed to execute 'getImageData' on 'OffscreenCanvasRenderingContext2D': The source width is 0.");
+          }
+        };
+      }
+
+      async convertToBlob() {
+        return new Blob();
+      }
+    }
+
+    globals.OffscreenCanvas = MockOffscreenCanvas as unknown as typeof OffscreenCanvas;
+    globals.createImageBitmap = (async () => ({
+      close() {},
+      height: 8,
+      width: 8
+    })) as typeof createImageBitmap;
+
+    try {
+      const snapshot: SceneDocumentSnapshot = {
+        assets: [],
+        entities: [],
+        layers: [],
+        materials: [
+          {
+            color: "#ffffff",
+            id: "material:test",
+            metalness: 0.35,
+            metalnessTexture:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sotW5kAAAAASUVORK5CYII=",
+            name: "Test Material",
+            roughness: 0.65,
+            roughnessTexture:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sotW5kAAAAASUVORK5CYII="
+          }
+        ],
+        nodes: [],
+        settings,
+        textures: []
+      };
+
+      const bundle = await exportEngineBundle(snapshot);
+
+      expect(bundle.manifest.materials[0]?.metallicRoughnessTexture).toBeUndefined();
+      expect(bundle.manifest.materials[0]?.metallicFactor).toBe(0.35);
+      expect(bundle.manifest.materials[0]?.roughnessFactor).toBe(0.65);
+    } finally {
+      globals.OffscreenCanvas = originalOffscreenCanvas;
+      globals.createImageBitmap = originalCreateImageBitmap;
+    }
+  });
+
   test("matches direct runtime-build scene compilation", async () => {
     const snapshot: SceneDocumentSnapshot = {
       assets: [],
@@ -188,7 +317,7 @@ describe("exportEngineBundle", () => {
     const group = bundle.manifest.nodes.find((node) => node.id === "node:group");
     const cube = bundle.manifest.nodes.find((node) => node.id === "node:cube");
 
-    expect(bundle.manifest.metadata.version).toBe(6);
+    expect(bundle.manifest.metadata.version).toBe(CURRENT_RUNTIME_SCENE_VERSION);
     expect(group?.kind).toBe("group");
     expect(cube?.parentId).toBe("node:group");
     expect(bundle.manifest.entities[0]?.parentId).toBe("node:group");
@@ -315,7 +444,7 @@ describe("exportEngineBundle", () => {
     expect(platform?.hooks?.map((hook) => hook.type)).toEqual(["trigger_volume", "sequence", "path_mover"]);
   });
 
-  test("bakes authored geometry lods into runtime manifests", async () => {
+  test("does not auto-bake generated geometry lods into runtime manifests", async () => {
     const snapshot: SceneDocumentSnapshot = {
       assets: [],
       entities: [],
@@ -339,10 +468,11 @@ describe("exportEngineBundle", () => {
         world: {
           ...settings.world,
           lod: {
-            bakedAt: "2026-03-15T12:00:00.000Z",
             enabled: true,
-            lowDetailRatio: 0.18,
-            midDetailRatio: 0.48
+            levels: [
+              { distance: 18, id: "mid", label: "Mid" },
+              { distance: 48, id: "low", label: "Low" }
+            ]
           }
         }
       },
@@ -352,9 +482,71 @@ describe("exportEngineBundle", () => {
     const bundle = await exportEngineBundle(snapshot);
     const sphere = bundle.manifest.nodes.find((node) => node.id === "node:sphere" && node.kind === "primitive");
 
-    expect(sphere && "lods" in sphere ? sphere.lods?.map((lod) => lod.level) : []).toEqual(["mid", "low"]);
-    expect(sphere && "lods" in sphere ? sphere.lods?.[0]?.geometry.primitives[0]?.indices.length : 0).toBeGreaterThan(0);
-    expect(bundle.manifest.settings.world.lod.bakedAt).toBe(bundle.manifest.metadata.exportedAt);
+    expect(sphere && "lods" in sphere ? sphere.lods : undefined).toBeUndefined();
+    expect(bundle.manifest.settings.world.lod.levels.map((level) => level.id)).toEqual(["mid", "low"]);
+  });
+
+  test("preserves authored model lod files in runtime manifests", async () => {
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [
+        {
+          id: "asset:model:tower",
+          metadata: {
+            modelFiles: createSerializedModelAssetFiles([
+              {
+                format: "glb",
+                level: "high",
+                path: "data:model/gltf-binary;base64,AA=="
+              },
+              {
+                format: "glb",
+                level: "mid",
+                path: "data:model/gltf-binary;base64,BB=="
+              },
+              {
+                format: "glb",
+                level: "low",
+                path: "data:model/gltf-binary;base64,CC=="
+              }
+            ]),
+            modelFormat: "glb",
+            nativeCenterX: 0,
+            nativeCenterY: 0.5,
+            nativeCenterZ: 0,
+            nativeSizeX: 2,
+            nativeSizeY: 5,
+            nativeSizeZ: 2,
+            previewColor: "#6b7280"
+          },
+          path: "data:model/gltf-binary;base64,AA==",
+          type: "model"
+        }
+      ],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [
+        {
+          data: {
+            assetId: "asset:model:tower",
+            path: "data:model/gltf-binary;base64,AA=="
+          },
+          id: "node:model:tower",
+          kind: "model",
+          name: "Tower",
+          transform: makeTransform(vec3(0, 0, 0))
+        }
+      ],
+      settings,
+      textures: []
+    };
+
+    const bundle = await exportEngineBundle(snapshot);
+    const tower = bundle.manifest.nodes.find((node) => node.id === "node:model:tower" && node.kind === "model");
+
+    expect(tower && "lods" in tower ? tower.lods?.map((lod) => lod.level) : []).toEqual(["mid", "low"]);
+    expect(tower && "lods" in tower ? tower.lods?.[0]?.path : undefined).toBe("assets/models/asset-model-tower-mid.glb");
+    expect(tower && "lods" in tower ? tower.lods?.[1]?.path : undefined).toBe("assets/models/asset-model-tower-low.glb");
   });
 
   test("preserves instancing references in runtime manifests", async () => {
@@ -510,5 +702,31 @@ describe("exportEngineBundle", () => {
     expect(gltf.meshes).toHaveLength(1);
     expect(gltf.nodes.filter((node) => typeof node.mesh === "number")).toHaveLength(2);
     expect(gltf.nodes[0]?.mesh).toBe(gltf.nodes[1]?.mesh);
+  });
+
+  test("creates archived world runtime exports", async () => {
+    const snapshot: SceneDocumentSnapshot = {
+      assets: [],
+      entities: [],
+      layers: [],
+      materials: [],
+      nodes: [
+        {
+          data: {},
+          id: "node:test",
+          kind: "group",
+          name: "Test",
+          transform: makeTransform(vec3(0, 0, 0))
+        }
+      ],
+      settings,
+      textures: []
+    };
+
+    const archive = await exportEngineArchive(createWorldBundleFromLegacyScene(snapshot));
+
+    expect(archive.fileExtension).toBe("world.runtime.zip");
+    expect(archive.mimeType).toBe("application/zip");
+    expect(archive.bytes.byteLength).toBeGreaterThan(0);
   });
 });

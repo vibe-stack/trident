@@ -21,6 +21,7 @@ export const transitionOperatorSchema = z.enum([
 ]);
 export const interruptionSourceSchema = z.enum(["none", "current", "next", "both"]);
 export const transitionBlendCurveSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
+export const strideWarpEvaluationModeSchema = z.enum(["graph", "manual"]);
 
 export const vec2Schema = z.object({
   x: z.number(),
@@ -33,6 +34,36 @@ export const vec3Schema = z.object({
   z: z.number()
 });
 
+export const secondaryDynamicsChainSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  rootBoneName: z.string().min(1),
+  tipBoneName: z.string().min(1),
+  damping: z.number().min(0).max(0.999).default(0.82),
+  stiffness: z.number().min(0).max(1).default(0.2),
+  gravityScale: z.number().min(0).max(4).default(0.35),
+  inertia: vec3Schema.default({ x: 0.35, y: 0.15, z: 0.5 }),
+  limitAngleRadians: z.number().min(0.05).max(Math.PI).default(Math.PI / 3),
+  enabled: z.boolean().default(true)
+});
+
+export const secondaryDynamicsSphereColliderSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  boneName: z.string().min(1),
+  offset: vec3Schema.default({ x: 0, y: 0, z: 0 }),
+  radius: z.number().positive().default(0.12),
+  enabled: z.boolean().default(true)
+});
+
+export const secondaryDynamicsProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  iterations: z.number().int().min(1).max(12).default(4),
+  chains: z.array(secondaryDynamicsChainSchema).default([]),
+  sphereColliders: z.array(secondaryDynamicsSphereColliderSchema).default([])
+});
+
 export const quatSchema = z.object({
   x: z.number(),
   y: z.number(),
@@ -40,11 +71,15 @@ export const quatSchema = z.object({
   w: z.number()
 });
 
+const vec3TupleSchema = z.tuple([z.number(), z.number(), z.number()]);
+const quat4TupleSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
+
 export const parameterDefinitionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   type: animationParameterTypeSchema,
-  defaultValue: z.union([z.number(), z.boolean()]).optional()
+  defaultValue: z.union([z.number(), z.boolean()]).optional(),
+  smoothingDuration: z.number().nonnegative().optional()
 });
 
 export const clipReferenceSchema = z.object({
@@ -90,7 +125,8 @@ export const clipNodeSchema = graphNodeBaseSchema.extend({
   clipId: z.string(),
   speed: z.number().default(1),
   loop: z.boolean().default(true),
-  inPlace: z.boolean().default(false)
+  inPlace: z.boolean().default(false),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const blend1DChildSchema = z.object({
@@ -102,7 +138,8 @@ export const blend1DChildSchema = z.object({
 export const blend1DNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("blend1d"),
   parameterId: z.string(),
-  children: z.array(blend1DChildSchema).default([])
+  children: z.array(blend1DChildSchema).default([]),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const blend2DChildSchema = z.object({
@@ -116,7 +153,77 @@ export const blend2DNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("blend2d"),
   xParameterId: z.string(),
   yParameterId: z.string(),
-  children: z.array(blend2DChildSchema).default([])
+  children: z.array(blend2DChildSchema).default([]),
+  syncGroup: z.string().min(1).optional()
+});
+
+export const selectorChildSchema = z.object({
+  nodeId: z.string().min(1),
+  value: z.number().int(),
+  label: z.string().optional()
+});
+
+export const selectorNodeSchema = graphNodeBaseSchema.extend({
+  kind: z.literal("selector"),
+  parameterId: z.string(),
+  children: z.array(selectorChildSchema).default([]),
+  syncGroup: z.string().min(1).optional()
+});
+
+export const orientationWarpLegSchema = z.object({
+  upperBoneName: z.string().min(1),
+  lowerBoneName: z.string().min(1),
+  footBoneName: z.string().min(1),
+  weight: z.number().min(0).max(1).default(1)
+});
+
+export const strideWarpLegSchema = z.object({
+  upperBoneName: z.string().min(1),
+  lowerBoneName: z.string().min(1),
+  footBoneName: z.string().min(1),
+  weight: z.number().min(0).max(1).default(1)
+});
+
+export const orientationWarpNodeSchema = graphNodeBaseSchema.extend({
+  kind: z.literal("orientationWarp"),
+  sourceNodeId: z.string().min(1).optional(),
+  angleParameterId: z.string(),
+  maxAngle: z.number().positive().default(Math.PI / 2),
+  weight: z.number().min(0).max(1).default(1),
+  hipBoneName: z.string().min(1).optional(),
+  hipWeight: z.number().min(0).max(1).default(0.35),
+  spineBoneNames: z.array(z.string().min(1)).default([]),
+  legs: z.array(orientationWarpLegSchema).default([])
+});
+
+export const strideWarpNodeSchema = graphNodeBaseSchema.extend({
+  kind: z.literal("strideWarp"),
+  sourceNodeId: z.string().min(1).optional(),
+  evaluationMode: strideWarpEvaluationModeSchema.default("graph"),
+  locomotionSpeedParameterId: z.string().min(1).optional(),
+  strideDirection: vec2Schema.default({ x: 0, y: 1 }),
+  manualStrideScale: z.number().positive().default(1),
+  minLocomotionSpeedThreshold: z.number().nonnegative().default(0.01),
+  pelvisBoneName: z.string().min(1).optional(),
+  pelvisWeight: z.number().min(0).max(1).default(0.35),
+  clampResult: z.boolean().default(false),
+  minStrideScale: z.number().positive().default(0.5),
+  maxStrideScale: z.number().positive().default(2),
+  interpResult: z.boolean().default(false),
+  interpSpeedIncreasing: z.number().nonnegative().default(6),
+  interpSpeedDecreasing: z.number().nonnegative().default(6),
+  legs: z.array(strideWarpLegSchema).default([])
+});
+
+export const secondaryDynamicsNodeSchema = graphNodeBaseSchema.extend({
+  kind: z.literal("secondaryDynamics"),
+  sourceNodeId: z.string().min(1).optional(),
+  profileId: z.string().min(1),
+  weight: z.number().min(0).max(1).default(1),
+  dampingScale: z.number().min(0).max(4).default(1),
+  stiffnessScale: z.number().min(0).max(4).default(1),
+  gravityScale: z.number().min(0).max(4).default(1),
+  iterations: z.number().int().min(1).max(12).default(4)
 });
 
 export const transitionConditionSchema = z.object({
@@ -131,7 +238,8 @@ export const stateMachineStateSchema = z.object({
   motionNodeId: z.string(),
   position: vec2Schema.optional(),
   speed: z.number().default(1),
-  cycleOffset: z.number().default(0)
+  cycleOffset: z.number().default(0),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const stateMachineTransitionSchema = z.object({
@@ -157,7 +265,8 @@ export const stateMachineNodeSchema = graphNodeBaseSchema.extend({
 
 export const subgraphNodeSchema = graphNodeBaseSchema.extend({
   kind: z.literal("subgraph"),
-  graphId: z.string()
+  graphId: z.string(),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const outputNodeSchema = graphNodeBaseSchema.extend({
@@ -169,6 +278,10 @@ export const graphNodeSchema = z.discriminatedUnion("kind", [
   clipNodeSchema,
   blend1DNodeSchema,
   blend2DNodeSchema,
+  selectorNodeSchema,
+  orientationWarpNodeSchema,
+  strideWarpNodeSchema,
+  secondaryDynamicsNodeSchema,
   stateMachineNodeSchema,
   subgraphNodeSchema,
   outputNodeSchema
@@ -228,6 +341,7 @@ export const animationEditorDocumentSchema = z.object({
   parameters: z.array(parameterDefinitionSchema).default([]),
   clips: z.array(clipReferenceSchema).default([]),
   masks: z.array(boneMaskDefinitionSchema).default([]),
+  dynamicsProfiles: z.array(secondaryDynamicsProfileSchema).default([]),
   graphs: z.array(editorGraphSchema).min(1),
   layers: z.array(editorLayerSchema).min(1),
   metadata: z
@@ -260,7 +374,8 @@ export const compiledStateSchema = z.object({
   name: z.string().min(1),
   motionNodeIndex: z.number().int().min(-1),
   speed: z.number(),
-  cycleOffset: z.number()
+  cycleOffset: z.number(),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const compiledClipNodeSchema = z.object({
@@ -268,7 +383,8 @@ export const compiledClipNodeSchema = z.object({
   clipIndex: z.number().int().nonnegative(),
   speed: z.number(),
   loop: z.boolean(),
-  inPlace: z.boolean().default(false)
+  inPlace: z.boolean().default(false),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const compiledBlend1DNodeSchema = z.object({
@@ -281,7 +397,8 @@ export const compiledBlend1DNodeSchema = z.object({
         threshold: z.number()
       })
     )
-    .min(1)
+    .min(1),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const compiledBlend2DNodeSchema = z.object({
@@ -296,7 +413,105 @@ export const compiledBlend2DNodeSchema = z.object({
         y: z.number()
       })
     )
-    .min(1)
+    .min(1),
+  syncGroup: z.string().min(1).optional()
+});
+
+export const compiledSelectorNodeSchema = z.object({
+  type: z.literal("selector"),
+  parameterIndex: z.number().int().nonnegative(),
+  children: z
+    .array(
+      z.object({
+        nodeIndex: z.number().int().nonnegative(),
+        value: z.number().int()
+      })
+  )
+    .min(1),
+  syncGroup: z.string().min(1).optional()
+});
+
+export const compiledOrientationWarpLegSchema = z.object({
+  upperBoneIndex: z.number().int().nonnegative(),
+  lowerBoneIndex: z.number().int().nonnegative(),
+  footBoneIndex: z.number().int().nonnegative(),
+  weight: z.number().min(0).max(1)
+});
+
+export const compiledOrientationWarpNodeSchema = z.object({
+  type: z.literal("orientationWarp"),
+  sourceNodeIndex: z.number().int().nonnegative(),
+  parameterIndex: z.number().int().nonnegative(),
+  maxAngle: z.number().positive(),
+  weight: z.number().min(0).max(1),
+  hipBoneIndex: z.number().int().nonnegative().optional(),
+  hipWeight: z.number().min(0).max(1),
+  spineBoneIndices: z.array(z.number().int().nonnegative()),
+  legs: z.array(compiledOrientationWarpLegSchema)
+});
+
+export const compiledStrideWarpLegSchema = z.object({
+  upperBoneIndex: z.number().int().nonnegative(),
+  lowerBoneIndex: z.number().int().nonnegative(),
+  footBoneIndex: z.number().int().nonnegative(),
+  weight: z.number().min(0).max(1)
+});
+
+export const compiledStrideWarpNodeSchema = z.object({
+  type: z.literal("strideWarp"),
+  sourceNodeIndex: z.number().int().nonnegative(),
+  evaluationMode: strideWarpEvaluationModeSchema,
+  locomotionSpeedParameterIndex: z.number().int().nonnegative().optional(),
+  strideDirection: vec2Schema,
+  manualStrideScale: z.number().positive(),
+  minLocomotionSpeedThreshold: z.number().nonnegative(),
+  pelvisBoneIndex: z.number().int().nonnegative().optional(),
+  pelvisWeight: z.number().min(0).max(1),
+  clampResult: z.boolean(),
+  minStrideScale: z.number().positive(),
+  maxStrideScale: z.number().positive(),
+  interpResult: z.boolean(),
+  interpSpeedIncreasing: z.number().nonnegative(),
+  interpSpeedDecreasing: z.number().nonnegative(),
+  legs: z.array(compiledStrideWarpLegSchema)
+});
+
+export const compiledSecondaryDynamicsChainSchema = z.object({
+  name: z.string().min(1),
+  boneIndices: z.array(z.number().int().nonnegative()).min(2),
+  restLengths: z.array(z.number().positive()).min(1),
+  damping: z.number().min(0).max(0.999),
+  stiffness: z.number().min(0).max(1),
+  gravityScale: z.number().min(0),
+  inertia: vec3Schema,
+  limitAngleRadians: z.number().min(0.05).max(Math.PI),
+  enabled: z.boolean()
+});
+
+export const compiledSecondaryDynamicsSphereColliderSchema = z.object({
+  name: z.string().min(1),
+  boneIndex: z.number().int().nonnegative(),
+  offset: vec3Schema,
+  radius: z.number().positive(),
+  enabled: z.boolean()
+});
+
+export const compiledSecondaryDynamicsProfileSchema = z.object({
+  name: z.string().min(1),
+  iterations: z.number().int().min(1).max(12),
+  chains: z.array(compiledSecondaryDynamicsChainSchema),
+  sphereColliders: z.array(compiledSecondaryDynamicsSphereColliderSchema)
+});
+
+export const compiledSecondaryDynamicsNodeSchema = z.object({
+  type: z.literal("secondaryDynamics"),
+  sourceNodeIndex: z.number().int().nonnegative(),
+  profileIndex: z.number().int().nonnegative(),
+  weight: z.number().min(0).max(1),
+  dampingScale: z.number().min(0),
+  stiffnessScale: z.number().min(0),
+  gravityScale: z.number().min(0),
+  iterations: z.number().int().min(1).max(12)
 });
 
 export const compiledStateMachineNodeSchema = z.object({
@@ -310,13 +525,18 @@ export const compiledStateMachineNodeSchema = z.object({
 
 export const compiledSubgraphNodeSchema = z.object({
   type: z.literal("subgraph"),
-  graphIndex: z.number().int().nonnegative()
+  graphIndex: z.number().int().nonnegative(),
+  syncGroup: z.string().min(1).optional()
 });
 
 export const compiledGraphNodeSchema = z.discriminatedUnion("type", [
   compiledClipNodeSchema,
   compiledBlend1DNodeSchema,
   compiledBlend2DNodeSchema,
+  compiledSelectorNodeSchema,
+  compiledOrientationWarpNodeSchema,
+  compiledStrideWarpNodeSchema,
+  compiledSecondaryDynamicsNodeSchema,
   compiledStateMachineNodeSchema,
   compiledSubgraphNodeSchema
 ]);
@@ -351,7 +571,8 @@ export const compiledClipSlotSchema = z.object({
 export const compiledParameterSchema = z.object({
   name: z.string().min(1),
   type: animationParameterTypeSchema,
-  defaultValue: z.union([z.number(), z.boolean()]).optional()
+  defaultValue: z.union([z.number(), z.boolean()]).optional(),
+  smoothingDuration: z.number().nonnegative().optional()
 });
 
 export const compiledAnimatorGraphSchema = z.object({
@@ -361,6 +582,7 @@ export const compiledAnimatorGraphSchema = z.object({
   parameters: z.array(compiledParameterSchema),
   clipSlots: z.array(compiledClipSlotSchema),
   masks: z.array(compiledBoneMaskSchema),
+  dynamicsProfiles: z.array(compiledSecondaryDynamicsProfileSchema),
   graphs: z.array(compiledMotionGraphSchema).min(1),
   layers: z.array(compiledLayerSchema).min(1),
   entryGraphIndex: z.number().int().nonnegative()
@@ -382,14 +604,42 @@ export const animationBundleClipSchema = z.object({
   asset: z.string().min(1).optional()
 });
 
+export const animationBundleEquipmentTransformSchema = z.object({
+  position: vec3TupleSchema,
+  rotation: quat4TupleSchema,
+  scale: vec3TupleSchema
+});
+
+export const animationBundleEquipmentSocketSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  boneName: z.string().min(1)
+});
+
+export const animationBundleEquipmentItemSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  socketId: z.string().min(1).nullable(),
+  enabled: z.boolean(),
+  transform: animationBundleEquipmentTransformSchema,
+  asset: z.string().min(1).optional()
+});
+
+export const animationBundleEquipmentSchema = z.object({
+  sockets: z.array(animationBundleEquipmentSocketSchema).default([]),
+  items: z.array(animationBundleEquipmentItemSchema).default([])
+});
+
 export const animationBundleSchema = z.object({
   format: z.literal(ANIMATION_BUNDLE_FORMAT),
   version: z.literal(ANIMATION_BUNDLE_VERSION),
   name: z.string().min(1),
   artifact: z.string().min(1),
   characterAsset: z.string().min(1).optional(),
+  clipData: z.string().min(1).optional(),
   clips: z.array(animationBundleClipSchema).default([]),
-  clipAssets: z.record(z.string().min(1)).default({})
+  clipAssets: z.record(z.string().min(1)).default({}),
+  equipment: animationBundleEquipmentSchema.optional()
 });
 
 export type AnimationParameterType = z.infer<typeof animationParameterTypeSchema>;
@@ -402,6 +652,9 @@ export type TransitionBlendCurve = z.infer<typeof transitionBlendCurveSchema>;
 export type ParameterDefinition = z.infer<typeof parameterDefinitionSchema>;
 export type ClipReference = z.infer<typeof clipReferenceSchema>;
 export type BoneMaskDefinition = z.infer<typeof boneMaskDefinitionSchema>;
+export type SecondaryDynamicsChain = z.infer<typeof secondaryDynamicsChainSchema>;
+export type SecondaryDynamicsSphereCollider = z.infer<typeof secondaryDynamicsSphereColliderSchema>;
+export type SecondaryDynamicsProfile = z.infer<typeof secondaryDynamicsProfileSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EditorGraphNode = z.infer<typeof graphNodeSchema>;
 export type EditorGraph = z.infer<typeof editorGraphSchema>;
@@ -412,6 +665,10 @@ export type AnimationEditorDocument = z.infer<typeof animationEditorDocumentSche
 export type CompiledCondition = z.infer<typeof compiledConditionSchema>;
 export type CompiledTransition = z.infer<typeof compiledTransitionSchema>;
 export type CompiledState = z.infer<typeof compiledStateSchema>;
+export type CompiledSecondaryDynamicsChain = z.infer<typeof compiledSecondaryDynamicsChainSchema>;
+export type CompiledSecondaryDynamicsSphereCollider = z.infer<typeof compiledSecondaryDynamicsSphereColliderSchema>;
+export type CompiledSecondaryDynamicsProfile = z.infer<typeof compiledSecondaryDynamicsProfileSchema>;
+export type CompiledSecondaryDynamicsNode = z.infer<typeof compiledSecondaryDynamicsNodeSchema>;
 export type CompiledGraphNode = z.infer<typeof compiledGraphNodeSchema>;
 export type CompiledMotionGraph = z.infer<typeof compiledMotionGraphSchema>;
 export type CompiledBoneMask = z.infer<typeof compiledBoneMaskSchema>;
@@ -421,6 +678,10 @@ export type CompiledParameter = z.infer<typeof compiledParameterSchema>;
 export type CompiledAnimatorGraph = z.infer<typeof compiledAnimatorGraphSchema>;
 export type AnimationArtifact = z.infer<typeof animationArtifactSchema>;
 export type AnimationBundleClip = z.infer<typeof animationBundleClipSchema>;
+export type AnimationBundleEquipmentTransform = z.infer<typeof animationBundleEquipmentTransformSchema>;
+export type AnimationBundleEquipmentSocket = z.infer<typeof animationBundleEquipmentSocketSchema>;
+export type AnimationBundleEquipmentItem = z.infer<typeof animationBundleEquipmentItemSchema>;
+export type AnimationBundleEquipment = z.infer<typeof animationBundleEquipmentSchema>;
 export type AnimationBundle = z.infer<typeof animationBundleSchema>;
 
 export function parseAnimationEditorDocument(input: unknown): AnimationEditorDocument {

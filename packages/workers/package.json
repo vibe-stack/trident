@@ -1,6 +1,6 @@
 {
   "name": "@ggez/workers",
-  "version": "0.1.4",
+  "version": "0.1.12",
   "description": "Worker task contracts and managers for Web Hammer export and processing flows.",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,7 @@
     "@ggez/runtime-format": "workspace:*",
     "@ggez/shared": "workspace:*",
     "comlink": "^4.4.2",
-    "three": "^0.181.1",
+    "three": "^0.184.0",
     "three-mesh-bvh": "^0.9.2"
   }
 }

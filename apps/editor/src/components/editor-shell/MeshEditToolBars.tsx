@@ -1,3 +1,5 @@
+import { Eraser, Paintbrush } from "lucide-react";
+import type { Material } from "@ggez/shared";
 import type { MeshEditMode } from "@/viewport/editing";
 import { FloatingPanel } from "@/components/editor-shell/FloatingPanel";
 import {
@@ -17,12 +19,14 @@ import {
   RaiseTopIcon,
   RotateModeIcon,
   ScaleModeIcon,
+  SmoothBrushIcon,
   SubdivideIcon,
   TranslateModeIcon,
   VertexModeIcon
 } from "@/components/editor-shell/icons";
 import { Button } from "@/components/ui/button";
 import { DragInput } from "@/components/ui/drag-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +34,7 @@ export function MeshEditToolBars({
   onArc,
   onBevel,
   onDelete,
+  onEraseMaterial,
   meshEditMode,
   onExtrude,
   onFillFace,
@@ -38,16 +43,24 @@ export function MeshEditToolBars({
   onInvertNormals,
   onLowerTop,
   onMerge,
+  onPaintMaterial,
   onRaiseTop,
+  onSelectMaterial,
   onSetMeshEditMode,
+  onSetMaterialPaintBrushOpacity,
   onSetSculptBrushRadius,
   onSetSculptBrushStrength,
+  onSmooth,
   onSubdivide,
   onCut,
   onSetTransformMode,
+  materialPaintBrushOpacity,
+  materialPaintMode,
+  materials,
   sculptMode,
   sculptBrushRadius,
   sculptBrushStrength,
+  selectedMaterialId,
   selectedGeometry,
   selectedMesh,
   transformMode
@@ -55,6 +68,7 @@ export function MeshEditToolBars({
   onArc: () => void;
   onBevel: () => void;
   onDelete: () => void;
+  onEraseMaterial: () => void;
   meshEditMode: MeshEditMode;
   onExtrude: () => void;
   onFillFace: () => void;
@@ -63,22 +77,31 @@ export function MeshEditToolBars({
   onInvertNormals: () => void;
   onLowerTop: () => void;
   onMerge: () => void;
+  onPaintMaterial: () => void;
   onRaiseTop: () => void;
+  onSelectMaterial: (materialId: string) => void;
   onSetMeshEditMode: (mode: MeshEditMode) => void;
+  onSetMaterialPaintBrushOpacity: (value: number) => void;
   onSetSculptBrushRadius: (value: number) => void;
   onSetSculptBrushStrength: (value: number) => void;
+  onSmooth: () => void;
   onSubdivide: () => void;
   onCut: () => void;
   onSetTransformMode: (mode: "rotate" | "scale" | "translate") => void;
-  sculptMode?: "deflate" | "inflate" | null;
+  materialPaintBrushOpacity: number;
+  materialPaintMode?: "erase" | "paint" | null;
+  materials: Material[];
+  sculptMode?: "deflate" | "inflate" | "smooth" | null;
   sculptBrushRadius: number;
   sculptBrushStrength: number;
+  selectedMaterialId: string;
   selectedGeometry: boolean;
   selectedMesh: boolean;
   transformMode: "rotate" | "scale" | "translate";
 }) {
   const mergeTooltip =
     meshEditMode === "face" ? "Merge faces" : meshEditMode === "edge" ? "Merge edges" : "Merge vertices";
+  const brushPanelVisible = Boolean(sculptMode || materialPaintMode);
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -95,6 +118,9 @@ export function MeshEditToolBars({
           <div className="mx-0.5 h-5 w-px bg-white/8" />
           <MeshBarButton disabled={!selectedMesh} icon={InflateIcon} onClick={onInflate} tooltip="Inflate" />
           <MeshBarButton disabled={!selectedMesh} icon={DeflateIcon} onClick={onDeflate} tooltip="Deflate" />
+          <MeshBarButton active={sculptMode === "smooth"} disabled={!selectedMesh} icon={SmoothBrushIcon} onClick={onSmooth} tooltip="Smooth" />
+          <MeshBarButton active={materialPaintMode === "paint"} disabled={!selectedMesh} icon={Paintbrush} onClick={onPaintMaterial} tooltip="Paint material" />
+          <MeshBarButton active={materialPaintMode === "erase"} disabled={!selectedMesh} icon={Eraser} onClick={onEraseMaterial} tooltip="Erase material paint" />
           <MeshBarButton disabled={!selectedMesh} icon={RaiseTopIcon} onClick={onRaiseTop} tooltip="Raise top" />
           <MeshBarButton disabled={!selectedMesh} icon={LowerTopIcon} onClick={onLowerTop} tooltip="Lower top" />
           <MeshBarButton disabled={!selectedGeometry || meshEditMode !== "edge"} icon={ArcEdgeIcon} onClick={onArc} shortcut="A" tooltip="Arc" />
@@ -110,10 +136,10 @@ export function MeshEditToolBars({
           <MeshBarButton disabled={!selectedGeometry} icon={FlipNormalsIcon} onClick={onInvertNormals} shortcut="N" tooltip="Invert normals" />
         </FloatingPanel>
       </div>
-      {sculptMode ? (
+      {brushPanelVisible ? (
         <FloatingPanel className="flex min-w-[320px] items-center gap-3 p-2">
           <DragInput
-            className="w-[150px]"
+            className="w-37.5"
             compact
             disabled={!selectedMesh}
             label="Size"
@@ -124,7 +150,7 @@ export function MeshEditToolBars({
             value={sculptBrushRadius}
           />
           <DragInput
-            className="w-[150px]"
+            className="w-37.5"
             compact
             disabled={!selectedMesh}
             label="Strength"
@@ -134,6 +160,44 @@ export function MeshEditToolBars({
             step={0.005}
             value={sculptBrushStrength}
           />
+          {materialPaintMode ? (
+            <>
+              <div className="h-8 w-px bg-white/8" />
+              <DragInput
+                className="w-37.5"
+                compact
+                disabled={!selectedMesh}
+                label="Blend"
+                max={1}
+                min={0.05}
+                onChange={onSetMaterialPaintBrushOpacity}
+                precision={2}
+                step={0.02}
+                value={materialPaintBrushOpacity}
+              />
+              <div className="flex min-w-55 flex-col gap-1">
+                <span className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/48">
+                  Overlay Material
+                </span>
+                <Select onValueChange={(value) => {
+                  if (value) {
+                    onSelectMaterial(value);
+                  }
+                }} value={selectedMaterialId}>
+                  <SelectTrigger className="h-9 rounded-xl border-white/10 bg-white/5 text-sm">
+                    <SelectValue placeholder="Select material" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {materials.map((material) => (
+                      <SelectItem key={material.id} value={material.id}>
+                        {material.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          ) : null}
         </FloatingPanel>
       ) : null}
     </div>

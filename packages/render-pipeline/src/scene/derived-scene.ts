@@ -7,17 +7,28 @@ import type {
   Material,
   MaterialID,
   NodeID,
+  TextureRecord,
   Transform,
   Vec3
 } from "@ggez/shared";
-import { isGroupNode, isInstancingNode, isLightNode, resolveInstancingSourceNode, resolveSceneGraph, vec3 } from "@ggez/shared";
-import { createDerivedRenderMesh, type DerivedRenderMesh } from "../meshes/render-mesh";
+import {
+  cloneMaterialWithResolvedTextureSources,
+  createTextureRecordMap,
+  isGroupNode,
+  isInstancingNode,
+  isLightNode,
+  resolveInstancingSourceNode,
+  resolveSceneGraph,
+  vec3
+} from "@ggez/shared";
+import { createDerivedRenderMesh, buildEditableMeshFaceMap, recomputeBlendLayerWeightsFromFaceMap, type DerivedRenderMesh, type DerivedSurfaceFaceMap } from "../meshes/render-mesh";
 
 export type DerivedEntityMarker = {
   entityId: Entity["id"];
   entityType: Entity["type"];
   label: string;
   position: Vec3;
+  properties: Entity["properties"];
   scale: Transform["scale"];
   rotation: Vec3;
   color: string;
@@ -81,11 +92,14 @@ type CachedDerivedRenderMeshEntry = {
   planes?: unknown;
   previewSize?: unknown;
   vertices?: unknown;
+  /** Pre-computed face map used by the weights-only fast path. Only set for mesh nodes. */
+  meshFaceMap?: DerivedSurfaceFaceMap;
 };
 
 export type DerivedRenderSceneCache = {
   assetRefs: Map<AssetID, Asset>;
   materialRefs: Map<MaterialID, Material>;
+  textureRefs: Map<TextureRecord["id"], TextureRecord>;
   meshEntries: Map<NodeID, CachedDerivedRenderMeshEntry>;
 };
 
@@ -93,6 +107,7 @@ export function createDerivedRenderSceneCache(): DerivedRenderSceneCache {
   return {
     assetRefs: new Map(),
     materialRefs: new Map(),
+    textureRefs: new Map(),
     meshEntries: new Map()
   };
 }
@@ -101,9 +116,10 @@ export function deriveRenderScene(
   nodes: Iterable<GeometryNode>,
   entities: Iterable<Entity> = [],
   materials: Iterable<Material> = [],
-  assets: Iterable<Asset> = []
+  assets: Iterable<Asset> = [],
+  textures: Iterable<TextureRecord> = []
 ): DerivedRenderScene {
-  return deriveRenderSceneCached(nodes, entities, materials, assets, createDerivedRenderSceneCache());
+  return deriveRenderSceneCached(nodes, entities, materials, assets, createDerivedRenderSceneCache(), textures);
 }
 
 export function deriveRenderSceneCached(
@@ -111,17 +127,23 @@ export function deriveRenderSceneCached(
   entities: Iterable<Entity> = [],
   materials: Iterable<Material> = [],
   assets: Iterable<Asset> = [],
-  cache: DerivedRenderSceneCache
+  cache: DerivedRenderSceneCache,
+  textures: Iterable<TextureRecord> = []
 ): DerivedRenderScene {
   const materialList = Array.from(materials);
   const assetList = Array.from(assets);
+  const textureList = Array.from(textures);
   const sourceNodes = Array.from(nodes);
   const sourceEntities = Array.from(entities);
-  const materialsById = new Map(materialList.map((material) => [material.id, material] as const));
+  const texturesById = createTextureRecordMap(textureList);
+  const materialsById = new Map(
+    materialList.map((material) => [material.id, cloneMaterialWithResolvedTextureSources(material, texturesById)] as const)
+  );
   const assetsById = new Map(assetList.map((asset) => [asset.id, asset] as const));
   const materialsChanged = haveReferencedValuesChanged(materialList, cache.materialRefs);
   const assetsChanged = haveReferencedValuesChanged(assetList, cache.assetRefs);
-  const shouldRebuildAllMeshes = materialsChanged || assetsChanged;
+  const texturesChanged = haveReferencedValuesChanged(textureList, cache.textureRefs);
+  const shouldRebuildAllMeshes = materialsChanged || assetsChanged || texturesChanged;
   const meshes: DerivedRenderMesh[] = [];
   const instancedMeshes: DerivedInstancedMesh[] = [];
   const lights: DerivedLight[] = [];
@@ -161,13 +183,18 @@ export function deriveRenderSceneCached(
     activeMeshIds.add(node.id);
 
     const cached = cache.meshEntries.get(node.id);
-    const mesh =
-      shouldRebuildAllMeshes || !cached || isCachedMeshEntryStale(node, worldTransform, cached)
-        ? createCachedMeshEntry(node, worldTransform, materialsById, assetsById)
-        : cached;
+    const isStale = shouldRebuildAllMeshes || !cached || isCachedMeshEntryStale(node, worldTransform, cached);
+    const meshEntry =
+      !isStale
+        ? cached!
+        : !shouldRebuildAllMeshes && cached && isTransformOnlyChange(node, worldTransform, cached)
+          ? patchCachedMeshEntryTransform(cached, worldTransform)
+        : !shouldRebuildAllMeshes && cached && isMaterialLayersOnlyChange(node, worldTransform, cached)
+          ? patchCachedMeshEntryBlendWeights(cached, node, materialsById)
+          : createCachedMeshEntry(node, worldTransform, materialsById, assetsById);
 
-    cache.meshEntries.set(node.id, mesh);
-    meshes.push(mesh.mesh);
+    cache.meshEntries.set(node.id, meshEntry);
+    meshes.push(meshEntry.mesh);
   });
 
   Array.from(cache.meshEntries.keys()).forEach((nodeId) => {
@@ -229,12 +256,14 @@ export function deriveRenderSceneCached(
 
   replaceReferenceMap(cache.materialRefs, materialList);
   replaceReferenceMap(cache.assetRefs, assetList);
+  replaceReferenceMap(cache.textureRefs, textureList);
 
   const entityMarkers = Array.from(sourceEntities, (entity) => ({
     entityId: entity.id,
     entityType: entity.type,
     label: entity.name,
     position: (sceneGraph.entityWorldTransforms.get(entity.id) ?? entity.transform).position,
+    properties: entity.properties,
     scale: (sceneGraph.entityWorldTransforms.get(entity.id) ?? entity.transform).scale,
     rotation: (sceneGraph.entityWorldTransforms.get(entity.id) ?? entity.transform).rotation,
     color:
@@ -242,6 +271,8 @@ export function deriveRenderSceneCached(
         ? "#7dd3fc"
         : entity.type === "npc-spawn"
           ? "#fbbf24"
+          : entity.type === "vfx-object"
+            ? "#2dd4bf"
           : "#c084fc"
   }));
 
@@ -305,6 +336,11 @@ function createCachedMeshEntry(
   materialsById: Map<MaterialID, Material>,
   assetsById: Map<AssetID, Asset>
 ): CachedDerivedRenderMeshEntry {
+  const meshFaceMap =
+    node.kind === "mesh"
+      ? buildEditableMeshFaceMap(node.data)
+      : undefined;
+
   return {
     mesh: createDerivedRenderMesh(node, materialsById, assetsById, worldTransform),
     sourceKind: node.kind,
@@ -320,7 +356,8 @@ function createCachedMeshEntry(
     physics: "physics" in node.data ? node.data.physics : undefined,
     planes: "planes" in node.data ? node.data.planes : undefined,
     previewSize: "previewSize" in node.data ? node.data.previewSize : undefined,
-    vertices: "vertices" in node.data ? node.data.vertices : undefined
+    vertices: "vertices" in node.data ? node.data.vertices : undefined,
+    meshFaceMap
   };
 }
 
@@ -341,6 +378,103 @@ function isCachedMeshEntryStale(
     cached.vertices !== ("vertices" in node.data ? node.data.vertices : undefined) ||
     hasTransformValuesChanged(worldTransform, cached)
   );
+}
+
+/**
+ * Returns true when the only reason the staleness check fired is that `materialLayers` changed
+ * while all structural data (vertices, faces, half-edges, topology) stayed the same. In this
+ * case we can skip the full geometry rebuild and only recompute blend-weight attributes.
+ */
+function isMaterialLayersOnlyChange(
+  node: Exclude<GeometryNode, { kind: "group" | "light" }>,
+  worldTransform: Transform,
+  cached: CachedDerivedRenderMeshEntry
+): node is Extract<typeof node, { kind: "mesh" }> {
+  return (
+    node.kind === "mesh" &&
+    cached.sourceKind === node.kind &&
+    cached.name === node.name &&
+    !hasTransformValuesChanged(worldTransform, cached) &&
+    cached.vertices !== undefined &&
+    cached.vertices === ("vertices" in node.data ? node.data.vertices : undefined) &&
+    cached.faces === ("faces" in node.data ? node.data.faces : undefined) &&
+    cached.halfEdges === ("halfEdges" in node.data ? node.data.halfEdges : undefined) &&
+    cached.planes === ("planes" in node.data ? node.data.planes : undefined) &&
+    cached.physics === ("physics" in node.data ? node.data.physics : undefined) &&
+    cached.previewSize === ("previewSize" in node.data ? node.data.previewSize : undefined)
+  );
+}
+
+function isTransformOnlyChange(
+  node: Exclude<GeometryNode, { kind: "group" | "light" }>,
+  worldTransform: Transform,
+  cached: CachedDerivedRenderMeshEntry
+) {
+  return (
+    cached.sourceKind === node.kind &&
+    cached.name === node.name &&
+    cached.data === node.data &&
+    cached.faces === ("faces" in node.data ? node.data.faces : undefined) &&
+    cached.halfEdges === ("halfEdges" in node.data ? node.data.halfEdges : undefined) &&
+    cached.physics === ("physics" in node.data ? node.data.physics : undefined) &&
+    cached.planes === ("planes" in node.data ? node.data.planes : undefined) &&
+    cached.previewSize === ("previewSize" in node.data ? node.data.previewSize : undefined) &&
+    cached.vertices === ("vertices" in node.data ? node.data.vertices : undefined) &&
+    hasTransformValuesChanged(worldTransform, cached)
+  );
+}
+
+function patchCachedMeshEntryTransform(
+  cached: CachedDerivedRenderMeshEntry,
+  worldTransform: Transform
+): CachedDerivedRenderMeshEntry {
+  return {
+    ...cached,
+    mesh: {
+      ...cached.mesh,
+      pivot: worldTransform.pivot,
+      position: worldTransform.position,
+      rotation: worldTransform.rotation,
+      scale: worldTransform.scale
+    },
+    pivot: worldTransform.pivot,
+    position: structuredClone(worldTransform.position),
+    rotation: structuredClone(worldTransform.rotation),
+    scale: structuredClone(worldTransform.scale),
+    transform: structuredClone(worldTransform)
+  };
+}
+
+/**
+ * Updates only the `blendLayerWeights` attributes on the cached mesh entry, reusing all other
+ * geometry data (positions, indices, normals, UVs, groups). O(faces × verticesPerFace × layers).
+ */
+function patchCachedMeshEntryBlendWeights(
+  cached: CachedDerivedRenderMeshEntry,
+  node: Extract<Exclude<GeometryNode, { kind: "group" | "light" }>, { kind: "mesh" }>,
+  materialsById: Map<MaterialID, Material>
+): CachedDerivedRenderMeshEntry {
+  if (!cached.meshFaceMap || !cached.mesh.surface) {
+    return cached; // Should not happen, but guard defensively
+  }
+
+  const result = recomputeBlendLayerWeightsFromFaceMap(node.data, cached.meshFaceMap, materialsById);
+
+  const patchedSurface = result
+    ? { ...cached.mesh.surface, blendLayerWeights: result.weights }
+    : { ...cached.mesh.surface, blendLayerWeights: undefined };
+
+  const patchedMesh: DerivedRenderMesh = {
+    ...cached.mesh,
+    surface: patchedSurface,
+    materialLayers: result?.layers
+  };
+
+  return {
+    ...cached,
+    data: node.data,
+    mesh: patchedMesh
+  };
 }
 
 function hasTransformValuesChanged(

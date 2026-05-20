@@ -6,6 +6,7 @@ import type {
   InstancingNode,
   Layer,
   LightNode,
+  MaterialTextureVariation,
   MaterialRenderSide,
   MeshNode,
   ModelNode,
@@ -15,23 +16,50 @@ import type {
 } from "@ggez/shared";
 
 export const RUNTIME_SCENE_FORMAT = "web-hammer-engine" as const;
-export const CURRENT_RUNTIME_SCENE_VERSION = 6 as const;
+export const CURRENT_RUNTIME_SCENE_VERSION = 7 as const;
 export const MIN_RUNTIME_SCENE_VERSION = 4 as const;
 export const CURRENT_RUNTIME_WORLD_INDEX_VERSION = 1 as const;
 
 export type RuntimeMaterial = {
   baseColorTexture?: string;
   color: string;
+  emissiveColor?: string;
+  emissiveIntensity?: number;
   id: string;
+  /**
+   * Optional separate metalness texture (blue channel). When present alongside
+   * `roughnessTexture` (and `metallicRoughnessTexture` is absent) it means the
+   * export skipped the expensive offline pixel-composite step and stored the
+   * channels as independent files. Runtimes should assign each map directly.
+   */
+  metalnessTexture?: string;
   metallicFactor: number;
+  /** Combined ORM texture (G=roughness, B=metalness) in glTF convention. */
   metallicRoughnessTexture?: string;
   name: string;
   normalTexture?: string;
+  opacity?: number;
   roughnessFactor: number;
+  /**
+   * Optional separate roughness texture (green channel). See `metalnessTexture`.
+   */
+  roughnessTexture?: string;
   side?: MaterialRenderSide;
+  textureVariation?: MaterialTextureVariation;
+  transparent?: boolean;
 };
 
+export type RuntimePrimitiveMaterialLayer = {
+  material: RuntimeMaterial;
+  opacity: number;
+  weights: number[];
+};
+
+export type RuntimePrimitiveMaterialBlend = RuntimePrimitiveMaterialLayer;
+
 export type RuntimePrimitive = {
+  blendLayers?: RuntimePrimitiveMaterialLayer[];
+  blend?: RuntimePrimitiveMaterialBlend;
   indices: number[];
   material: RuntimeMaterial;
   normals: number[];
@@ -43,7 +71,7 @@ export type RuntimeGeometry = {
   primitives: RuntimePrimitive[];
 };
 
-export type RuntimeLodLevel = "mid" | "low";
+export type RuntimeLodLevel = string;
 
 export type RuntimeGeometryLod = {
   geometry: RuntimeGeometry;
@@ -51,8 +79,12 @@ export type RuntimeGeometryLod = {
 };
 
 export type RuntimeModelLod = {
-  assetId: string;
+  assetId?: string;
+  format?: "glb" | "gltf" | "obj";
   level: RuntimeLodLevel;
+  materialMtlText?: string;
+  path: string;
+  texturePath?: string;
 };
 
 export type RuntimeGeometryNode =
@@ -122,6 +154,11 @@ export type RuntimeWorldIndex = {
   version: number;
 };
 
+export type RuntimeWorldBundle = {
+  files: RuntimeBundleFile[];
+  index: RuntimeWorldIndex;
+};
+
 export type RuntimeAudioDescriptor = {
   autoPlay: boolean;
   channel: string;
@@ -156,3 +193,4 @@ export type WebHammerEngineScene = RuntimeScene;
 export type WebHammerEngineBundleFile = RuntimeBundleFile;
 export type WebHammerEngineBundle = RuntimeBundle;
 export type WebHammerRuntimePhysicsDescriptor = RuntimePhysicsDescriptor;
+export type WebHammerRuntimeWorldBundle = RuntimeWorldBundle;

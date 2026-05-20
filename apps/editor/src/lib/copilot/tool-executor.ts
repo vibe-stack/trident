@@ -378,6 +378,15 @@ async function executeToolInner(editor: EditorCore, name: string, args: Args, co
       }
 
       const transform = makeTransform(vec3(num(args, "x"), num(args, "y"), num(args, "z")));
+
+      if (lightType === "directional" || lightType === "spot") {
+        data.target = vec3(
+          num(args, "targetX", transform.position.x),
+          num(args, "targetY", 0),
+          num(args, "targetZ", transform.position.z)
+        );
+      }
+
       const label = str(args, "name") || createLightNodeLabel(lightType);
       const { command, nodeId } = createPlaceLightNodeCommand(scene, transform, { data, name: label });
       editor.execute(command);
@@ -385,7 +394,7 @@ async function executeToolInner(editor: EditorCore, name: string, args: Args, co
     }
 
     case "place_entity": {
-      const entityType = str(args, "type", "player-spawn") as "npc-spawn" | "player-spawn" | "smart-object";
+      const entityType = str(args, "type", "player-spawn") as "npc-spawn" | "player-spawn" | "smart-object" | "vfx-object";
       const entityCount = Array.from(scene.entities.values()).filter((e) => e.type === entityType).length;
       const entity = createDefaultEntity(entityType, vec3(num(args, "x"), num(args, "y"), num(args, "z")), entityCount);
 
@@ -583,6 +592,7 @@ async function executeToolInner(editor: EditorCore, name: string, args: Args, co
       if (typeof args.fogColor === "string") next.world.fogColor = args.fogColor as string;
       if (typeof args.fogNear === "number") next.world.fogNear = args.fogNear;
       if (typeof args.fogFar === "number") next.world.fogFar = args.fogFar;
+      if (typeof args.toneMapping === "string") next.world.toneMapping = args.toneMapping as SceneSettings["world"]["toneMapping"];
       if (typeof args.cameraMode === "string") next.player.cameraMode = args.cameraMode as "fps" | "third-person" | "top-down";
       if (typeof args.playerHeight === "number") next.player.height = args.playerHeight;
       if (typeof args.movementSpeed === "number") next.player.movementSpeed = args.movementSpeed;

@@ -1,11 +1,12 @@
 import { Billboard, TransformControls } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { Entity, GeometryNode, Transform } from "@ggez/shared";
 import { isInstancingNode, localizeTransform, resolveTransformPivot, toTuple, vec3, type Vec3 } from "@ggez/shared";
 import { objectToTransform, rebaseTransformPivot, worldPointToNodeLocal } from "@/viewport/utils/geometry";
 import { resolveViewportSnapSize } from "@/viewport/utils/snap";
 import type { ViewportCanvasProps } from "@/viewport/types";
+import { useTransformControlsCameraLock } from "@/viewport/hooks/useTransformControlsCameraLock";
 import { Group as ThreeGroup, Vector3 } from "three";
 
 const tempCameraPosition = new Vector3();
@@ -14,6 +15,7 @@ const tempPivotCameraDirection = new Vector3();
 
 export function ObjectTransformGizmo({
   activeToolId,
+  cameraControlsRef,
   onDragStateChange,
   onPreviewEntityTransform,
   onPreviewNodeTransform,
@@ -41,6 +43,7 @@ export function ObjectTransformGizmo({
   | "transformMode"
   | "viewport"
 > & {
+  cameraControlsRef?: RefObject<any | null>;
   onDragStateChange?: (dragging: boolean) => void;
   selectedEntityWorldTransform?: Transform;
   selectedNode?: GeometryNode;
@@ -48,8 +51,24 @@ export function ObjectTransformGizmo({
   selectedWorldNodes: GeometryNode[];
 }) {
   const baselineTransformRef = useRef<Transform | undefined>(undefined);
-  const pivotTargetRef = useRef<ThreeGroup | null>(null);
-  const scene = useThree((state) => state.scene);
+  const previewFrameRef = useRef<number | null>(null);
+  const pivotControlsRef = useRef<any>(null);
+  const objectControlsRef = useRef<any>(null);
+  const pendingPreviewRef = useRef<
+    | {
+        entityId: string;
+        kind: "entity";
+        transform: Transform;
+      }
+    | {
+        kind: "node";
+        nodeId: string;
+        transform: Transform;
+      }
+    | null
+  >(null);
+  const [pivotTarget, setPivotTarget] = useState<ThreeGroup | null>(null);
+  const [transformTarget, setTransformTarget] = useState<ThreeGroup | null>(null);
   const [activePivotNodeId, setActivePivotNodeId] = useState<string>();
   const selectedTarget: GeometryNode | Entity | undefined = selectedNode ?? selectedEntity;
   const selectedTargetWorldTransform = selectedNode
@@ -58,13 +77,73 @@ export function ObjectTransformGizmo({
       ? selectedEntityWorldTransform ?? selectedEntity.transform
       : undefined;
   const selectedObjectId = selectedTarget?.id ?? selectedNodeIds[0];
-  const selectedObject = selectedObjectId
-    ? scene.getObjectByName(selectedNode ? `node:${selectedObjectId}` : `entity:${selectedObjectId}`)
-    : undefined;
   const snapSize = resolveViewportSnapSize(viewport);
   const activePivotNode = activePivotNodeId ? selectedNodes.find((node) => node.id === activePivotNodeId) : undefined;
   const activePivotWorldNode = activePivotNodeId ? selectedWorldNodes.find((node) => node.id === activePivotNodeId) : undefined;
-  const pivotEditingEnabled = (activeToolId === "transform" || activeToolId === "mesh-edit") && (!selectedNode || !isInstancingNode(selectedNode));
+  const pivotEditingEnabled = (activeToolId === "transform" || activeToolId === "mesh-edit") && Boolean(selectedNode && !isInstancingNode(selectedNode));
+  const showObjectTransformGizmo =
+    activeToolId === "transform" && !activePivotNode && Boolean(selectedObjectId && selectedTarget && selectedTargetWorldTransform && transformTarget);
+  const handlePivotTargetRef = useCallback((object: ThreeGroup | null) => {
+    setPivotTarget(object);
+  }, []);
+  const handleTransformTargetRef = useCallback((object: ThreeGroup | null) => {
+    setTransformTarget(object);
+  }, []);
+  const { endDrag } = useTransformControlsCameraLock({
+    cameraControlsRef,
+    onDragStateChange,
+    transformControlsRefs: [pivotControlsRef, objectControlsRef]
+  });
+
+  const cancelScheduledPreview = useCallback(() => {
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
+
+    pendingPreviewRef.current = null;
+  }, []);
+
+  const schedulePreview = useCallback(
+    (
+      pendingPreview:
+        | {
+            entityId: string;
+            kind: "entity";
+            transform: Transform;
+          }
+        | {
+            kind: "node";
+            nodeId: string;
+            transform: Transform;
+          }
+    ) => {
+      pendingPreviewRef.current = pendingPreview;
+
+      if (previewFrameRef.current !== null) {
+        return;
+      }
+
+      previewFrameRef.current = requestAnimationFrame(() => {
+        previewFrameRef.current = null;
+        const nextPreview = pendingPreviewRef.current;
+
+        if (!nextPreview) {
+          return;
+        }
+
+        pendingPreviewRef.current = null;
+
+        if (nextPreview.kind === "node") {
+          onPreviewNodeTransform(nextPreview.nodeId, nextPreview.transform);
+          return;
+        }
+
+        onPreviewEntityTransform(nextPreview.entityId, nextPreview.transform);
+      });
+    },
+    [onPreviewEntityTransform, onPreviewNodeTransform]
+  );
 
   useEffect(() => {
     if (!pivotEditingEnabled) {
@@ -79,6 +158,16 @@ export function ObjectTransformGizmo({
       baselineTransformRef.current = undefined;
     }
   }, [activePivotNodeId, selectedNodes]);
+
+  useEffect(() => {
+    baselineTransformRef.current = undefined;
+  }, [selectedObjectId]);
+
+  useEffect(() => {
+    return () => {
+      cancelScheduledPreview();
+    };
+  }, [cancelScheduledPreview]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -115,31 +204,40 @@ export function ObjectTransformGizmo({
     };
   }, [pivotEditingEnabled, selectedNode]);
 
-  if (!pivotEditingEnabled) {
+  if (!pivotEditingEnabled && !showObjectTransformGizmo && !selectedTargetWorldTransform) {
     return null;
   }
 
   const pivot = selectedTarget ? resolveTransformPivot(selectedTarget.transform) : vec3(0, 0, 0);
-  const showObjectTransformGizmo =
-    activeToolId === "transform" && !activePivotNode && Boolean(selectedObjectId && selectedObject && selectedTarget);
 
   return (
     <>
-      {selectedNodes.map((node) =>
-        node.id === activePivotNodeId ? null : (
-          <PivotHandleMarker
-            key={node.id}
-            onSelect={() => {
-              setActivePivotNodeId(node.id);
-            }}
-            position={(selectedWorldNodes.find((candidate) => candidate.id === node.id) ?? node).transform.position}
-            selected={false}
-          />
-        )
-      )}
+      {selectedTargetWorldTransform ? (
+        <group
+          position={toTuple(selectedTargetWorldTransform.position)}
+          ref={handleTransformTargetRef}
+          rotation={toTuple(selectedTargetWorldTransform.rotation)}
+          scale={toTuple(selectedTargetWorldTransform.scale)}
+        />
+      ) : null}
 
-      {activePivotWorldNode ? (
-        <group ref={pivotTargetRef} position={toTuple(activePivotWorldNode.transform.position)}>
+      {pivotEditingEnabled
+        ? selectedNodes.map((node) =>
+            node.id === activePivotNodeId ? null : (
+              <PivotHandleMarker
+                key={node.id}
+                onSelect={() => {
+                  setActivePivotNodeId(node.id);
+                }}
+                position={(selectedWorldNodes.find((candidate) => candidate.id === node.id) ?? node).transform.position}
+                selected={false}
+              />
+            )
+          )
+        : null}
+
+      {pivotEditingEnabled && activePivotWorldNode ? (
+        <group position={toTuple(activePivotWorldNode.transform.position)} ref={handlePivotTargetRef}>
           <PivotHandleMarker
             onSelect={() => {
               setActivePivotNodeId(activePivotWorldNode.id);
@@ -150,47 +248,53 @@ export function ObjectTransformGizmo({
         </group>
       ) : null}
 
-      {activePivotNode && activePivotWorldNode && pivotTargetRef.current ? (
+      {pivotEditingEnabled && activePivotNode && activePivotWorldNode && pivotTarget ? (
         <TransformControls
+          ref={pivotControlsRef as any}
           enabled
           mode="translate"
-          object={pivotTargetRef.current}
+          object={pivotTarget as any}
           onMouseDown={() => {
-            onDragStateChange?.(true);
             baselineTransformRef.current = structuredClone(activePivotNode.transform);
           }}
           onMouseUp={() => {
-            if (!baselineTransformRef.current || !pivotTargetRef.current) {
-              onDragStateChange?.(false);
+            if (!baselineTransformRef.current || !pivotTarget) {
+              cancelScheduledPreview();
+              endDrag();
               return;
             }
 
-            const worldPosition = pivotTargetRef.current.getWorldPosition(new Vector3());
+            const worldPosition = pivotTarget.getWorldPosition(new Vector3());
             const nextPivot = worldPointToNodeLocal(
               vec3(worldPosition.x, worldPosition.y, worldPosition.z),
               activePivotWorldNode.transform
             );
 
+            cancelScheduledPreview();
             onUpdateNodeTransform(
               activePivotNode.id,
               rebaseTransformPivot(baselineTransformRef.current, nextPivot),
               baselineTransformRef.current
             );
             baselineTransformRef.current = undefined;
-            onDragStateChange?.(false);
+            endDrag();
           }}
           onObjectChange={() => {
-            if (!baselineTransformRef.current || !pivotTargetRef.current) {
+            if (!baselineTransformRef.current || !pivotTarget) {
               return;
             }
 
-            const worldPosition = pivotTargetRef.current.getWorldPosition(new Vector3());
+            const worldPosition = pivotTarget.getWorldPosition(new Vector3());
             const nextPivot = worldPointToNodeLocal(
               vec3(worldPosition.x, worldPosition.y, worldPosition.z),
               activePivotWorldNode.transform
             );
 
-            onPreviewNodeTransform(activePivotNode.id, rebaseTransformPivot(baselineTransformRef.current, nextPivot));
+            schedulePreview({
+              kind: "node",
+              nodeId: activePivotNode.id,
+              transform: rebaseTransformPivot(baselineTransformRef.current, nextPivot)
+            });
           }}
           showX
           showY
@@ -199,47 +303,58 @@ export function ObjectTransformGizmo({
         />
       ) : null}
 
-      {showObjectTransformGizmo && selectedObjectId && selectedObject && selectedTarget && selectedTargetWorldTransform ? (
+      {showObjectTransformGizmo && selectedObjectId && transformTarget && selectedTarget && selectedTargetWorldTransform ? (
         <TransformControls
+          ref={objectControlsRef as any}
           enabled
           mode={transformMode}
-          object={selectedObject}
+          object={transformTarget as any}
           onMouseDown={() => {
-            onDragStateChange?.(true);
             baselineTransformRef.current = structuredClone(selectedTarget.transform);
           }}
           onMouseUp={() => {
             if (!baselineTransformRef.current) {
-              onDragStateChange?.(false);
+              cancelScheduledPreview();
+              endDrag();
               return;
             }
 
-            const nextWorldTransform = objectToTransform(selectedObject, pivot);
+            const nextWorldTransform = objectToTransform(transformTarget, pivot);
             const parentWorldTransform = selectedTarget.parentId
               ? selectedWorldNodes.find((node) => node.id === selectedTarget.parentId)?.transform
               : undefined;
             const nextTransform = localizeTransform(nextWorldTransform, parentWorldTransform);
 
             if (selectedNode) {
+              cancelScheduledPreview();
               onUpdateNodeTransform(selectedObjectId, nextTransform, baselineTransformRef.current);
             } else if (selectedEntity) {
+              cancelScheduledPreview();
               onUpdateEntityTransform(selectedObjectId, nextTransform, baselineTransformRef.current);
             }
 
             baselineTransformRef.current = undefined;
-            onDragStateChange?.(false);
+            endDrag();
           }}
           onObjectChange={() => {
-            const nextWorldTransform = objectToTransform(selectedObject, pivot);
+            const nextWorldTransform = objectToTransform(transformTarget, pivot);
             const parentWorldTransform = selectedTarget.parentId
               ? selectedWorldNodes.find((node) => node.id === selectedTarget.parentId)?.transform
               : undefined;
             const nextTransform = localizeTransform(nextWorldTransform, parentWorldTransform);
 
             if (selectedNode) {
-              onPreviewNodeTransform(selectedObjectId, nextTransform);
+              schedulePreview({
+                kind: "node",
+                nodeId: selectedObjectId,
+                transform: nextTransform
+              });
             } else if (selectedEntity) {
-              onPreviewEntityTransform(selectedObjectId, nextTransform);
+              schedulePreview({
+                entityId: selectedObjectId,
+                kind: "entity",
+                transform: nextTransform
+              });
             }
           }}
           rotationSnap={Math.PI / 12}
@@ -283,7 +398,7 @@ function PivotHandleMarker({
     const handleOffset = selected ? 0 : worldUnitsPerPixel * 22;
     const forwardOffset = worldUnitsPerPixel * (selected ? 10 : 14);
 
-    camera.getWorldPosition(tempCameraPosition);
+    camera.getWorldPosition(tempCameraPosition as any);
     tempPivotCameraDirection
       .subVectors(tempCameraPosition, tempPivotWorldPosition)
       .normalize()
@@ -329,7 +444,7 @@ function PivotHandleMarker({
           />
         </mesh>
 
-        <Billboard ref={billboardRef}>
+        <Billboard ref={billboardRef as any}>
           <group
             onClick={(event) => {
               event.stopPropagation();

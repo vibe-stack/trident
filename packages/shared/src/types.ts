@@ -9,13 +9,15 @@ export type HalfEdgeID = string;
 export type MetadataValue = string | number | boolean;
 export type GameplayValue = string | number | boolean | null | GameplayObject | GameplayValue[];
 export type PrimitiveShape = "cone" | "cube" | "cylinder" | "sphere";
-export type BrushShape = PrimitiveShape | "custom-polygon" | "ramp" | "stairs";
+export type BrushShape = PrimitiveShape | "custom-polygon" | "plane" | "ramp" | "stairs";
 export type PrimitiveRole = "brush" | "prop";
 export type PropBodyType = "dynamic" | "fixed" | "kinematicPosition";
-export type PropColliderShape = "ball" | "cone" | "cuboid" | "cylinder" | "trimesh";
+export type PropColliderShape = "ball" | "capsule" | "cone" | "cuboid" | "cylinder" | "trimesh";
+export type PropColliderDefinitionShape = "ball" | "capsule" | "cone" | "cuboid" | "cylinder";
 export type LightType = "ambient" | "directional" | "hemisphere" | "point" | "spot";
-export type EntityType = "npc-spawn" | "player-spawn" | "smart-object";
+export type EntityType = "npc-spawn" | "player-spawn" | "smart-object" | "vfx-object";
 export type PlayerCameraMode = "fps" | "third-person" | "top-down";
+export type SceneToneMapping = "aces" | "cineon" | "linear" | "neutral" | "none" | "reinhard";
 
 export type Vec3 = {
   x: number;
@@ -50,6 +52,7 @@ export type Face = {
   vertexIds: VertexID[];
   materialId?: MaterialID;
   uvOffset?: Vec2;
+  uvRotation?: number;
   uvScale?: Vec2;
 };
 
@@ -77,21 +80,42 @@ export type EditableMeshFace = {
   halfEdge: HalfEdgeID;
   materialId?: MaterialID;
   uvOffset?: Vec2;
+  uvRotation?: number;
   uvScale?: Vec2;
   uvs?: Vec2[];
 };
+
+export type EditableMeshMaterialLayer = {
+  materialId: MaterialID;
+  opacity: number;
+  weights: number[];
+};
+
+export type EditableMeshMaterialBlend = EditableMeshMaterialLayer;
 
 export type EditableMesh = {
   vertices: EditableMeshVertex[];
   halfEdges: EditableMeshHalfEdge[];
   faces: EditableMeshFace[];
+  materialLayers?: EditableMeshMaterialLayer[];
+  materialBlend?: EditableMeshMaterialBlend;
   physics?: PropPhysics;
   role?: PrimitiveRole;
+  shading?: "flat" | "smooth";
 };
 
 export type ModelReference = {
   assetId: AssetID;
   path: string;
+  physics?: PropPhysics;
+};
+
+export type PropColliderDefinition = {
+  id: string;
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
+  shape: PropColliderDefinitionShape;
 };
 
 export type PropPhysics = {
@@ -99,6 +123,7 @@ export type PropPhysics = {
   bodyType: PropBodyType;
   canSleep: boolean;
   ccd: boolean;
+  colliderDefinitions?: PropColliderDefinition[];
   colliderShape: PropColliderShape;
   contactSkin: number;
   density?: number;
@@ -137,6 +162,12 @@ export type LightNodeData = {
   groundColor?: string;
   intensity: number;
   penumbra?: number;
+  shadowBias?: number;
+  shadowBlurRadius?: number;
+  shadowBlurSamples?: number;
+  shadowMapSize?: number;
+  shadowNormalBias?: number;
+  shadowRadius?: number;
   target?: Vec3;
   type: LightType;
 };
@@ -199,6 +230,11 @@ export type MaterialCategory = "blockout" | "custom" | "flat";
 
 export type MaterialRenderSide = "back" | "double" | "front";
 
+export type MaterialTextureVariation = {
+  enabled: boolean;
+  scale: number;
+};
+
 export type TextureKind = "color" | "normal" | "metalness" | "roughness";
 
 export type TextureSource = "ai" | "import" | "upload";
@@ -222,7 +258,11 @@ export type Material = {
   name: string;
   category?: MaterialCategory;
   color: string;
+  emissiveColor?: string;
+  emissiveIntensity?: number;
+  opacity?: number;
   side?: MaterialRenderSide;
+  transparent?: boolean;
   colorTexture?: string;
   edgeColor?: string;
   edgeThickness?: number;
@@ -232,6 +272,7 @@ export type Material = {
   path?: string;
   roughness?: number;
   roughnessTexture?: string;
+  textureVariation?: MaterialTextureVariation;
 };
 
 export type Layer = {
@@ -301,11 +342,15 @@ export type SceneSkyboxSettings = {
   source: string;
 };
 
+export type WorldLodLevelDefinition = {
+  distance: number;
+  id: string;
+  label: string;
+};
+
 export type WorldLodSettings = {
-  bakedAt?: string;
   enabled: boolean;
-  lowDetailRatio: number;
-  midDetailRatio: number;
+  levels: WorldLodLevelDefinition[];
 };
 
 export type WorldSettings = {
@@ -318,6 +363,7 @@ export type WorldSettings = {
   lod: WorldLodSettings;
   physicsEnabled: boolean;
   skybox: SceneSkyboxSettings;
+  toneMapping: SceneToneMapping;
 };
 
 export type SceneSettings = {

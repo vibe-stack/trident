@@ -1,6 +1,6 @@
 {
   "name": "@ggez/runtime-physics-rapier",
-  "version": "0.1.4",
+  "version": "0.1.12",
   "description": "Rapier physics adapters for Web Hammer runtime scenes.",
   "license": "MIT",
   "type": "module",
@@ -41,6 +41,6 @@
     "@ggez/render-pipeline": "workspace:*",
     "@ggez/runtime-format": "workspace:*",
     "@ggez/shared": "workspace:*",
-    "three": "^0.181.1"
+    "three": "^0.184.0"
   }
 }

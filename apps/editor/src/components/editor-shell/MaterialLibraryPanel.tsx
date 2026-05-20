@@ -5,6 +5,7 @@ import {
   Cuboid,
   FolderOpen,
   Image,
+  Images,
   Lock,
   Mountain,
   Pencil,
@@ -20,7 +21,11 @@ import {
 } from "lucide-react";
 import {
   createBlockoutTextureDataUri,
+  createTextureRecordMap,
+  resolveTextureReferenceSource,
+  textureReferenceMatches,
   vec2,
+  type EditableMesh,
   type GeometryNode,
   type Material,
   type MaterialRenderSide,
@@ -29,6 +34,7 @@ import {
   type Vec2
 } from "@ggez/shared";
 import { AnimatePresence, motion } from "motion/react";
+import { MeshFaceUvEditorDialog } from "@/components/editor-shell/MeshFaceUvEditorDialog";
 import { TextureBrowserOverlay } from "@/components/editor-shell/TextureBrowserOverlay";
 import { Button } from "@/components/ui/button";
 import { DragInput } from "@/components/ui/drag-input";
@@ -58,11 +64,17 @@ type MaterialLibraryPanelProps = {
     faceIds: string[],
     uvOffset: Vec2,
   ) => void;
+  onSetUvRotation: (
+    scope: "faces" | "object",
+    faceIds: string[],
+    uvRotation: number,
+  ) => void;
   onSetUvScale: (
     scope: "faces" | "object",
     faceIds: string[],
     uvScale: Vec2,
   ) => void;
+  onUpdateMeshData: (nodeId: string, mesh: EditableMesh, beforeMesh?: EditableMesh) => void;
   onUpsertMaterial: (material: Material) => void;
   onUpsertTexture: (texture: TextureRecord) => void;
   selectedFaceIds: string[];
@@ -103,7 +115,9 @@ export function MaterialLibraryPanel({
   onDeleteTexture,
   onSelectMaterial,
   onSetUvOffset,
+  onSetUvRotation,
   onSetUvScale,
+  onUpdateMeshData,
   onUpsertMaterial,
   onUpsertTexture,
   selectedFaceIds,
@@ -112,6 +126,7 @@ export function MaterialLibraryPanel({
   textures,
 }: MaterialLibraryPanelProps) {
   const [activeMaterialId, setActiveMaterialId] = useState(selectedMaterialId);
+  const texturesById = useMemo(() => createTextureRecordMap(textures), [textures]);
   const selectedMaterial = useMemo(
     () => materials.find((material) => material.id === activeMaterialId),
     [activeMaterialId, materials],
@@ -146,13 +161,16 @@ export function MaterialLibraryPanel({
   const [scope, setScope] = useState<"faces" | "object">("object");
   const [uvDraft, setUvDraft] = useState<Vec2>(() => vec2(1, 1));
   const [uvOffsetDraft, setUvOffsetDraft] = useState<Vec2>(() => vec2(0, 0));
+  const [uvRotationDraft, setUvRotationDraft] = useState(0);
   const [uvLocked, setUvLocked] = useState(true);
+  const [meshUvEditorOpen, setMeshUvEditorOpen] = useState(false);
   const [textureBrowserState, setTextureBrowserState] = useState<{
     field: TextureField;
     kind: TextureKind;
     label: string;
     mode: "generate" | "library";
   } | null>(null);
+  const [standaloneTextureBrowserOpen, setStandaloneTextureBrowserOpen] = useState(false);
   const materialFaces =
     selectedNode &&
     (selectedNode.kind === "brush" || selectedNode.kind === "mesh")
@@ -178,6 +196,10 @@ export function MaterialLibraryPanel({
     (canApplyToFaces
       ? selectedFaces[0]?.uvOffset
       : materialFaces[0]?.uvOffset) ?? vec2(0, 0);
+  const targetUvRotation =
+    (canApplyToFaces
+      ? selectedFaces[0]?.uvRotation
+      : materialFaces[0]?.uvRotation) ?? 0;
 
   useEffect(() => {
     setActiveMaterialId(selectedMaterialId);
@@ -217,6 +239,10 @@ export function MaterialLibraryPanel({
     selectedFaceIds.join("|"),
   ]);
 
+  useEffect(() => {
+    setUvRotationDraft(radiansToDegrees(targetUvRotation));
+  }, [targetUvRotation, selectedNode?.id, selectedFaceIds.join("|")]);
+
   const applyUvAxis = (axis: "x" | "y", value: number) => {
     setUvDraft((current) => {
       if (uvLocked) {
@@ -233,6 +259,10 @@ export function MaterialLibraryPanel({
     );
   };
 
+  const applyUvRotation = (value: number) => {
+    setUvRotationDraft(value);
+  };
+
   const selectMaterial = (materialId: string) => {
     setActiveMaterialId(materialId);
     onSelectMaterial(materialId);
@@ -245,6 +275,31 @@ export function MaterialLibraryPanel({
     Boolean(selectedMaterial) &&
     canApplyToObject &&
     (resolvedScope === "object" || canApplyToFaces);
+  const selectedMeshFaceId =
+    selectedNode?.kind === "mesh" && resolvedScope === "faces" && selectedFaceIds.length === 1
+      ? selectedFaceIds[0]
+      : undefined;
+  const selectedMeshFace =
+    selectedNode?.kind === "mesh" && selectedMeshFaceId
+      ? selectedNode.data.faces.find((face) => face.id === selectedMeshFaceId)
+      : undefined;
+
+  const handleApplyMeshFaceUvs = (uvs: Vec2[]) => {
+    if (!selectedNode || selectedNode.kind !== "mesh" || !selectedMeshFaceId) {
+      return;
+    }
+
+    const beforeMesh = structuredClone(selectedNode.data);
+    const nextMesh = structuredClone(selectedNode.data);
+    const nextFace = nextMesh.faces.find((face) => face.id === selectedMeshFaceId);
+
+    if (!nextFace) {
+      return;
+    }
+
+    nextFace.uvs = uvs.map((uv) => vec2(uv.x, uv.y));
+    onUpdateMeshData(selectedNode.id, nextMesh, beforeMesh);
+  };
 
   const saveAsNewMaterial = () => {
     const material = {
@@ -295,6 +350,7 @@ export function MaterialLibraryPanel({
     onApplyMaterial(activeMaterialId, resolvedScope, resolvedFaceIds);
     onSetUvScale(resolvedScope, resolvedFaceIds, uvDraft);
     onSetUvOffset(resolvedScope, resolvedFaceIds, uvOffsetDraft);
+    onSetUvRotation(resolvedScope, resolvedFaceIds, degreesToRadians(uvRotationDraft));
   };
 
   const beginNewMaterial = () => {
@@ -333,7 +389,7 @@ export function MaterialLibraryPanel({
 
     setDraftMaterial((current) => ({
       ...current,
-      [textureBrowserState.field]: texture.dataUrl,
+      [textureBrowserState.field]: texture.id,
     }));
   };
 
@@ -345,7 +401,7 @@ export function MaterialLibraryPanel({
         const field = TEXTURE_FIELD_BY_KIND[texture.kind];
         next = {
           ...next,
-          [field]: texture.dataUrl,
+          [field]: texture.id,
         };
       }
 
@@ -358,7 +414,7 @@ export function MaterialLibraryPanel({
       const next = { ...current };
 
       (["colorTexture", "normalTexture", "metalnessTexture", "roughnessTexture"] as const).forEach((field) => {
-        if (next[field] === texture.dataUrl) {
+        if (textureReferenceMatches(next[field], texture)) {
           next[field] = undefined;
         }
       });
@@ -372,7 +428,21 @@ export function MaterialLibraryPanel({
   return (
     <>
       <div className="flex h-full w-full min-h-0 flex-col overflow-hidden">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-1 pb-3 backdrop-blur-xl">
+        <div className="sticky top-0 z-10 flex flex-col gap-2 px-1 pb-3 backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium tracking-[0.18em] text-foreground/42 uppercase">
+              Materials
+            </span>
+            <Button
+              aria-label="Texture library"
+              onClick={() => setStandaloneTextureBrowserOpen(true)}
+              size="icon-xs"
+              title="Texture library"
+              variant="ghost"
+            >
+              <Images />
+            </Button>
+          </div>
           <div className="grid w-full grid-cols-2 items-center justify-center gap-1 rounded-2xl bg-white/5 p-1">
             <button
               className={cn(
@@ -484,7 +554,7 @@ export function MaterialLibraryPanel({
                         style={{
                           backgroundColor: material.color,
                           backgroundImage: material.colorTexture
-                            ? `url(${material.colorTexture})`
+                            ? `url(${resolveTextureReferenceSource(material.colorTexture, texturesById)})`
                             : undefined,
                         }}
                       />
@@ -625,6 +695,51 @@ export function MaterialLibraryPanel({
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <div className="px-0.5 text-[10px] font-medium tracking-[0.16em] text-foreground/34 uppercase">
+                  Rotation
+                </div>
+                <DragInput
+                  compact
+                  label="Deg"
+                  onChange={applyUvRotation}
+                  precision={1}
+                  step={1}
+                  value={uvRotationDraft}
+                />
+              </div>
+              {selectedNode?.kind === "mesh" ? (
+                <div className="space-y-2 rounded-xl bg-white/4 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-medium tracking-[0.16em] text-foreground/34 uppercase">
+                        Face UVs
+                      </div>
+                      <div className="mt-1 text-[11px] text-foreground/52">
+                        Use explicit per-corner UVs for irregular atlas regions.
+                      </div>
+                    </div>
+                    <Button
+                      disabled={!selectedMeshFaceId}
+                      onClick={() => setMeshUvEditorOpen(true)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Edit UVs
+                    </Button>
+                  </div>
+                  {!selectedMeshFaceId ? (
+                    <div className="text-[11px] text-foreground/40">
+                      Select exactly one mesh face in face edit mode to edit explicit UVs.
+                    </div>
+                  ) : selectedMeshFace?.uvs?.length ? (
+                    <div className="text-[11px] text-emerald-300/80">
+                      Custom face UVs are active. Scale/offset/rotation will reset this face back to planar mapping.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </ScrollArea>
@@ -654,6 +769,30 @@ export function MaterialLibraryPanel({
         targetKind={textureBrowserState?.kind ?? "color"}
         targetLabel={textureBrowserState?.label ?? "Texture"}
         textures={textures}
+      />
+
+      <TextureBrowserOverlay
+        initialMode="library"
+        onApplyGeneratedTextures={() => {}}
+        onClose={() => setStandaloneTextureBrowserOpen(false)}
+        onCreateTexture={onUpsertTexture}
+        onDeleteTexture={handleDeleteTexture}
+        onSelectTexture={() => {}}
+        open={standaloneTextureBrowserOpen}
+        standalone
+        targetKind="color"
+        targetLabel="Texture Library"
+        textures={textures}
+      />
+
+      <MeshFaceUvEditorDialog
+        faceId={selectedMeshFaceId}
+        mesh={selectedNode?.kind === "mesh" ? selectedNode.data : undefined}
+        onApply={handleApplyMeshFaceUvs}
+        onOpenChange={setMeshUvEditorOpen}
+        open={meshUvEditorOpen}
+        textureName={selectedMaterial?.name}
+        textureSource={resolveTextureReferenceSource(selectedMaterial?.colorTexture, texturesById)}
       />
     </>
   );
@@ -717,6 +856,20 @@ function MaterialEditorForm({
             value={draftMaterial.color}
           />
         </label>
+        <label className="flex shrink-0 flex-col gap-1">
+          <PanelLabel>Emit</PanelLabel>
+          <input
+            className="h-9 w-10 rounded-xl bg-transparent p-0"
+            onChange={(event) =>
+              onChangeDraft((current) => ({
+                ...current,
+                emissiveColor: event.target.value,
+              }))
+            }
+            type="color"
+            value={draftMaterial.emissiveColor ?? "#000000"}
+          />
+        </label>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -746,6 +899,57 @@ function MaterialEditorForm({
         />
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <DragInput
+          compact
+          label="Emit"
+          max={10}
+          min={0}
+          onChange={(value) =>
+            onChangeDraft((current) => ({ ...current, emissiveIntensity: value }))
+          }
+          precision={2}
+          step={0.05}
+          value={draftMaterial.emissiveIntensity ?? 0}
+        />
+        <DragInput
+          compact
+          disabled={!draftMaterial.transparent}
+          label="Opacity"
+          max={1}
+          min={0}
+          onChange={(value) =>
+            onChangeDraft((current) => ({ ...current, opacity: value }))
+          }
+          precision={2}
+          step={0.01}
+          value={draftMaterial.opacity ?? 1}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <PanelLabel>Transparency</PanelLabel>
+        <Button
+          className={cn(
+            "w-full justify-between rounded-xl bg-white/4 text-xs text-foreground/70 hover:bg-white/7",
+            draftMaterial.transparent && "bg-emerald-500/14 text-emerald-200"
+          )}
+          onClick={() =>
+            onChangeDraft((current) => ({
+              ...current,
+              opacity: current.opacity ?? 1,
+              transparent: !current.transparent,
+            }))
+          }
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <span>Blend Transparent</span>
+          <span>{draftMaterial.transparent ? "On" : "Off"}</span>
+        </Button>
+      </div>
+
       <div className="space-y-2">
         <PanelLabel>Render Side</PanelLabel>
         <Select
@@ -771,9 +975,55 @@ function MaterialEditorForm({
       </div>
 
       <div className="space-y-2">
+        <PanelLabel>Voronoi Variation</PanelLabel>
+        <Button
+          className={cn(
+            "w-full justify-between rounded-xl bg-white/4 text-xs text-foreground/70 hover:bg-white/7",
+            draftMaterial.textureVariation?.enabled && "bg-emerald-500/14 text-emerald-200"
+          )}
+          onClick={() =>
+            onChangeDraft((current) => ({
+              ...current,
+              textureVariation: current.textureVariation?.enabled
+                ? undefined
+                : {
+                    enabled: true,
+                    scale: current.textureVariation?.scale ?? 4,
+                  },
+            }))
+          }
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <span>Cell Rotate + Blend</span>
+          <span>{draftMaterial.textureVariation?.enabled ? "On" : "Off"}</span>
+        </Button>
+        <DragInput
+          compact
+          disabled={!draftMaterial.textureVariation?.enabled}
+          label="Scale"
+          max={32}
+          min={0.01}
+          onChange={(value) =>
+            onChangeDraft((current) => ({
+              ...current,
+              textureVariation: {
+                enabled: true,
+                scale: value,
+              },
+            }))
+          }
+          precision={2}
+          step={0.1}
+          value={draftMaterial.textureVariation?.scale ?? 4}
+        />
+      </div>
+
+      <div className="space-y-2">
         {TEXTURE_FIELDS.map(({ field, icon: Icon, label }) => (
           <div
-            className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/3 px-2 py-2"
+            className="flex items-center gap-2 rounded-xl bg-white/4 px-2 py-2"
             key={field}
           >
             <div
@@ -873,16 +1123,31 @@ function createDraftMaterial(material?: Material): Material {
     ? {
         ...structuredClone(material),
         category: "custom",
+        emissiveColor: material.emissiveColor ?? "#000000",
+        emissiveIntensity: material.emissiveIntensity ?? 0,
         metalness: material.metalness ?? 0,
+        opacity: material.opacity ?? 1,
         roughness: material.roughness ?? 0.8,
+        textureVariation: material.textureVariation
+          ? {
+              enabled: material.textureVariation.enabled,
+              scale: material.textureVariation.scale,
+            }
+          : undefined,
+        transparent: material.transparent ?? false,
       }
     : {
         category: "custom",
         color: "#b8c0cc",
+        emissiveColor: "#000000",
+        emissiveIntensity: 0,
         id: "material:custom:draft",
         metalness: 0,
         name: "Custom Material",
+        opacity: 1,
         roughness: 0.8,
+        textureVariation: undefined,
+        transparent: false,
       };
 }
 
@@ -895,4 +1160,12 @@ function createCustomMaterialId(name: string) {
       .replace(/(^-|-$)/g, "") || "material";
 
   return `material:custom:${slug}:${Date.now().toString(36)}`;
+}
+
+function radiansToDegrees(value: number) {
+  return (value * 180) / Math.PI;
+}
+
+function degreesToRadians(value: number) {
+  return (value * Math.PI) / 180;
 }

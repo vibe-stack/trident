@@ -13,18 +13,21 @@ import {
   MenubarTrigger,
 } from "@/components/ui/menubar";
 
+export type EditorView = "clip" | "graph" | "character";
+
 export function EditorMenubar(props: {
   store: AnimationEditorStore;
-  editorView: "clip" | "graph";
+  editorView: EditorView;
   gameConnectionControl?: ReactNode;
   onCompile: () => void;
-  onChangeEditorView: (view: "clip" | "graph") => void;
+  onChangeEditorView: (view: EditorView) => void;
   onExportRuntimeBundle: () => void;
+  onNewFile: () => void;
   onSaveProject: () => void;
   onLoadProject: () => void;
   onImportCharacter: () => void;
   onImportAnimations: () => void;
-  onAddNode: (kind: "clip" | "blend1d" | "blend2d" | "stateMachine" | "subgraph") => void;
+  onAddNode: (kind: "clip" | "blend1d" | "blend2d" | "selector" | "orientationWarp" | "strideWarp" | "secondaryDynamics" | "stateMachine" | "subgraph") => void;
   onToggleCopilot: () => void;
   copilotOpen: boolean;
 }) {
@@ -41,6 +44,7 @@ export function EditorMenubar(props: {
               File
             </MenubarTrigger>
             <MenubarContent className="border border-white/10 bg-[#161a1f] shadow-2xl shadow-black/45">
+              <MenubarItem onClick={props.onNewFile}>New File</MenubarItem>
               <MenubarItem onClick={props.onSaveProject}>
                 Save Project
                 <MenubarShortcut>Cmd+S</MenubarShortcut>
@@ -98,6 +102,10 @@ export function EditorMenubar(props: {
               <MenubarItem onClick={() => props.onAddNode("clip")}>Clip Node</MenubarItem>
               <MenubarItem onClick={() => props.onAddNode("blend1d")}>Blend 1D</MenubarItem>
               <MenubarItem onClick={() => props.onAddNode("blend2d")}>Blend 2D</MenubarItem>
+              <MenubarItem onClick={() => props.onAddNode("selector")}>Selector</MenubarItem>
+              <MenubarItem onClick={() => props.onAddNode("orientationWarp")}>Orientation Warp</MenubarItem>
+              <MenubarItem onClick={() => props.onAddNode("strideWarp")}>Stride Warp</MenubarItem>
+              <MenubarItem onClick={() => props.onAddNode("secondaryDynamics")}>Secondary Dynamics</MenubarItem>
               <MenubarItem onClick={() => props.onAddNode("stateMachine")}>State Machine</MenubarItem>
               <MenubarItem onClick={() => props.onAddNode("subgraph")}>Subgraph</MenubarItem>
               <MenubarSeparator />
@@ -128,6 +136,15 @@ export function EditorMenubar(props: {
           onClick={() => props.onChangeEditorView("graph")}
         >
           Graph Editor
+        </Button>
+        <Button
+          type="button"
+          variant={props.editorView === "character" ? "secondary" : "ghost"}
+          size="sm"
+          className={props.editorView === "character" ? "h-8 bg-white/10 px-3 text-[12px] text-zinc-50 hover:bg-white/12" : "h-8 px-3 text-[12px] text-zinc-300"}
+          onClick={() => props.onChangeEditorView("character")}
+        >
+          Character
         </Button>
       </ButtonGroup>
 

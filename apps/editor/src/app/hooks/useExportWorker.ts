@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import type { SceneDocumentSnapshot } from "@ggez/editor-core";
+import type { SceneDocumentSnapshot, WorldPersistenceBundle } from "@ggez/editor-core";
+import type { RuntimeWorldBundle } from "@ggez/runtime-build";
 import type { WebHammerEngineBundle } from "@ggez/three-runtime";
-import type { WorkerJob, WorkerRequest, WorkerResponse } from "@ggez/workers";
+import type { WorkerArchivePayload, WorkerJob, WorkerRequest, WorkerResponse } from "@ggez/workers";
 
 export type ExportWorkerRequest = WorkerRequest extends infer Request
   ? Request extends { id: string }
     ? Omit<Request, "id">
     : never
   : never;
+
+export type ExportWorkerResponse =
+  | string
+  | SceneDocumentSnapshot
+  | WorldPersistenceBundle
+  | WebHammerEngineBundle
+  | RuntimeWorldBundle
+  | WorkerArchivePayload;
 
 export function useExportWorker() {
   const [exportJobs, setExportJobs] = useState<WorkerJob[]>([]);
@@ -18,7 +27,7 @@ export function useExportWorker() {
       string,
       {
         reject: (reason?: unknown) => void;
-        resolve: (payload: string | SceneDocumentSnapshot | WebHammerEngineBundle) => void;
+        resolve: (payload: ExportWorkerResponse) => void;
       }
     >()
   );
@@ -60,7 +69,7 @@ export function useExportWorker() {
   const runWorkerRequest = (
     request: ExportWorkerRequest,
     label: string
-  ): Promise<string | SceneDocumentSnapshot | WebHammerEngineBundle> => {
+  ): Promise<ExportWorkerResponse> => {
     const id = `export:${requestCounterRef.current++}`;
     const workerTask =
       request.kind === "whmap-save"

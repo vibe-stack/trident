@@ -12,7 +12,14 @@ import type {
   SceneSettings,
   TextureRecord
 } from "@ggez/shared";
-import { createDefaultSceneSettings, isInstancingNode, makeTransform, normalizeSceneSettings, vec3 } from "@ggez/shared";
+import {
+  createDefaultSceneSettings,
+  isInstancingNode,
+  makeTransform,
+  MATERIAL_TEXTURE_FIELDS,
+  normalizeSceneSettings,
+  vec3
+} from "@ggez/shared";
 
 export type SceneDocument = {
   nodes: Map<NodeID, GeometryNode>;
@@ -33,6 +40,7 @@ export type SceneDocument = {
   setMaterial: (material: Material) => void;
   removeTexture: (id: string) => TextureRecord | undefined;
   setTexture: (texture: TextureRecord) => void;
+  removeAsset: (id: AssetID) => Asset | undefined;
   setAsset: (asset: Asset) => void;
   setLayer: (layer: Layer) => void;
   setSettings: (settings: SceneSettings) => void;
@@ -52,6 +60,24 @@ export type SceneDocumentSnapshot = {
   settings: SceneSettings;
   textures: TextureRecord[];
 };
+
+type SnapshotCollectionReuseCache<T extends { id: string }> = {
+  liveById: Map<string, T>;
+  snapshotById: Map<string, T>;
+};
+
+type SceneDocumentSnapshotLoadCache = {
+  assets: SnapshotCollectionReuseCache<Asset>;
+  entities: SnapshotCollectionReuseCache<Entity>;
+  layers: SnapshotCollectionReuseCache<Layer>;
+  materials: SnapshotCollectionReuseCache<Material>;
+  nodes: SnapshotCollectionReuseCache<GeometryNode>;
+  settingsClone?: SceneSettings;
+  settingsSource?: SceneDocumentSnapshot["settings"];
+  textures: SnapshotCollectionReuseCache<TextureRecord>;
+};
+
+const sceneDocumentSnapshotLoadCache = new WeakMap<SceneDocument, SceneDocumentSnapshotLoadCache>();
 
 export function createSceneDocument(): SceneDocument {
   const nodes = new Map<NodeID, GeometryNode>();
@@ -170,6 +196,18 @@ export function createSceneDocument(): SceneDocument {
       textures.set(texture.id, texture);
       document.touch();
     },
+    removeAsset(id) {
+      const asset = assets.get(id);
+
+      if (!asset) {
+        return undefined;
+      }
+
+      assets.delete(id);
+      document.touch();
+
+      return asset;
+    },
     setAsset(asset) {
       assets.set(asset.id, asset);
       document.touch();
@@ -237,36 +275,82 @@ export function createSceneDocumentSnapshot(scene: SceneDocument): SceneDocument
   };
 }
 
-export function loadSceneDocumentSnapshot(scene: SceneDocument, snapshot: SceneDocumentSnapshot) {
-  scene.nodes.clear();
-  scene.entities.clear();
-  scene.materials.clear();
-  scene.textures.clear();
-  scene.assets.clear();
-  scene.layers.clear();
+export function normalizeSceneDocumentSnapshot(snapshot: SceneDocumentSnapshot): SceneDocumentSnapshot {
+  const scene = createSceneDocument();
+  loadSceneDocumentSnapshot(scene, snapshot);
+  return createSceneDocumentSnapshot(scene);
+}
 
-  snapshot.nodes.forEach((node) => {
-    scene.nodes.set(node.id, structuredClone(node));
-  });
-  snapshot.entities.forEach((entity) => {
-    scene.entities.set(entity.id, structuredClone(entity));
-  });
-  snapshot.materials.forEach((material) => {
-    scene.materials.set(material.id, structuredClone(material));
-  });
-  snapshot.textures?.forEach((texture) => {
-    scene.textures.set(texture.id, structuredClone(texture));
-  });
-  snapshot.assets.forEach((asset) => {
-    scene.assets.set(asset.id, structuredClone(asset));
-  });
-  snapshot.layers.forEach((layer) => {
-    scene.layers.set(layer.id, structuredClone(layer));
-  });
-  scene.settings = structuredClone(normalizeSceneSettings(snapshot.settings ?? createDefaultSceneSettings()));
+export function loadSceneDocumentSnapshot(scene: SceneDocument, snapshot: SceneDocumentSnapshot) {
+  const cache = getSceneDocumentSnapshotLoadCache(scene);
+
+  syncSnapshotCollection(scene.nodes, snapshot.nodes, cache.nodes);
+  syncSnapshotCollection(scene.entities, snapshot.entities, cache.entities);
+  syncSnapshotCollection(scene.materials, snapshot.materials, cache.materials);
+  syncSnapshotCollection(scene.textures, snapshot.textures ?? [], cache.textures);
+  syncSnapshotCollection(scene.assets, snapshot.assets, cache.assets);
+  syncSnapshotCollection(scene.layers, snapshot.layers, cache.layers);
+  scene.settings =
+    cache.settingsSource === snapshot.settings && cache.settingsClone
+      ? cache.settingsClone
+      : structuredClone(normalizeSceneSettings(snapshot.settings ?? createDefaultSceneSettings()));
+  cache.settingsSource = snapshot.settings;
+  cache.settingsClone = scene.settings;
   ensureSceneTextureLibrary(scene);
 
   scene.touch();
+}
+
+function createSnapshotCollectionReuseCache<T extends { id: string }>(): SnapshotCollectionReuseCache<T> {
+  return {
+    liveById: new Map(),
+    snapshotById: new Map()
+  };
+}
+
+function getSceneDocumentSnapshotLoadCache(scene: SceneDocument): SceneDocumentSnapshotLoadCache {
+  const cached = sceneDocumentSnapshotLoadCache.get(scene);
+
+  if (cached) {
+    return cached;
+  }
+
+  const nextCache: SceneDocumentSnapshotLoadCache = {
+    assets: createSnapshotCollectionReuseCache(),
+    entities: createSnapshotCollectionReuseCache(),
+    layers: createSnapshotCollectionReuseCache(),
+    materials: createSnapshotCollectionReuseCache(),
+    nodes: createSnapshotCollectionReuseCache(),
+    textures: createSnapshotCollectionReuseCache()
+  };
+
+  sceneDocumentSnapshotLoadCache.set(scene, nextCache);
+  return nextCache;
+}
+
+function syncSnapshotCollection<T extends { id: string }>(
+  target: Map<string, T>,
+  snapshotValues: T[],
+  cache: SnapshotCollectionReuseCache<T>
+) {
+  const nextLiveById = new Map<string, T>();
+  const nextSnapshotById = new Map<string, T>();
+
+  target.clear();
+
+  snapshotValues.forEach((snapshotValue) => {
+    const nextValue =
+      cache.snapshotById.get(snapshotValue.id) === snapshotValue
+        ? cache.liveById.get(snapshotValue.id) ?? structuredClone(snapshotValue)
+        : structuredClone(snapshotValue);
+
+    target.set(snapshotValue.id, nextValue);
+    nextLiveById.set(snapshotValue.id, nextValue);
+    nextSnapshotById.set(snapshotValue.id, snapshotValue);
+  });
+
+  cache.liveById = nextLiveById;
+  cache.snapshotById = nextSnapshotById;
 }
 
 export function createSeedSceneDocument(): SceneDocument {
@@ -358,39 +442,12 @@ export function createSeedSceneDocument(): SceneDocument {
     roughness: 0.8
   });
 
-  document.assets.set("asset:model:crate", {
-    id: "asset:model:crate",
-    type: "model",
-    path: "/assets/models/crate.glb",
-    metadata: {
-      previewColor: "#7f8ea3",
-      source: "placeholder"
-    }
-  });
-
-  document.assets.set("asset:model:barrel", {
-    id: "asset:model:barrel",
-    type: "model",
-    path: "/assets/models/barrel.glb",
-    metadata: {
-      previewColor: "#9a684d",
-      source: "placeholder"
-    }
-  });
-
   document.revision = 1;
 
   return document;
 }
 
-const TEXTURE_FIELDS = [
-  "colorTexture",
-  "normalTexture",
-  "metalnessTexture",
-  "roughnessTexture"
-] as const;
-
-type TextureField = (typeof TEXTURE_FIELDS)[number];
+type TextureField = (typeof MATERIAL_TEXTURE_FIELDS)[number];
 
 const TEXTURE_KIND_BY_FIELD: Record<TextureField, TextureRecord["kind"]> = {
   colorTexture: "color",
@@ -400,21 +457,32 @@ const TEXTURE_KIND_BY_FIELD: Record<TextureField, TextureRecord["kind"]> = {
 };
 
 export function ensureSceneTextureLibrary(scene: SceneDocument) {
-  const existingDataUrls = new Set(
-    Array.from(scene.textures.values(), (texture) => texture.dataUrl)
+  const textureByDataUrl = new Map(
+    Array.from(scene.textures.values(), (texture) => [texture.dataUrl, texture] as const)
   );
 
   for (const material of scene.materials.values()) {
-    for (const field of TEXTURE_FIELDS) {
-      const dataUrl = material[field];
+    for (const field of MATERIAL_TEXTURE_FIELDS) {
+      const reference = material[field];
 
-      if (!dataUrl || existingDataUrls.has(dataUrl)) {
+      if (!reference) {
+        continue;
+      }
+
+      const existingTexture = scene.textures.get(reference) ?? textureByDataUrl.get(reference);
+
+      if (existingTexture) {
+        material[field] = existingTexture.id;
+        continue;
+      }
+
+      if (!reference.startsWith("data:")) {
         continue;
       }
 
       const texture: TextureRecord = {
         createdAt: new Date().toISOString(),
-        dataUrl,
+        dataUrl: reference,
         id: `texture:${material.id}:${field}`,
         kind: TEXTURE_KIND_BY_FIELD[field],
         name: `${material.name} ${formatTextureKind(TEXTURE_KIND_BY_FIELD[field])}`,
@@ -422,7 +490,8 @@ export function ensureSceneTextureLibrary(scene: SceneDocument) {
       };
 
       scene.textures.set(texture.id, texture);
-      existingDataUrls.add(dataUrl);
+      textureByDataUrl.set(texture.dataUrl, texture);
+      material[field] = texture.id;
     }
   }
 }

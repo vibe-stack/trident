@@ -78,6 +78,10 @@ export function createDeleteMaterialCommand(
           nodeId: node.id,
           next: {
             ...structuredClone(node.data),
+            materialBlend:
+              node.data.materialBlend?.materialId === materialId
+                ? undefined
+                : structuredClone(node.data.materialBlend),
             faces: node.data.faces.map((face) =>
               face.materialId === materialId
                 ? {
@@ -185,10 +189,12 @@ export function createSetUvScaleCommand(
         ...data,
         uvScale: { x: uvScale.x, y: uvScale.y }
       })) ??
-      buildFaceMutationSnapshot(scene, target, (face) => ({
-        ...face,
-        uvScale: { x: uvScale.x, y: uvScale.y }
-      }))
+      buildFaceMutationSnapshot(scene, target, (face) =>
+        clearExplicitUvs({
+          ...face,
+          uvScale: { x: uvScale.x, y: uvScale.y }
+        })
+      )
     )
     .filter((snapshot): snapshot is FaceMutationSnapshot => Boolean(snapshot));
 
@@ -201,13 +207,47 @@ export function createSetUvOffsetCommand(
   uvOffset: Vec2
 ): Command {
   const snapshots = targets
-    .map((target) => buildFaceMutationSnapshot(scene, target, (face) => ({
-      ...face,
-      uvOffset: { x: uvOffset.x, y: uvOffset.y }
-    })))
+    .map((target) =>
+      buildFaceMutationSnapshot(scene, target, (face) =>
+        clearExplicitUvs({
+          ...face,
+          uvOffset: { x: uvOffset.x, y: uvOffset.y }
+        })
+      )
+    )
     .filter((snapshot): snapshot is FaceMutationSnapshot => Boolean(snapshot));
 
   return createFaceMutationCommand("set uv offset", snapshots);
+}
+
+export function createSetUvRotationCommand(
+  scene: SceneDocument,
+  targets: MaterialTarget[],
+  uvRotation: number
+): Command {
+  const snapshots = targets
+    .map((target) =>
+      buildFaceMutationSnapshot(scene, target, (face) =>
+        clearExplicitUvs({
+          ...face,
+          uvRotation
+        })
+      )
+    )
+    .filter((snapshot): snapshot is FaceMutationSnapshot => Boolean(snapshot));
+
+  return createFaceMutationCommand("set uv rotation", snapshots);
+}
+
+function clearExplicitUvs(face: Face | EditableMesh["faces"][number]) {
+  if ("halfEdge" in face) {
+    return {
+      ...face,
+      uvs: undefined
+    } satisfies EditableMesh["faces"][number];
+  }
+
+  return face;
 }
 
 type FaceMutationSnapshot =
@@ -298,6 +338,7 @@ function resolveBrushFaces(existingFaces: Face[], planes: Brush["planes"], nodeI
     materialId: existingFaces[index]?.materialId,
     plane,
     uvOffset: existingFaces[index]?.uvOffset,
+    uvRotation: existingFaces[index]?.uvRotation,
     uvScale: existingFaces[index]?.uvScale,
     vertexIds: existingFaces[index]?.vertexIds ?? []
   }));

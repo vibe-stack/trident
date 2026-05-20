@@ -1,0 +1,32 @@
+{
+  "name": "@ggez/vfx-exporter",
+  "version": "0.1.1",
+  "description": "Artifact and bundle helpers for compiled Web Hammer VFX effects.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup --config ../../scripts/tsup.package.config.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@ggez/vfx-schema": "workspace:*",
+    "fflate": "^0.8.2",
+    "zod": "^3.25.76"
+  }
+}

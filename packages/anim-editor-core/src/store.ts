@@ -7,6 +7,7 @@ import type {
   EditorGraphNode,
   EditorLayer,
   ParameterDefinition,
+  SecondaryDynamicsProfile,
   SerializableRig
 } from "@ggez/anim-schema";
 import { createStableId, Emitter, type Unsubscribe } from "@ggez/anim-utils";
@@ -19,6 +20,7 @@ export type EditorTopic =
   | "parameters"
   | "layers"
   | "masks"
+  | "dynamics"
   | "compile"
   | "clipboard"
   | `graph:${string}`
@@ -48,6 +50,7 @@ export interface AnimationEditorStore {
   getState(): Readonly<AnimationEditorState>;
   getRevision(): number;
   subscribe(listener: () => void, topics?: EditorTopic[]): Unsubscribe;
+  clearHistory(): void;
   setDocument(document: AnimationEditorDocument): void;
   selectGraph(graphId: string): void;
   selectNodes(nodeIds: string[]): void;
@@ -65,12 +68,17 @@ export interface AnimationEditorStore {
   pasteSelection(): void;
   addParameter(parameter?: Partial<ParameterDefinition>): void;
   updateParameter(parameterId: string, patch: Partial<ParameterDefinition>): void;
+  deleteParameter(parameterId: string): void;
   addLayer(layer?: Partial<EditorLayer>): void;
   updateLayer(layerId: string, patch: Partial<EditorLayer>): void;
   addMask(mask?: Partial<BoneMaskDefinition>): void;
   updateMask(maskId: string, patch: Partial<BoneMaskDefinition>): void;
+  addDynamicsProfile(profile?: Partial<SecondaryDynamicsProfile>): string;
+  updateDynamicsProfile(profileId: string, updater: (profile: SecondaryDynamicsProfile) => SecondaryDynamicsProfile): void;
+  deleteDynamicsProfile(profileId: string): void;
   addClip(clip?: Partial<ClipReference>): void;
   updateClip(clipId: string, patch: Partial<ClipReference>): void;
+  deleteClip(clipId: string): void;
   setRig(rig?: SerializableRig): void;
   upsertClips(clips: ClipReference[]): void;
   compile(): CompileResult;
@@ -119,6 +127,20 @@ function disconnectSourceFromTarget(graph: EditorGraph, sourceNodeId: string, ta
     });
   }
 
+  if (targetNode.kind === "selector") {
+    return replaceNode(graph, targetNode.id, {
+      ...targetNode,
+      children: targetNode.children.filter((child) => child.nodeId !== sourceNodeId)
+    });
+  }
+
+  if ((targetNode.kind === "orientationWarp" || targetNode.kind === "strideWarp" || targetNode.kind === "secondaryDynamics") && targetNode.sourceNodeId === sourceNodeId) {
+    return replaceNode(graph, targetNode.id, {
+      ...targetNode,
+      sourceNodeId: undefined
+    });
+  }
+
   return graph;
 }
 
@@ -142,6 +164,17 @@ function removeNodeReferences(graph: EditorGraph, removedNodeIds: Set<string>): 
           ...node,
           children: node.children.filter((child) => !removedNodeIds.has(child.nodeId))
         };
+      }
+
+      if (node.kind === "selector") {
+        return {
+          ...node,
+          children: node.children.filter((child) => !removedNodeIds.has(child.nodeId))
+        };
+      }
+
+      if (node.kind === "orientationWarp" || node.kind === "strideWarp" || node.kind === "secondaryDynamics") {
+        return removedNodeIds.has(node.sourceNodeId ?? "") ? { ...node, sourceNodeId: undefined } : node;
       }
 
       if (node.kind === "stateMachine") {
@@ -238,8 +271,12 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
         }
       });
     },
+    clearHistory() {
+      historyPast.length = 0;
+      historyFuture.length = 0;
+    },
     setDocument(document) {
-      commit(["document", "selection", "graphs", "parameters", "layers", "masks", "compile", "clipboard"], () => {
+      commit(["document", "selection", "graphs", "parameters", "layers", "masks", "dynamics", "compile", "clipboard"], () => {
         state.document = structuredClone(document);
         state.selection = {
           graphId: document.entryGraphId,
@@ -301,7 +338,22 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
       });
     },
     addNode(graphId, kind) {
-      const node = createDefaultNode(kind, kind === "blend1d" ? "Blend 1D" : kind === "blend2d" ? "Blend 2D" : kind);
+      const node = createDefaultNode(
+        kind,
+        kind === "blend1d"
+          ? "Blend 1D"
+          : kind === "blend2d"
+            ? "Blend 2D"
+            : kind === "selector"
+              ? "Selector"
+              : kind === "orientationWarp"
+                ? "Orientation Warp"
+                : kind === "strideWarp"
+                  ? "Stride Warp"
+                    : kind === "secondaryDynamics"
+                      ? "Secondary Dynamics"
+              : kind
+      );
       const graph = state.document.graphs.find((entry) => entry.id === graphId);
       if (!graph) {
         throw new Error(`Unknown graph "${graphId}".`);
@@ -387,6 +439,22 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
                   y: 0
                 }
               ]
+            });
+          } else if (targetNode.kind === "selector") {
+            nextGraph = replaceNode(graph, targetNodeId, {
+              ...targetNode,
+              children: [
+                ...targetNode.children.filter((child) => child.nodeId !== sourceNodeId),
+                {
+                  nodeId: sourceNodeId,
+                  value: targetNode.children.length
+                }
+              ]
+            });
+          } else if (targetNode.kind === "orientationWarp" || targetNode.kind === "strideWarp" || targetNode.kind === "secondaryDynamics") {
+            nextGraph = replaceNode(graph, targetNodeId, {
+              ...targetNode,
+              sourceNodeId
             });
           }
 
@@ -519,7 +587,8 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
               id: createStableId("param"),
               name: parameter.name ?? `param_${state.document.parameters.length}`,
               type: parameter.type ?? "float",
-              defaultValue: parameter.defaultValue ?? 0
+              defaultValue: parameter.defaultValue ?? 0,
+              ...(parameter.smoothingDuration !== undefined ? { smoothingDuration: parameter.smoothingDuration } : {})
             }
           ]
         };
@@ -532,6 +601,14 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
           parameters: state.document.parameters.map((parameter) =>
             parameter.id === parameterId ? { ...parameter, ...patch } : parameter
           )
+        };
+      });
+    },
+    deleteParameter(parameterId) {
+      commit(["document", "parameters"], () => {
+        state.document = {
+          ...state.document,
+          parameters: state.document.parameters.filter((parameter) => parameter.id !== parameterId)
         };
       });
     },
@@ -588,6 +665,51 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
         };
       });
     },
+    addDynamicsProfile(profile = {}) {
+      const profileId = profile.id ?? createStableId("dyn-profile");
+      commit(["document", "dynamics"], () => {
+        state.document = {
+          ...state.document,
+          dynamicsProfiles: [
+            ...state.document.dynamicsProfiles,
+            {
+              id: profileId,
+              name: profile.name ?? `Dynamics ${state.document.dynamicsProfiles.length + 1}`,
+              iterations: profile.iterations ?? 4,
+              chains: profile.chains ?? [],
+              sphereColliders: profile.sphereColliders ?? []
+            }
+          ]
+        };
+      });
+      return profileId;
+    },
+    updateDynamicsProfile(profileId, updater) {
+      commit(["document", "dynamics"], () => {
+        state.document = {
+          ...state.document,
+          dynamicsProfiles: state.document.dynamicsProfiles.map((profile) =>
+            profile.id === profileId ? updater(profile) : profile
+          )
+        };
+      });
+    },
+    deleteDynamicsProfile(profileId) {
+      commit(["document", "dynamics", "graphs"], () => {
+        state.document = {
+          ...state.document,
+          dynamicsProfiles: state.document.dynamicsProfiles.filter((profile) => profile.id !== profileId),
+          graphs: state.document.graphs.map((graph) => ({
+            ...graph,
+            nodes: graph.nodes.map((node) =>
+              node.kind === "secondaryDynamics" && node.profileId === profileId
+                ? { ...node, profileId: "" }
+                : node
+            )
+          }))
+        };
+      });
+    },
     addClip(clip = {}) {
       commit(["document"], () => {
         state.document = {
@@ -609,6 +731,14 @@ export function createAnimationEditorStore(initialDocument = createDefaultAnimat
         state.document = {
           ...state.document,
           clips: state.document.clips.map((clip) => (clip.id === clipId ? { ...clip, ...patch } : clip))
+        };
+      });
+    },
+    deleteClip(clipId) {
+      commit(["document"], () => {
+        state.document = {
+          ...state.document,
+          clips: state.document.clips.filter((clip) => clip.id !== clipId)
         };
       });
     },

@@ -226,7 +226,7 @@ async function createSceneRegistryModule(options) {
   const editorSyncStorageNamespace = createEditorSyncStorageNamespace(options.projectRoot);
 
   return `
-import { createBundledRuntimeSceneSource, defineGameScene } from ${JSON.stringify("/src/game/runtime-scene-sources.ts")};
+import { createColocatedRuntimeSceneSource, defineGameScene } from ${JSON.stringify("/src/game/loaders/scene-sources.ts")};
 
 ${importLines.join("\n")}
 
@@ -239,14 +239,12 @@ const explicitScenes = Object.fromEntries(
 );
 
 const sceneManifestModules = import.meta.glob(${JSON.stringify(`${sceneRootPattern}/scene.runtime.json`)}, {
-  eager: true,
   import: "default",
   query: "?raw"
 });
 const sceneAssetModules = import.meta.glob(${JSON.stringify(`${sceneRootPattern}/assets/**/*`)}, {
-  eager: true,
   import: "default",
-  query: "?url"
+  query: "?url&no-inline"
 });
 const sceneMetaModules = import.meta.glob(${JSON.stringify(`${sceneRootPattern}/scene.meta.json`)}, {
   eager: true,
@@ -264,7 +262,7 @@ export const initialSceneId = resolveInitialSceneId(defaultInitialSceneId, scene
 function createDiscoveredScenes(existingScenes) {
   const discovered = {};
 
-  for (const [path, manifestText] of Object.entries(sceneManifestModules)) {
+  for (const [path, manifestLoader] of Object.entries(sceneManifestModules)) {
     const folderName = extractSceneFolderName(path);
 
     if (!folderName) {
@@ -278,17 +276,21 @@ function createDiscoveredScenes(existingScenes) {
       continue;
     }
 
-    const assetUrls = Object.fromEntries(
-      Object.entries(sceneAssetModules)
-        .filter(([assetPath]) => assetPath.startsWith(path.replace(/scene\\.runtime\\.json$/, "assets/")))
-        .map(([assetPath, url]) => [assetPath.replace(new RegExp(\`^.+/\\\${folderName}/\`), "./"), url])
-    );
+    if (typeof manifestLoader !== "function") {
+      continue;
+    }
+
+        const assetUrlLoaders = Object.fromEntries(
+          Object.entries(sceneAssetModules)
+            .filter(([assetPath, load]) => assetPath.startsWith(path.replace(/scene\\.runtime\\.json$/, "assets/")) && typeof load === "function")
+            .map(([assetPath, load]) => [assetPath.replace(path.replace(/scene\\.runtime\\.json$/, ""), "./"), load])
+        );
 
     discovered[sceneId] = defineGameScene({
       id: sceneId,
-      source: createBundledRuntimeSceneSource({
-        assetUrls,
-        manifestText
+      source: createColocatedRuntimeSceneSource({
+        assetUrlLoaders,
+        manifestLoader
       }),
       title: typeof metadata.title === "string" && metadata.title.trim()
         ? metadata.title.trim()
@@ -345,6 +347,12 @@ function resolveInitialSceneId(defaultSceneId, allScenes) {
     return defaultSceneId;
   }
 
+  const requestedSceneId = new URLSearchParams(window.location.search).get("whScene");
+
+  if (requestedSceneId && requestedSceneId in allScenes) {
+    return requestedSceneId;
+  }
+
   const pendingSceneId = window.sessionStorage.getItem(${JSON.stringify(`web-hammer:editor-sync:${editorSyncStorageNamespace}:pending-scene`)});
 
   if (pendingSceneId && pendingSceneId in allScenes) {
@@ -394,7 +402,7 @@ async function createAnimationRegistryModule(options) {
   const animationRootPattern = `/${normalizePath(options.animationRoot)}/*`;
 
   return `
-import { createBundledRuntimeAnimationSource, defineGameAnimationBundle } from ${JSON.stringify("/src/game/runtime-animation-sources.ts")};
+import { createColocatedRuntimeAnimationSource, defineGameAnimationBundle } from ${JSON.stringify("/src/game/loaders/animation-sources.ts")};
 
 ${importLines.join("\n")}
 
@@ -407,19 +415,15 @@ const explicitAnimations = Object.fromEntries(
 );
 
 const animationManifestModules = import.meta.glob(${JSON.stringify(`${animationRootPattern}/animation.bundle.json`)}, {
-  eager: true,
-  import: "default",
-  query: "?raw"
+  import: "default"
 });
 const animationArtifactModules = import.meta.glob(${JSON.stringify(`${animationRootPattern}/*.animation.json`)}, {
-  eager: true,
   import: "default",
   query: "?raw"
 });
 const animationAssetModules = import.meta.glob(${JSON.stringify(`${animationRootPattern}/assets/**/*`)}, {
-  eager: true,
   import: "default",
-  query: "?url"
+  query: "?url&no-inline"
 });
 const animationMetaModules = import.meta.glob(${JSON.stringify(`${animationRootPattern}/animation.meta.json`)}, {
   eager: true,
@@ -435,7 +439,7 @@ export const animations = {
 function createDiscoveredAnimations(existingAnimations) {
   const discovered = {};
 
-  for (const [path, manifestText] of Object.entries(animationManifestModules)) {
+  for (const [path, manifestLoader] of Object.entries(animationManifestModules)) {
     const folderName = extractAnimationFolderName(path);
 
     if (!folderName) {
@@ -449,24 +453,28 @@ function createDiscoveredAnimations(existingAnimations) {
       continue;
     }
 
-    const artifactText = animationArtifactModules[path.replace(/animation\\.bundle\\.json$/, "graph.animation.json")];
-
-    if (typeof artifactText !== "string") {
+    if (typeof manifestLoader !== "function") {
       continue;
     }
 
-    const assetUrls = Object.fromEntries(
-      Object.entries(animationAssetModules)
-        .filter(([assetPath]) => assetPath.startsWith(path.replace(/animation\\.bundle\\.json$/, "assets/")))
-        .map(([assetPath, url]) => [assetPath.replace(new RegExp(\`^.+/\\\${folderName}/\`), "./"), url])
-    );
+    const artifactLoader = animationArtifactModules[path.replace(/animation\\.bundle\\.json$/, "graph.animation.json")];
+
+    if (typeof artifactLoader !== "function") {
+      continue;
+    }
+
+        const assetUrlLoaders = Object.fromEntries(
+          Object.entries(animationAssetModules)
+            .filter(([assetPath, load]) => assetPath.startsWith(path.replace(/animation\\.bundle\\.json$/, "assets/")) && typeof load === "function")
+            .map(([assetPath, load]) => [assetPath.replace(path.replace(/animation\\.bundle\\.json$/, ""), "./"), load])
+        );
 
     discovered[animationId] = defineGameAnimationBundle({
       id: animationId,
-      source: createBundledRuntimeAnimationSource({
-        assetUrls,
-        artifactText,
-        manifestText
+      source: createColocatedRuntimeAnimationSource({
+        artifactLoader,
+        assetUrlLoaders,
+        manifestLoader
       }),
       title: typeof metadata.title === "string" && metadata.title.trim()
         ? metadata.title.trim()
@@ -537,6 +545,8 @@ function createEditorSyncClientRuntimeSource(options, runtimeOptions = {}) {
 const PENDING_SCENE_KEY = ${JSON.stringify(`web-hammer:editor-sync:${storageNamespace}:pending-scene`)};
 const LAST_COMMAND_KEY = ${JSON.stringify(`web-hammer:editor-sync:${storageNamespace}:last-command`)};
 const EDITOR_SYNC_ENABLED = ${JSON.stringify(enabled)};
+const ORCHESTRATOR_SCREENSHOT_REQUEST = "web-hammer:orchestrator:get-screenshot";
+const ORCHESTRATOR_SCREENSHOT_RESPONSE = "web-hammer:orchestrator:screenshot";
 
 function resolveEditorSyncInitialSceneId(defaultSceneId, sceneIds) {
   if (typeof window === "undefined") {
@@ -553,6 +563,209 @@ function resolveEditorSyncInitialSceneId(defaultSceneId, sceneIds) {
   return defaultSceneId;
 }
 
+function resolveBestCanvas() {
+  const canvases = Array.from(document.querySelectorAll("canvas"));
+
+  return canvases
+    .filter((canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      const style = window.getComputedStyle(canvas);
+
+      return canvas.width > 0 &&
+        canvas.height > 0 &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity || "1") > 0;
+    })
+    .sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      return rightRect.width * rightRect.height - leftRect.width * leftRect.height;
+    })[0] ?? null;
+}
+
+function fitWithin(width, height, maxWidth, maxHeight) {
+  const scale = Math.min(1, maxWidth / Math.max(width, 1), maxHeight / Math.max(height, 1));
+
+  return {
+    height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(1, Math.round(width * scale))
+  };
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read screenshot blob."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+async function waitForPresentedFrame(frameCount = 2) {
+  for (let index = 0; index < frameCount; index += 1) {
+    await nextAnimationFrame();
+  }
+}
+
+async function captureCanvasBitmap(canvas) {
+  if (typeof canvas.captureStream === "function") {
+    const stream = canvas.captureStream(0);
+    const [track] = stream.getVideoTracks();
+
+    if (track) {
+      try {
+        if (typeof ImageCapture !== "undefined") {
+          const frame = await new ImageCapture(track).grabFrame();
+          track.stop();
+          return frame;
+        }
+
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        await video.play();
+
+        const bitmap = await new Promise((resolve, reject) => {
+          const finish = async () => {
+            try {
+              const result = await createImageBitmap(video);
+              resolve(result);
+            } catch (error) {
+              reject(error);
+            }
+          };
+
+          if (typeof video.requestVideoFrameCallback === "function") {
+            video.requestVideoFrameCallback(() => {
+              void finish();
+            });
+            return;
+          }
+
+          setTimeout(() => {
+            void finish();
+          }, 50);
+        });
+
+        video.pause();
+        video.srcObject = null;
+        track.stop();
+        return bitmap;
+      } catch {
+        track.stop();
+      }
+    }
+  }
+
+  if (typeof createImageBitmap === "function") {
+    return createImageBitmap(canvas);
+  }
+
+  return canvas;
+}
+
+function isMostlyBlackFrame(context, width, height) {
+  const sampleWidth = Math.max(1, Math.min(width, 32));
+  const sampleHeight = Math.max(1, Math.min(height, 18));
+  const stepX = Math.max(1, Math.floor(width / sampleWidth));
+  const stepY = Math.max(1, Math.floor(height / sampleHeight));
+  const data = context.getImageData(0, 0, width, height).data;
+  let blackishSamples = 0;
+  let sampled = 0;
+
+  for (let y = 0; y < height; y += stepY) {
+    for (let x = 0; x < width; x += stepX) {
+      const offset = (y * width + x) * 4;
+      const red = data[offset] ?? 0;
+      const green = data[offset + 1] ?? 0;
+      const blue = data[offset + 2] ?? 0;
+      const alpha = data[offset + 3] ?? 255;
+      sampled += 1;
+
+      if (alpha === 0 || (red < 10 && green < 10 && blue < 10)) {
+        blackishSamples += 1;
+      }
+    }
+  }
+
+  return sampled > 0 && blackishSamples / sampled > 0.985;
+}
+
+async function drawCanvasFrameToTarget(canvas, context, width, height) {
+  const bitmap = await captureCanvasBitmap(canvas);
+
+  try {
+    context.clearRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+  } finally {
+    if (bitmap && typeof bitmap.close === "function") {
+      bitmap.close();
+    }
+  }
+}
+
+async function captureGameScreenshot(options = {}) {
+  const canvas = resolveBestCanvas();
+
+  if (!canvas) {
+    throw new Error("No active game canvas found.");
+  }
+
+  const sourceWidth = canvas.width;
+  const sourceHeight = canvas.height;
+  const maxWidth = Number.isFinite(options.maxWidth) ? Math.max(1, options.maxWidth) : 1280;
+  const maxHeight = Number.isFinite(options.maxHeight) ? Math.max(1, options.maxHeight) : 720;
+  const { width, height } = fitWithin(sourceWidth, sourceHeight, maxWidth, maxHeight);
+
+  const target = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement("canvas"), { width, height });
+  const context = target.getContext("2d", { alpha: false });
+
+  if (!context) {
+    throw new Error("Could not create a screenshot canvas.");
+  }
+
+  await waitForPresentedFrame(2);
+  await drawCanvasFrameToTarget(canvas, context, width, height);
+
+  if (isMostlyBlackFrame(context, width, height)) {
+    await waitForPresentedFrame(2);
+    await drawCanvasFrameToTarget(canvas, context, width, height);
+  }
+
+  if (typeof OffscreenCanvas !== "undefined" && target instanceof OffscreenCanvas) {
+    const blob = await target.convertToBlob({ type: "image/jpeg", quality: 0.82 });
+    return {
+      dataUrl: await blobToDataUrl(blob),
+      height,
+      mimeType: "image/jpeg",
+      sourceHeight,
+      sourceWidth,
+      width
+    };
+  }
+
+  return {
+    dataUrl: target.toDataURL("image/jpeg", 0.82),
+    height,
+    mimeType: "image/jpeg",
+    sourceHeight,
+    sourceWidth,
+    width
+  };
+}
+
 function startEditorSyncClient() {
   if (!EDITOR_SYNC_ENABLED) {
     return () => {};
@@ -561,6 +774,38 @@ function startEditorSyncClient() {
   let disposed = false;
   let timer = 0;
   let inFlight = false;
+
+  const handleOrchestratorMessage = async (event) => {
+    if (event.source !== window.parent || event.data?.type !== ORCHESTRATOR_SCREENSHOT_REQUEST) {
+      return;
+    }
+
+    const requestId = typeof event.data.requestId === "string" ? event.data.requestId : "";
+    const targetOrigin = typeof event.origin === "string" && event.origin.length > 0 ? event.origin : "*";
+
+    try {
+      const screenshot = await captureGameScreenshot({
+        maxHeight: event.data.maxHeight,
+        maxWidth: event.data.maxWidth
+      });
+
+      window.parent.postMessage({
+        type: ORCHESTRATOR_SCREENSHOT_RESPONSE,
+        requestId,
+        screenshot,
+        success: true
+      }, targetOrigin);
+    } catch (error) {
+      window.parent.postMessage({
+        type: ORCHESTRATOR_SCREENSHOT_RESPONSE,
+        requestId,
+        error: error instanceof Error ? error.message : "Failed to capture game screenshot.",
+        success: false
+      }, targetOrigin);
+    }
+  };
+
+  window.addEventListener("message", handleOrchestratorMessage);
 
   const poll = async () => {
     if (disposed || inFlight) {
@@ -605,6 +850,7 @@ function startEditorSyncClient() {
   return () => {
     disposed = true;
     window.clearTimeout(timer);
+    window.removeEventListener("message", handleOrchestratorMessage);
   };
 }
 `;

@@ -1,7 +1,7 @@
 {
   "name": "@ggez/three-vanilla-playground",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.4",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -18,7 +18,7 @@
     "@ggez/runtime-physics-rapier": "workspace:*",
     "@ggez/shared": "workspace:*",
     "@ggez/three-runtime": "workspace:*",
-    "three": "^0.181.1"
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",

@@ -1,6 +1,7 @@
-import { createAnimationArtifact, createAnimationBundle, serializeAnimationArtifact, serializeAnimationBundle } from "@ggez/anim-exporter";
+import { createAnimationArtifact, createAnimationBundle, serializeAnimationArtifact, serializeAnimationBundle, serializeClipDataBinary } from "@ggez/anim-exporter";
 import { compileAnimationEditorDocumentOrThrow } from "@ggez/anim-compiler";
 import { strToU8, zipSync } from "fflate";
+import type { EquipmentBundle } from "./character-equipment";
 import { synchronizeAnimationDocument } from "./document-sync";
 import type { ImportedPreviewClip } from "./preview-assets";
 
@@ -59,6 +60,8 @@ function makeUniquePath(basePath: string, usedPaths: Set<string>): string {
 
 async function buildZipFiles(input: {
   characterFile: File | null;
+  equipmentBundle?: EquipmentBundle | null;
+  equipmentFiles?: Array<{ id: string; file: File }>;
   folderName: string;
   importedClips: ImportedPreviewClip[];
   sourceDocument: unknown;
@@ -88,6 +91,14 @@ async function buildZipFiles(input: {
     reserveAssetPath(input.characterFile, getFileStem(input.characterFile.name));
   }
 
+  const equipmentFilesById = new Map(
+    (input.equipmentFiles ?? []).map(({ id, file }) => [id, file] as const)
+  );
+
+  for (const [itemId, file] of equipmentFilesById) {
+    reserveAssetPath(file, `equipment-${itemId}-${getFileStem(file.name)}`);
+  }
+
   const bundleClips = compiledGraph.clipSlots.map((slot) => {
     const importedClip = clipsById.get(slot.id);
     if (!importedClip) {
@@ -103,14 +114,33 @@ async function buildZipFiles(input: {
   });
 
   const artifact = createAnimationArtifact({
-    graph: compiledGraph,
-    clips: bundleClips.map((bundleClip) => clipsById.get(bundleClip.id)!.asset)
+    graph: compiledGraph
   });
+  const clipDataPath = "./assets/graph.animation.clips.bin";
   const manifest = createAnimationBundle({
     name: input.title,
     artifactPath: "./graph.animation.json",
     characterAssetPath: input.characterFile ? `./${reserveAssetPath(input.characterFile, getFileStem(input.characterFile.name))}` : undefined,
-    clips: bundleClips
+    clipDataPath,
+    clips: bundleClips,
+    equipment: input.equipmentBundle
+      ? {
+          sockets: structuredClone(input.equipmentBundle.sockets),
+          items: input.equipmentBundle.items.map((item) => {
+            const file = equipmentFilesById.get(item.id);
+
+            if (!file) {
+              throw new Error(`Equipment item "${item.name}" (${item.id}) is missing its source asset file.`);
+            }
+
+            return {
+              ...item,
+              transform: structuredClone(item.transform),
+              asset: `./${reserveAssetPath(file, `equipment-${item.id}-${getFileStem(file.name)}`)}`
+            };
+          })
+        }
+      : undefined
   });
 
   files.set("animation.bundle.json", strToU8(serializeAnimationBundle(manifest)));
@@ -119,6 +149,11 @@ async function buildZipFiles(input: {
     title: input.title
   }, null, 2)));
   files.set("graph.animation.json", strToU8(serializeAnimationArtifact(artifact)));
+  files.set(clipDataPath.replace(/^\.\//, ""), serializeClipDataBinary(bundleClips.map((bundleClip) => clipsById.get(bundleClip.id)!.asset)));
+  files.set("index.ts", strToU8(createRuntimeBundleIndexModule({
+    folderName: input.folderName,
+    title: input.title
+  })));
 
   const fileEntries = Array.from(assetPathsByFile.entries());
   for (const [file, relativePath] of fileEntries) {
@@ -129,6 +164,10 @@ async function buildZipFiles(input: {
 }
 
 function getMimeType(path: string): string {
+  if (path.endsWith(".ts")) {
+    return "text/plain";
+  }
+
   if (path.endsWith(".json")) {
     return "application/json";
   }
@@ -144,8 +183,38 @@ function getMimeType(path: string): string {
   return "application/octet-stream";
 }
 
+function createRuntimeBundleIndexModule(input: {
+  folderName: string;
+  title: string;
+}) {
+  return [
+    'import {',
+    '  createColocatedRuntimeAnimationSource,',
+    '  defineGameAnimationBundle',
+    '} from "../../game/runtime-animation-sources";',
+    "",
+    'const assetUrlLoaders = import.meta.glob("./assets/**/*", {',
+    '  import: "default",',
+    '  query: "?url"',
+    '}) as Record<string, () => Promise<string>>;',
+    "",
+    "export const animationBundle = defineGameAnimationBundle({",
+    `  id: ${JSON.stringify(input.folderName)},`,
+    "  source: createColocatedRuntimeAnimationSource({",
+    '    artifactLoader: () => import("./graph.animation.json?raw").then((module) => module.default),',
+    "    assetUrlLoaders,",
+    '    manifestLoader: () => import("./animation.bundle.json").then((module) => module.default)',
+    "  }),",
+    `  title: ${JSON.stringify(input.title)}`,
+    "});",
+    ""
+  ].join("\n");
+}
+
 export async function createRuntimeBundleZip(input: {
   characterFile: File | null;
+  equipmentBundle?: EquipmentBundle | null;
+  equipmentFiles?: Array<{ id: string; file: File }>;
   importedClips: ImportedPreviewClip[];
   sourceDocument: unknown;
 }): Promise<RuntimeBundleExportResult> {
@@ -153,6 +222,8 @@ export async function createRuntimeBundleZip(input: {
   const folderName = slugifySegment(editorDocument.name);
   const files = await buildZipFiles({
     characterFile: input.characterFile,
+    equipmentBundle: input.equipmentBundle,
+    equipmentFiles: input.equipmentFiles,
     folderName,
     importedClips: input.importedClips,
     sourceDocument: editorDocument,
@@ -172,6 +243,8 @@ export async function createRuntimeBundleZip(input: {
 
 export async function createRuntimeBundleSyncResult(input: {
   characterFile: File | null;
+  equipmentBundle?: EquipmentBundle | null;
+  equipmentFiles?: Array<{ id: string; file: File }>;
   folderName: string;
   importedClips: ImportedPreviewClip[];
   sourceDocument: unknown;
@@ -179,6 +252,8 @@ export async function createRuntimeBundleSyncResult(input: {
 }): Promise<RuntimeBundleSyncResult> {
   const files = await buildZipFiles({
     characterFile: input.characterFile,
+    equipmentBundle: input.equipmentBundle,
+    equipmentFiles: input.equipmentFiles,
     folderName: input.folderName,
     importedClips: input.importedClips,
     sourceDocument: input.sourceDocument,

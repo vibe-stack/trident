@@ -1,22 +1,28 @@
 import { getFaceVertices, reconstructBrushFaces, triangulateMeshFace } from "@ggez/geometry-kernel";
 import type { SceneDocumentSnapshot } from "@ggez/editor-core";
 import {
+  createTextureRecordMap,
   createBlockoutTextureDataUri,
   crossVec3,
   dotVec3,
+  isTextureReferenceId,
   isBrushNode,
   isGroupNode,
   isInstancingNode,
   isMeshNode,
   isModelNode,
   isPrimitiveNode,
+  normalizeEditableMeshMaterialLayers,
   normalizeVec3,
+  resolveModelAssetFile,
+  resolveTextureReferenceSource,
   resolveInstancingSourceNode,
   subVec3,
   vec3,
   type Asset,
   type Material,
   type MaterialID,
+  type TextureRecord,
   type Vec2,
   type Vec3
 } from "@ggez/shared";
@@ -60,6 +66,20 @@ const gltfExporter = new GLTFExporter();
 const mtlLoader = new MTLLoader();
 const modelTextureLoader = new TextureLoader();
 
+type BuildRuntimeSceneFromSnapshotOptions = {
+  embedExternalTextures?: boolean;
+  /**
+   * When true the metalness + roughness textures are stored as separate fields
+   * (`metalnessTexture` / `roughnessTexture`) instead of being pixel-composited
+   * into a single combined ORM texture at export time.
+   *
+   * This is the fast path for bundle export: compositing large PNGs for every
+   * material is extremely slow (minutes–hours for 200 MB of textures) and
+   * completely unnecessary because Three.js accepts separate maps.
+   */
+  skipMetalRoughnessComposite?: boolean;
+};
+
 export async function buildRuntimeScene(input: SceneDocumentSnapshot | RuntimeScene | string): Promise<RuntimeScene> {
   if (typeof input === "string") {
     return parseRuntimeScene(input);
@@ -76,32 +96,31 @@ export async function buildRuntimeBundleFromSnapshot(
   snapshot: SceneDocumentSnapshot,
   options: ExternalizeRuntimeAssetsOptions = {}
 ): Promise<RuntimeBundle> {
-  return externalizeRuntimeAssets(await buildRuntimeSceneFromSnapshot(snapshot), options);
+  return externalizeRuntimeAssets(
+    await buildRuntimeSceneFromSnapshot(snapshot, {
+      embedExternalTextures: false,
+      skipMetalRoughnessComposite: true
+    }),
+    options
+  );
 }
 
 export async function serializeRuntimeScene(snapshot: SceneDocumentSnapshot): Promise<string> {
-  return JSON.stringify(await buildRuntimeSceneFromSnapshot(snapshot));
+  return JSON.stringify(await buildRuntimeSceneFromSnapshot(snapshot, { embedExternalTextures: true }));
 }
 
-export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnapshot): Promise<RuntimeScene> {
+export async function buildRuntimeSceneFromSnapshot(
+  snapshot: SceneDocumentSnapshot,
+  options: BuildRuntimeSceneFromSnapshotOptions = {}
+): Promise<RuntimeScene> {
   const assetsById = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
+  const referencedModelAssetIds = collectReferencedModelAssetIds(snapshot);
   const materialsById = new Map(snapshot.materials.map((material) => [material.id, material]));
-  const exportedMaterials = await Promise.all(snapshot.materials.map((material) => resolveRuntimeMaterial(material)));
-  const shouldBakeLods = snapshot.settings.world.lod.enabled;
+  const texturesById = createTextureRecordMap(snapshot.textures ?? []);
+  const exportedMaterials = await Promise.all(
+    snapshot.materials.map((material) => resolveRuntimeMaterial(material, texturesById, options))
+  );
   const exportedAt = new Date().toISOString();
-  const exportedSettings = shouldBakeLods
-    ? {
-        ...snapshot.settings,
-        world: {
-          ...snapshot.settings.world,
-          lod: {
-            ...snapshot.settings.world.lod,
-            bakedAt: exportedAt
-          }
-        }
-      }
-    : snapshot.settings;
-  const generatedAssets: Asset[] = [];
   const exportedNodes: RuntimeScene["nodes"] = [];
 
   for (const node of snapshot.nodes) {
@@ -121,14 +140,13 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
     }
 
     if (isBrushNode(node)) {
-      const geometry = await buildExportGeometry(node, materialsById);
+      const geometry = await buildExportGeometry(node, materialsById, texturesById, options);
       exportedNodes.push({
         data: node.data,
         geometry,
         hooks: node.hooks,
         id: node.id,
         kind: "brush",
-        lods: shouldBakeLods ? await buildGeometryLods(geometry, snapshot.settings.world.lod) : undefined,
         metadata: node.metadata,
         name: node.name,
         parentId: node.parentId,
@@ -139,14 +157,13 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
     }
 
     if (isMeshNode(node)) {
-      const geometry = await buildExportGeometry(node, materialsById);
+      const geometry = await buildExportGeometry(node, materialsById, texturesById, options);
       exportedNodes.push({
         data: node.data,
         geometry,
         hooks: node.hooks,
         id: node.id,
         kind: "mesh",
-        lods: shouldBakeLods ? await buildGeometryLods(geometry, snapshot.settings.world.lod) : undefined,
         metadata: node.metadata,
         name: node.name,
         parentId: node.parentId,
@@ -157,14 +174,13 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
     }
 
     if (isPrimitiveNode(node)) {
-      const geometry = await buildExportGeometry(node, materialsById);
+      const geometry = await buildExportGeometry(node, materialsById, texturesById, options);
       exportedNodes.push({
         data: node.data,
         geometry,
         hooks: node.hooks,
         id: node.id,
         kind: "primitive",
-        lods: shouldBakeLods ? await buildGeometryLods(geometry, snapshot.settings.world.lod) : undefined,
         metadata: node.metadata,
         name: node.name,
         parentId: node.parentId,
@@ -175,17 +191,13 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
     }
 
     if (isModelNode(node)) {
-      const modelLodBake = shouldBakeLods
-        ? await buildModelLods(node.name, assetsById.get(node.data.assetId), node.id, snapshot.settings.world.lod)
-        : undefined;
-
-      generatedAssets.push(...(modelLodBake?.assets ?? []));
+      const asset = assetsById.get(node.data.assetId);
       exportedNodes.push({
         data: node.data,
         hooks: node.hooks,
         id: node.id,
         kind: "model",
-        lods: modelLodBake?.lods,
+        lods: resolveAuthoredRuntimeModelLods(asset),
         metadata: node.metadata,
         name: node.name,
         parentId: node.parentId,
@@ -231,7 +243,7 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
   }
 
   return {
-    assets: [...snapshot.assets, ...generatedAssets],
+    assets: snapshot.assets.filter((asset) => asset.type !== "model" || referencedModelAssetIds.has(asset.id)),
     entities: snapshot.entities,
     layers: snapshot.layers,
     materials: exportedMaterials,
@@ -241,8 +253,52 @@ export async function buildRuntimeSceneFromSnapshot(snapshot: SceneDocumentSnaps
       version: CURRENT_RUNTIME_SCENE_VERSION
     },
     nodes: exportedNodes,
-    settings: exportedSettings
+    settings: snapshot.settings
   } satisfies RuntimeScene;
+}
+
+function resolveAuthoredRuntimeModelLods(asset: Asset | undefined): RuntimeModelLod[] | undefined {
+  const midAsset = resolveModelAssetFile(asset, "mid");
+  const lowAsset = resolveModelAssetFile(asset, "low");
+  const lods: RuntimeModelLod[] = [];
+
+  if (midAsset) {
+    lods.push({
+      assetId: asset?.id,
+      format: midAsset.format,
+      level: "mid",
+      materialMtlText: midAsset.materialMtlText,
+      path: midAsset.path,
+      texturePath: midAsset.texturePath
+    });
+  }
+
+  if (lowAsset) {
+    lods.push({
+      assetId: asset?.id,
+      format: lowAsset.format,
+      level: "low",
+      materialMtlText: lowAsset.materialMtlText,
+      path: lowAsset.path,
+      texturePath: lowAsset.texturePath
+    });
+  }
+
+  return lods.length > 0 ? lods : undefined;
+}
+
+function collectReferencedModelAssetIds(snapshot: SceneDocumentSnapshot) {
+  const referencedAssetIds = new Set<string>();
+
+  for (const node of snapshot.nodes) {
+    if (!isModelNode(node)) {
+      continue;
+    }
+
+    referencedAssetIds.add(node.data.assetId);
+  }
+
+  return referencedAssetIds;
 }
 
 function isSceneDocumentSnapshotLike(value: unknown): value is SceneDocumentSnapshot {
@@ -257,7 +313,9 @@ function isSceneDocumentSnapshotLike(value: unknown): value is SceneDocumentSnap
 
 async function buildExportGeometry(
   node: Extract<SceneDocumentSnapshot["nodes"][number], { kind: "brush" | "mesh" | "primitive" }>,
-  materialsById: Map<MaterialID, Material>
+  materialsById: Map<MaterialID, Material>,
+  texturesById: Map<string, TextureRecord>,
+  options: BuildRuntimeSceneFromSnapshotOptions
 ) {
   const fallbackMaterial = await resolveRuntimeMaterial({
     color: node.kind === "brush" ? "#f69036" : node.kind === "primitive" && node.data.role === "prop" ? "#7f8ea3" : "#6ed5c0",
@@ -265,20 +323,43 @@ async function buildExportGeometry(
     metalness: node.kind === "brush" ? 0 : node.kind === "primitive" && node.data.role === "prop" ? 0.12 : 0.05,
     name: `${node.name} Default`,
     roughness: node.kind === "brush" ? 0.95 : node.kind === "primitive" && node.data.role === "prop" ? 0.64 : 0.82
-  });
+  }, texturesById, options);
+  const meshMaterialLayers = isMeshNode(node)
+    ? normalizeEditableMeshMaterialLayers(node.data.materialLayers, node.data.vertices.length, node.data.materialBlend)
+    : undefined;
+  const meshRuntimeLayers = meshMaterialLayers
+    ? await Promise.all(meshMaterialLayers.map(async (layer) => ({
+        material: await resolveRuntimeMaterial(materialsById.get(layer.materialId), texturesById, options),
+        opacity: layer.opacity,
+        weights: [] as number[],
+      })))
+    : undefined;
   const primitiveByMaterial = new Map<string, RuntimeGeometry["primitives"][number]>();
 
   const appendFace = async (params: {
+    blendLayerWeights?: number[][];
     faceMaterialId?: string;
     normal: Vec3;
     triangleIndices: number[];
     uvOffset?: Vec2;
+    uvRotation?: number;
     uvScale?: Vec2;
     uvs?: Vec2[];
     vertices: Vec3[];
   }) => {
-    const material = params.faceMaterialId ? await resolveRuntimeMaterial(materialsById.get(params.faceMaterialId)) : fallbackMaterial;
+    const material = params.faceMaterialId
+      ? await resolveRuntimeMaterial(materialsById.get(params.faceMaterialId), texturesById, options)
+      : fallbackMaterial;
     const primitive = primitiveByMaterial.get(material.id) ?? {
+      ...(meshRuntimeLayers?.length
+        ? {
+            blendLayers: meshRuntimeLayers.map((layer) => ({
+              material: layer.material,
+              opacity: layer.opacity,
+              weights: [],
+            })),
+          }
+        : {}),
       indices: [],
       material,
       normals: [],
@@ -288,13 +369,18 @@ async function buildExportGeometry(
     const vertexOffset = primitive.positions.length / 3;
     const uvs = params.uvs && params.uvs.length === params.vertices.length
       ? params.uvs.flatMap((uv) => [uv.x, uv.y])
-      : projectPlanarUvs(params.vertices, params.normal, params.uvScale, params.uvOffset);
+      : projectPlanarUvs(params.vertices, params.normal, params.uvScale, params.uvOffset, params.uvRotation);
 
     params.vertices.forEach((vertex) => {
       primitive.positions.push(vertex.x, vertex.y, vertex.z);
       primitive.normals.push(params.normal.x, params.normal.y, params.normal.z);
     });
     primitive.uvs.push(...uvs);
+    if (primitive.blendLayers?.length) {
+      primitive.blendLayers.forEach((layer, layerIndex) => {
+        layer.weights.push(...(params.blendLayerWeights?.[layerIndex]?.slice(0, params.vertices.length) ?? Array.from({ length: params.vertices.length }, () => 0)));
+      });
+    }
     params.triangleIndices.forEach((index) => {
       primitive.indices.push(vertexOffset + index);
     });
@@ -314,6 +400,7 @@ async function buildExportGeometry(
         normal: face.normal,
         triangleIndices: face.triangleIndices,
         uvOffset: face.uvOffset,
+        uvRotation: face.uvRotation,
         uvScale: face.uvScale,
         vertices: face.vertices.map((vertex) => vertex.position)
       });
@@ -321,27 +408,35 @@ async function buildExportGeometry(
   }
 
   if (isMeshNode(node)) {
+    const vertexIndexById = new Map(node.data.vertices.map((vertex, index) => [vertex.id, index] as const));
     for (const face of node.data.faces) {
       const triangulated = triangulateMeshFace(node.data, face.id);
+      const faceVertices = getFaceVertices(node.data, face.id);
 
-      if (!triangulated) {
+      if (!triangulated || faceVertices.length === 0) {
         continue;
       }
 
       await appendFace({
+        blendLayerWeights: meshMaterialLayers?.map((layer) =>
+          faceVertices.map((vertex) => layer.weights[vertexIndexById.get(vertex.id) ?? -1] ?? 0)
+        ),
         faceMaterialId: face.materialId,
         normal: triangulated.normal,
         triangleIndices: triangulated.indices,
         uvOffset: face.uvOffset,
+        uvRotation: face.uvRotation,
         uvScale: face.uvScale,
         uvs: face.uvs,
-        vertices: getFaceVertices(node.data, face.id).map((vertex) => vertex.position)
+        vertices: faceVertices.map((vertex) => vertex.position)
       });
     }
   }
 
   if (isPrimitiveNode(node)) {
-    const material = node.data.materialId ? await resolveRuntimeMaterial(materialsById.get(node.data.materialId)) : fallbackMaterial;
+    const material = node.data.materialId
+      ? await resolveRuntimeMaterial(materialsById.get(node.data.materialId), texturesById, options)
+      : fallbackMaterial;
     const primitive = buildPrimitiveGeometry(node.data.shape, node.data.size, node.data.radialSegments ?? 24);
 
     if (primitive) {
@@ -357,76 +452,6 @@ async function buildExportGeometry(
 
   return {
     primitives: Array.from(primitiveByMaterial.values())
-  };
-}
-
-async function buildGeometryLods(
-  geometry: RuntimeGeometry,
-  settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
-): Promise<RuntimeGeometryLod[] | undefined> {
-  if (!geometry.primitives.length) {
-    return undefined;
-  }
-
-  const midGeometry = simplifyExportGeometry(geometry, settings.midDetailRatio);
-  const lowGeometry = simplifyExportGeometry(geometry, settings.lowDetailRatio);
-  const lods: RuntimeGeometryLod[] = [];
-
-  if (midGeometry) {
-    lods.push({
-      geometry: midGeometry,
-      level: "mid"
-    });
-  }
-
-  if (lowGeometry) {
-    lods.push({
-      geometry: lowGeometry,
-      level: "low"
-    });
-  }
-
-  return lods.length ? lods : undefined;
-}
-
-async function buildModelLods(
-  name: string,
-  asset: Asset | undefined,
-  nodeId: string,
-  settings: SceneDocumentSnapshot["settings"]["world"]["lod"]
-): Promise<{ assets: Asset[]; lods?: RuntimeModelLod[] }> {
-  if (!asset?.path) {
-    return { assets: [], lods: undefined };
-  }
-
-  const source = await loadModelSceneForLodBake(asset);
-  const bakedLevels: Array<{ asset: Asset; level: RuntimeModelLod["level"] }> = [];
-
-  for (const [level, ratio] of [
-    ["mid", settings.midDetailRatio],
-    ["low", settings.lowDetailRatio]
-  ] as const) {
-    const simplified = simplifyModelSceneForRatio(source, ratio);
-
-    if (!simplified) {
-      continue;
-    }
-
-    const bytes = await exportModelSceneAsGlb(simplified);
-    bakedLevels.push({
-      asset: createGeneratedModelLodAsset(asset, name, nodeId, level, bytes),
-      level
-    });
-  }
-
-  return {
-    assets: bakedLevels.map((entry) => entry.asset),
-    lods: bakedLevels.length
-      ? bakedLevels.map((entry) => ({
-          assetId: entry.asset.id,
-          level: entry.level
-        }))
-      : undefined
   };
 }
 
@@ -1042,30 +1067,89 @@ function buildPrimitiveGeometry(shape: "cone" | "cube" | "cylinder" | "sphere", 
   return primitive;
 }
 
-async function resolveRuntimeMaterial(material?: Material): Promise<RuntimeMaterial> {
-  const resolved = material ?? {
+async function resolveRuntimeMaterial(
+  material: Material | undefined,
+  texturesById: Map<string, TextureRecord>,
+  options: BuildRuntimeSceneFromSnapshotOptions
+): Promise<RuntimeMaterial> {
+  const resolved = (material ?? {
     color: "#ffffff",
+    emissiveColor: "#000000",
+    emissiveIntensity: 0,
     id: "material:fallback:default",
     metalness: 0.05,
     name: "Default Material",
+    opacity: 1,
     roughness: 0.8
+  }) as Material & {
+    textureVariation?: {
+      enabled: boolean;
+      scale: number;
+    };
   };
+  const embedExternal = options.embedExternalTextures ?? true;
+  const baseColorTextureSource = resolveTextureReferenceSource(
+    resolved.colorTexture ?? resolveGeneratedBlockoutTexture(resolved),
+    texturesById
+  );
+  const normalTextureSource = resolveTextureReferenceSource(resolved.normalTexture, texturesById);
+  const metalnessTextureSource = resolveTextureReferenceSource(resolved.metalnessTexture, texturesById);
+  const roughnessTextureSource = resolveTextureReferenceSource(resolved.roughnessTexture, texturesById);
+
+  if (options.skipMetalRoughnessComposite) {
+    // Fast path: keep metalness + roughness as separate assets — no heavy
+    // pixel decode / OffscreenCanvas composite / PNG re-encode per material.
+    // Runtimes assign them to metalnessMap / roughnessMap individually.
+    return {
+      baseColorTexture: await resolveEmbeddedTextureUri(baseColorTextureSource, embedExternal),
+      color: resolved.color,
+      emissiveColor: resolved.emissiveColor ?? "#000000",
+      emissiveIntensity: Math.max(0, resolved.emissiveIntensity ?? 0),
+      id: resolved.id,
+      metallicFactor: resolved.metalness ?? 0,
+      metallicRoughnessTexture: undefined,
+      metalnessTexture: await resolveEmbeddedTextureUri(metalnessTextureSource, false),
+      name: resolved.name,
+      normalTexture: await resolveEmbeddedTextureUri(normalTextureSource, embedExternal),
+      opacity: clamp01(resolved.opacity ?? 1),
+      roughnessFactor: resolved.roughness ?? 0.8,
+      roughnessTexture: await resolveEmbeddedTextureUri(roughnessTextureSource, false),
+      side: resolved.side,
+      textureVariation: resolved.textureVariation
+        ? {
+            enabled: resolved.textureVariation.enabled,
+            scale: resolved.textureVariation.scale
+          }
+        : undefined,
+      transparent: resolved.transparent ?? false
+    };
+  }
 
   return {
-    baseColorTexture: await resolveEmbeddedTextureUri(resolved.colorTexture ?? resolveGeneratedBlockoutTexture(resolved)),
+    baseColorTexture: await resolveEmbeddedTextureUri(baseColorTextureSource, embedExternal),
     color: resolved.color,
+    emissiveColor: resolved.emissiveColor ?? "#000000",
+    emissiveIntensity: Math.max(0, resolved.emissiveIntensity ?? 0),
     id: resolved.id,
     metallicFactor: resolved.metalness ?? 0,
     metallicRoughnessTexture: await createMetallicRoughnessTextureDataUri(
-      resolved.metalnessTexture,
-      resolved.roughnessTexture,
+      metalnessTextureSource,
+      roughnessTextureSource,
       resolved.metalness ?? 0,
       resolved.roughness ?? 0.8
     ),
     name: resolved.name,
-    normalTexture: await resolveEmbeddedTextureUri(resolved.normalTexture),
+    normalTexture: await resolveEmbeddedTextureUri(normalTextureSource, embedExternal),
+    opacity: clamp01(resolved.opacity ?? 1),
     roughnessFactor: resolved.roughness ?? 0.8,
-    side: resolved.side
+    side: resolved.side,
+    textureVariation: resolved.textureVariation
+      ? {
+          enabled: resolved.textureVariation.enabled,
+          scale: resolved.textureVariation.scale
+        }
+      : undefined,
+    transparent: resolved.transparent ?? false
   };
 }
 
@@ -1075,17 +1159,25 @@ function resolveGeneratedBlockoutTexture(material: Material) {
     : undefined;
 }
 
-function projectPlanarUvs(vertices: Vec3[], normal: Vec3, uvScale?: Vec2, uvOffset?: Vec2) {
+function projectPlanarUvs(vertices: Vec3[], normal: Vec3, uvScale?: Vec2, uvOffset?: Vec2, uvRotation?: number) {
   const basis = createFacePlaneBasis(normal);
   const origin = vertices[0] ?? vec3(0, 0, 0);
   const scaleX = Math.abs(uvScale?.x ?? 1) <= 0.0001 ? 1 : uvScale?.x ?? 1;
   const scaleY = Math.abs(uvScale?.y ?? 1) <= 0.0001 ? 1 : uvScale?.y ?? 1;
   const offsetX = uvOffset?.x ?? 0;
   const offsetY = uvOffset?.y ?? 0;
+  const rotation = uvRotation ?? 0;
+  const cosRotation = Math.cos(rotation);
+  const sinRotation = Math.sin(rotation);
 
   return vertices.flatMap((vertex) => {
     const offset = subVec3(vertex, origin);
-    return [dotVec3(offset, basis.u) * scaleX + offsetX, dotVec3(offset, basis.v) * scaleY + offsetY];
+    const localU = dotVec3(offset, basis.u);
+    const localV = dotVec3(offset, basis.v);
+    const rotatedU = localU * cosRotation - localV * sinRotation;
+    const rotatedV = localU * sinRotation + localV * cosRotation;
+
+    return [rotatedU * scaleX + offsetX, rotatedV * scaleY + offsetY];
   });
 }
 
@@ -1098,12 +1190,20 @@ function createFacePlaneBasis(normal: Vec3) {
   return { u, v };
 }
 
-async function resolveEmbeddedTextureUri(source?: string) {
+async function resolveEmbeddedTextureUri(source?: string, embedExternalTextures = true) {
   if (!source) {
     return undefined;
   }
 
+  if (isTextureReferenceId(source)) {
+    return undefined;
+  }
+
   if (source.startsWith("data:")) {
+    return source;
+  }
+
+  if (!embedExternalTextures) {
     return source;
   }
 
@@ -1131,6 +1231,11 @@ async function createMetallicRoughnessTextureDataUri(
     loadImagePixels(metalnessSource),
     loadImagePixels(roughnessSource)
   ]);
+
+  if (!metalness && !roughness) {
+    return undefined;
+  }
+
   const width = Math.max(metalness?.width ?? 1, roughness?.width ?? 1);
   const height = Math.max(metalness?.height ?? 1, roughness?.height ?? 1);
   const canvas = new OffscreenCanvas(width, height);
@@ -1162,26 +1267,50 @@ async function loadImagePixels(source?: string) {
     return undefined;
   }
 
-  const response = await fetch(source);
-  const blob = await response.blob();
-  const bitmap = await createImageBitmap(blob);
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-
-  if (!context) {
-    bitmap.close();
+  if (isTextureReferenceId(source)) {
     return undefined;
   }
 
-  context.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  const imageData = context.getImageData(0, 0, bitmap.width, bitmap.height);
+  let bitmap: ImageBitmap | undefined;
 
-  return {
-    height: imageData.height,
-    pixels: imageData.data,
-    width: imageData.width
-  };
+  try {
+    const response = await fetch(source);
+    const blob = await response.blob();
+
+    if (blob.size <= 0) {
+      return undefined;
+    }
+
+    bitmap = await createImageBitmap(blob);
+
+    if (bitmap.width <= 0 || bitmap.height <= 0) {
+      return undefined;
+    }
+
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (!context) {
+      return undefined;
+    }
+
+    context.drawImage(bitmap, 0, 0);
+    const imageData = context.getImageData(0, 0, bitmap.width, bitmap.height);
+
+    if (imageData.width <= 0 || imageData.height <= 0) {
+      return undefined;
+    }
+
+    return {
+      height: imageData.height,
+      pixels: imageData.data,
+      width: imageData.width
+    };
+  } catch {
+    return undefined;
+  } finally {
+    bitmap?.close();
+  }
 }
 
 function clamp01(value: number) {

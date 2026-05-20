@@ -64,6 +64,7 @@ type TextureBrowserOverlayProps = {
   onDeleteTexture: (texture: TextureRecord) => void;
   onSelectTexture: (texture: TextureRecord) => void;
   open: boolean;
+  standalone?: boolean;
   targetKind: TextureKind;
   targetLabel: string;
   textures: TextureRecord[];
@@ -79,6 +80,7 @@ export function TextureBrowserOverlay({
   onDeleteTexture,
   onSelectTexture,
   open,
+  standalone = false,
   targetKind,
   targetLabel,
   textures
@@ -138,15 +140,17 @@ export function TextureBrowserOverlay({
   const handleSelectExistingTexture = (texture: TextureRecord) => {
     setError(undefined);
     onSelectTexture(texture);
-    onClose();
+    if (!standalone) {
+      onClose();
+    }
   };
 
   const handleUploadTexture = async (
     event: ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
 
-    if (!file) {
+    if (files.length === 0) {
       return;
     }
 
@@ -180,9 +184,25 @@ export function TextureBrowserOverlay({
         source: "upload"
       });
 
-      onCreateTexture(texture);
-      onSelectTexture(texture);
-      onClose();
+      const created: TextureRecord[] = [];
+
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const texture = createTextureRecord({
+          dataUrl,
+          kind: targetKind,
+          mimeType: file.type || "image/png",
+          name: stripExtension(file.name) || `${targetLabel} Texture`,
+          source: "upload"
+        });
+        onCreateTexture(texture);
+        created.push(texture);
+      }
+
+      if (!standalone && created.length > 0) {
+        onSelectTexture(created[created.length - 1]!);
+        onClose();
+      }
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
@@ -383,6 +403,7 @@ export function TextureBrowserOverlay({
         <input
           accept="image/*"
           hidden
+          multiple
           onChange={handleUploadTexture}
           ref={uploadInputRef}
           type="file"

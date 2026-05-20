@@ -7,6 +7,9 @@ import {
   MenubarItem,
   MenubarMenu,
   MenubarSeparator,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarShortcut,
   MenubarTrigger
 } from "@/components/ui/menubar";
@@ -30,10 +33,13 @@ type EditorMenuBarProps = {
   onGroupSelection: () => void;
   onExportEngine: () => void;
   onExportGltf: () => void;
+  onExportSceneDocument: () => void;
   onFocusSelection: () => void;
+  onImportSceneDocument: () => void;
   onLoadWhmap: () => void;
   onOpenProject?: () => void;
   onOpenAnimationStudio?: () => void;
+  onNewFile: () => void;
   onRedo: () => void;
   onSaveWhmap: () => void;
   onToggleCopilot: () => void;
@@ -63,10 +69,13 @@ export function EditorMenuBar({
   onGroupSelection,
   onExportEngine,
   onExportGltf,
+  onExportSceneDocument,
   onFocusSelection,
+  onImportSceneDocument,
   onLoadWhmap,
   onOpenProject,
   onOpenAnimationStudio,
+  onNewFile,
   onRedo,
   onSaveWhmap,
   onToggleCopilot,
@@ -106,22 +115,41 @@ export function EditorMenuBar({
                   <MenubarSeparator />
                 </>
               )}
+              <MenubarItem className="rounded-lg text-xs" onClick={onNewFile}>
+                New File
+              </MenubarItem>
               <MenubarItem className="rounded-lg text-xs" onClick={onCreateBrush}>
                 New Brush
               </MenubarItem>
-              <MenubarItem className="rounded-lg text-xs" onClick={onSaveWhmap}>
-                Save `.whmap`
-                <MenubarShortcut>Cmd+S</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem className="rounded-lg text-xs" onClick={onLoadWhmap}>
-                Load `.whmap`
-              </MenubarItem>
-              <MenubarItem className="rounded-lg text-xs" onClick={onExportGltf}>
-                Export glTF
-              </MenubarItem>
-              <MenubarItem className="rounded-lg text-xs" onClick={onExportEngine}>
-                Export Runtime Bundle
-              </MenubarItem>
+              <MenubarSub>
+                <MenubarSubTrigger className="rounded-lg text-xs">Import</MenubarSubTrigger>
+                <MenubarSubContent className="min-w-44 rounded-xl bg-popover/96 p-1.5 shadow-[0_18px_48px_rgba(4,12,10,0.46)] backdrop-blur-xl">
+                  <MenubarItem className="rounded-lg text-xs" onClick={onLoadWhmap}>
+                    World `.whmap`
+                  </MenubarItem>
+                  <MenubarItem className="rounded-lg text-xs" onClick={onImportSceneDocument}>
+                    Scene `.whdoc`
+                  </MenubarItem>
+                </MenubarSubContent>
+              </MenubarSub>
+              <MenubarSub>
+                <MenubarSubTrigger className="rounded-lg text-xs">Export</MenubarSubTrigger>
+                <MenubarSubContent className="min-w-48 rounded-xl bg-popover/96 p-1.5 shadow-[0_18px_48px_rgba(4,12,10,0.46)] backdrop-blur-xl">
+                  <MenubarItem className="rounded-lg text-xs" onClick={onSaveWhmap}>
+                    World `.whmap`
+                    <MenubarShortcut>Cmd+S</MenubarShortcut>
+                  </MenubarItem>
+                  <MenubarItem className="rounded-lg text-xs" onClick={onExportSceneDocument}>
+                    Scene `.whdoc`
+                  </MenubarItem>
+                  <MenubarItem className="rounded-lg text-xs" onClick={onExportGltf}>
+                    Export glTF
+                  </MenubarItem>
+                  <MenubarItem className="rounded-lg text-xs" onClick={onExportEngine}>
+                    Export Runtime Bundle
+                  </MenubarItem>
+                </MenubarSubContent>
+              </MenubarSub>
             </MenubarContent>
           </MenubarMenu>
 

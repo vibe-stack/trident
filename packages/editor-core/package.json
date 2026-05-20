@@ -1,6 +1,6 @@
 {
   "name": "@ggez/editor-core",
-  "version": "0.1.4",
+  "version": "0.1.12",
   "description": "Scene document, command stack, selection, and event bus primitives for Web Hammer editors.",
   "license": "MIT",
   "type": "module",
@@ -35,6 +35,7 @@
   "homepage": "https://github.com/vibe-stack/trident/tree/main/packages/editor-core",
   "dependencies": {
     "@ggez/geometry-kernel": "workspace:*",
-    "@ggez/shared": "workspace:*"
+    "@ggez/shared": "workspace:*",
+    "three": "^0.184.0"
   }
 }

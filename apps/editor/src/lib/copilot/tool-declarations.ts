@@ -141,7 +141,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
         rotationY: { type: "number", description: "Yaw rotation in radians" },
         type: {
           type: "string",
-          enum: ["player-spawn", "npc-spawn", "smart-object"],
+          enum: ["player-spawn", "npc-spawn", "smart-object", "vfx-object"],
           description: "Entity type"
         },
         name: { type: "string", description: "Display name" }
@@ -403,6 +403,7 @@ export const COPILOT_TOOL_DECLARATIONS: CopilotToolDeclaration[] = [
         fogColor: { type: "string", description: "Fog hex color" },
         fogNear: { type: "number", description: "Fog near distance" },
         fogFar: { type: "number", description: "Fog far distance" },
+        toneMapping: { type: "string", enum: ["aces", "cineon", "linear", "neutral", "none", "reinhard"], description: "Renderer tone mapping mode" },
         cameraMode: { type: "string", enum: ["fps", "third-person", "top-down"], description: "Player camera mode" },
         playerHeight: { type: "number", description: "Player height in meters" },
         movementSpeed: { type: "number", description: "Player movement speed" },
